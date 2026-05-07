@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Inbox — JobPilot{% endblock %}
+
+{% block content %}
+<div class="toolbar-card" id="toolbar-card">
+    <div class="toolbar-left">
+        <span class="toolbar-stats" id="toolbar-stats"><strong>{{ email_count }}</strong> emails + <strong>{{ scraped_count }}</strong> scraped jobs</span>
+        <div class="toolbar-sep"></div>
+        <span class="sync-dot" id="sync-dot"></span>
+        <span class="sync-info" id="sync-info">{% if last_sync %}Synced <strong>{{ last_sync.strftime('%b %d, %H:%M') }}</strong>{% else %}Not synced yet{% endif %}</span>
+    </div>
+    <div class="toolbar-right-group">
+        <button id="sync-btn" class="sync-btn" hx-post="/api/sync" hx-swap="none">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M1 8a7 7 0 0 1 12.3-4.6M15 8a7 7 0 0 1-12.3 4.6"/><polyline points="1 3 1 8 5.5 6.5"/><polyline points="15 13 15 8 10.5 9.5"/></svg>
+            Sync
+        </button>
+        <div class="sync-progress" id="sync-progress">
+            <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+        </div>
+    </div>
+</div>
+
+<div class="heading-row">
+    <h2>Review Queue</h2>
+    <div class="sort-controls">
+        <a href="/?sort=score_desc" class="sort-btn {% if sort == 'score_desc' %}sort-active{% endif %}">Score &darr;</a>
+        <a href="/?sort=score_asc" class="sort-btn {% if sort == 'score_asc' %}sort-active{% endif %}">Score &uarr;</a>
+        <a href="/?sort=date_desc" class="sort-btn {% if sort == 'date_desc' %}sort-active{% endif %}">Date &darr;</a>
+        <a href="/?sort=date_asc" class="sort-btn {% if sort == 'date_asc' %}sort-active{% endif %}">Date &uarr;</a>
+    </div>
+</div>
+
+{% if not items %}
+<div class="empty-state">
+    <p>Nothing to review — all caught up!</p>
+</div>
+{% endif %}
+
+<div id="review-queue">
+    {% include "partials/review_queue.html" %}
+</div>
+{% endblock %}
+

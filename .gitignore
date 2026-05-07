@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+credentials.json
+token.json
+
+# Database
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Poetry
+poetry.lock
+
+# Model artifacts
+*.pkl
+
+# Claude Code / Superpowers
+.claude/
+.superpowers/
+
+# Internal docs
+docs/

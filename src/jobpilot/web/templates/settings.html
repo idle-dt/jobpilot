@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Settings — JobPilot{% endblock %}
+
+{% block content %}
+<h2>Settings</h2>
+
+<section class="settings-section">
+    <h3>Email Sync</h3>
+    <form id="sync-days-form" hx-post="/api/settings/sync_days" hx-swap="none">
+        <label for="sync-days-input">Sync period (days)</label>
+        <div class="setting-row">
+            <input type="number" id="sync-days-input" name="value"
+                   value="{{ sync_days }}" min="1" max="90">
+            <button type="submit" class="btn-save">Save</button>
+            <span id="sync-days-result" class="setting-result"></span>
+        </div>
+        <small>How far back to look when syncing emails (1–90 days).</small>
+    </form>
+</section>
+
+<section class="settings-section">
+    <h3>Job Description Scraping</h3>
+    <form id="scrape-threshold-form" hx-post="/api/settings/scrape_confidence_threshold" hx-swap="none">
+        <label for="scrape-threshold-input">Scrape confidence threshold</label>
+        <div class="setting-row">
+            <input type="number" id="scrape-threshold-input" name="value"
+                   value="{{ scrape_threshold }}" min="0" max="1" step="0.1">
+            <button type="submit" class="btn-save">Save</button>
+            <span id="scrape-threshold-result" class="setting-result"></span>
+        </div>
+        <small>Jobs with scoring confidence below this threshold will have their full descriptions scraped. Lower = scrape more jobs (0.0–1.0).</small>
+    </form>
+</section>
+<section class="settings-section">
+    <h3>Appearance</h3>
+    <label>Theme</label>
+    <div class="setting-row">
+        <select id="theme-select" onchange="setTheme(this.value)">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+        </select>
+    </div>
+    <small>Switch between light (cream) and dark mode.</small>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('theme-select').value =
+    document.documentElement.getAttribute('data-theme') || 'light';
+function setTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    localStorage.setItem('theme', t);
+    updateThemeIcon();
+}
+</script>
+<script>
+const settingsMap = {
+    '/api/settings/sync_days': 'sync-days-result',
+    '/api/settings/scrape_confidence_threshold': 'scrape-threshold-result',
+};
+document.body.addEventListener('htmx:afterRequest', (e) => {
+    const resultId = settingsMap[e.detail.pathInfo.requestPath];
+    if (!resultId) return;
+    const result = document.getElementById(resultId);
+    if (e.detail.successful) {
+        result.textContent = 'Saved!';
+        result.className = 'setting-result setting-success';
+    } else {
+        const data = JSON.parse(e.detail.xhr.responseText);
+        result.textContent = data.message || 'Error';
+        result.className = 'setting-result setting-error';
+    }
+    setTimeout(() => { result.textContent = ''; }, 3000);
+});
+</script>
+{% endblock %}

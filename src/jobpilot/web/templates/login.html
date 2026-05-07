@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Login — JobPilot{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <article class="login-card">
+        <header>
+            <h2>JobPilot</h2>
+            <p>Monitor your job search emails automatically</p>
+        </header>
+
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        {% for message in messages %}
+        <p class="login-error">{{ message }}</p>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% if error %}
+        <p class="login-error">{{ error }}</p>
+        {% endif %}
+
+        {% if credentials_exist %}
+        <a href="{{ url_for('auth.google_auth') }}" role="button" class="btn-google">
+            Log in with Google
+        </a>
+        {% else %}
+        <div class="login-setup">
+            <p><strong>Setup required</strong></p>
+            <p>
+                OAuth credentials not found. To get started:
+            </p>
+            <ol>
+                <li>Go to <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>
+                <li>Create an OAuth 2.0 Client ID (type: <strong>Web application</strong>)</li>
+                <li>Add <code>http://localhost:{{ config.get('SERVER_PORT', 5050) }}/auth/callback</code> as an authorized redirect URI</li>
+                <li>Download the JSON and save it as <code>~/.jobpilot/credentials.json</code></li>
+            </ol>
+        </div>
+        {% endif %}
+    </article>
+</div>
+{% endblock %}

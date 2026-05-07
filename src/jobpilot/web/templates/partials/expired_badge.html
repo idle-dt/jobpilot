@@ -1,0 +1,8 @@
+<span id="expired-badge-{{ job_id }}"
+      hx-post="/api/scraped/{{ job_id }}/expired"
+      hx-target="#expired-badge-{{ job_id }}"
+      hx-swap="outerHTML"
+      role="button" tabindex="0"
+      class="badge {% if expired %}badge-expired{% else %}badge-active{% endif %} expired-toggle">
+    {{ "Expired" if expired else "Active" }}
+</span>

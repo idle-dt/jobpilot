@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Stats — JobPilot{% endblock %}
+
+{% block content %}
+<h2>Statistics</h2>
+
+<div class="grid">
+    <article>
+        <h3>{{ email_stats.total }}</h3>
+        <p>Total Emails</p>
+    </article>
+    <article>
+        <h3>{{ email_stats.processed }}</h3>
+        <p>Processed</p>
+    </article>
+    <article>
+        <h3>{{ email_stats.labeled }}</h3>
+        <p>Labeled</p>
+    </article>
+    <article>
+        <h3>{{ email_stats.by_classification.get('worth_checking', 0) }}</h3>
+        <p>Worth Checking</p>
+    </article>
+    <article>
+        <h3>{{ email_stats.noise_count }}</h3>
+        <p>Filtered as Noise</p>
+    </article>
+</div>
+
+{% if email_stats.by_platform %}
+<h3>By Platform</h3>
+<table>
+    <thead><tr><th>Platform</th><th>Count</th></tr></thead>
+    <tbody>
+        {% for platform, count in email_stats.by_platform.items()|sort(attribute='1', reverse=true) %}
+        <tr>
+            <td>{{ platform or 'unknown' }}</td>
+            <td>{{ count }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if app_stats %}
+<h3>Applications</h3>
+<table>
+    <thead><tr><th>Status</th><th>Count</th></tr></thead>
+    <tbody>
+        {% for status, count in app_stats.items() %}
+        <tr><td>{{ status }}</td><td>{{ count }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

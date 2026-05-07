@@ -1,0 +1,126 @@
+"""Tests for the rule-based scoring engine."""
+
+from jobpilot.classifier.features import (
+    score_job_title,
+    score_location,
+    score_negatives,
+    score_salary,
+    score_seniority,
+    score_tech_stack,
+)
+from jobpilot.classifier.rules import RuleBasedScorer
+
+
+# --- Feature Scoring ---
+
+def test_tech_stack_flutter_dart():
+    score = score_tech_stack("Flutter and Dart developer needed")
+    assert score >= 0.9
+
+
+def test_tech_stack_no_match():
+    score = score_tech_stack("Looking for a Python backend developer")
+    assert score == 0.0
+
+
+def test_tech_stack_secondary():
+    score = score_tech_stack("Android and iOS developer")
+    assert 0.5 < score < 1.0
+
+
+def test_location_target():
+    assert score_location("Office in Amsterdam, Netherlands") == 1.0
+
+
+def test_location_remote():
+    assert score_location("Fully remote position") == 1.0
+
+
+def test_location_negative():
+    assert score_location("US only, must be located in California") == 0.0
+
+
+def test_location_no_match():
+    assert score_location("Great opportunity") == 0.0
+
+
+def test_seniority_senior():
+    score = score_seniority("Senior Mobile Engineer")
+    assert score >= 0.9
+
+
+def test_seniority_junior():
+    score = score_seniority("Junior developer position")
+    assert score < 0.5
+
+
+def test_seniority_unknown():
+    assert score_seniority("Developer role") == 0.5
+
+
+def test_salary_present():
+    assert score_salary("Salary: €80,000 - €110,000") == 0.8
+
+
+def test_salary_absent():
+    assert score_salary("Great opportunity") == 0.5
+
+
+def test_negatives_none():
+    assert score_negatives("Great Flutter role in Amsterdam") == 1.0
+
+
+def test_negatives_one():
+    assert score_negatives("No visa sponsorship available") == 0.4
+
+
+def test_negatives_multiple():
+    score = score_negatives("No visa sponsorship, security clearance required")
+    assert score <= 0.2
+
+
+def test_job_title_exact():
+    assert score_job_title("Senior Flutter Developer") == 1.0
+
+
+def test_job_title_weak():
+    assert score_job_title("Software Engineer") == 0.3
+
+
+def test_job_title_no_match():
+    assert score_job_title("Chef needed") == 0.0
+
+
+# --- Full Scorer ---
+
+def test_scorer_high_score():
+    scorer = RuleBasedScorer()
+    result = scorer.score(
+        "Senior Flutter Developer - Amsterdam",
+        "We're hiring a senior Flutter developer in Amsterdam, Netherlands. "
+        "Tech stack: Flutter, Dart, Kotlin. Salary: €80k-110k EUR. Fully remote option."
+    )
+    assert result.classification == "worth_checking"
+    assert result.score >= 0.7
+
+
+def test_scorer_low_score():
+    scorer = RuleBasedScorer()
+    result = scorer.score(
+        "Junior Python Backend Developer - US Only",
+        "Entry-level Python developer position. US only, no visa sponsorship. "
+        "Must have security clearance."
+    )
+    assert result.classification == "skip"
+    assert result.score < 0.5
+
+
+def test_scorer_medium_score():
+    scorer = RuleBasedScorer()
+    result = scorer.score(
+        "Mobile Developer",
+        "Looking for a mobile developer. Android and iOS experience preferred."
+    )
+    # Should have some score but not necessarily high
+    assert 0.0 < result.score < 1.0
+    assert result.breakdown is not None
