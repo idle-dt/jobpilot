@@ -112,6 +112,130 @@
     {% endif %}
 </section>
 
+<!-- ML Experiment Lab -->
+{% if data.all_models and (data.all_models.noise or data.all_models.scoring) %}
+<section class="dash-card" id="experiment-lab">
+    <h3>ML Experiment Lab</h3>
+
+    {% for model_type in ['scoring', 'noise'] %}
+    {% if data.all_models[model_type] %}
+    <div class="exp-section">
+        <div class="exp-header">
+            <span class="exp-title">{{ model_type | capitalize }} Model</span>
+            <div class="exp-header-actions">
+                <button class="btn-retrain" hx-post="/api/ml/train"
+                        hx-vals='{"model_type": "{{ model_type }}"}'
+                        hx-swap="none"
+                        hx-on::after-request="location.reload()">Retrain</button>
+                <a href="/api/ml/export?model_type={{ model_type }}" class="btn-export" download>Export</a>
+            </div>
+        </div>
+
+        <!-- Algorithm comparison table -->
+        <div class="exp-table-wrap">
+            <table class="exp-table">
+                <thead>
+                    <tr>
+                        <th>Algorithm</th><th>Accuracy</th><th>Precision</th>
+                        <th>Recall</th><th>F1</th><th>Samples</th>
+                        <th>Trained</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for m in data.all_models[model_type] %}
+                <tr class="{% if m.is_active %}exp-row-active{% endif %}">
+                    <td>
+                        <strong>{{ m.algorithm }}</strong>
+                        {% if m.is_active %}<span class="badge badge-ml-active">Active</span>{% endif %}
+                    </td>
+                    <td>{{ "%.1f"|format((m.accuracy or 0) * 100) }}%</td>
+                    <td>{{ "%.1f"|format((m.precision or 0) * 100) }}%</td>
+                    <td>{{ "%.1f"|format((m.recall or 0) * 100) }}%</td>
+                    <td><strong>{{ "%.1f"|format((m.f1 or 0) * 100) }}%</strong></td>
+                    <td>{{ m.training_samples }}</td>
+                    <td><small>{{ m.trained_at[:16] if m.trained_at else '—' }}</small></td>
+                    <td>
+                        {% if not m.is_active %}
+                        <button class="btn-activate" hx-post="/api/ml/activate"
+                                hx-vals='{"model_type": "{{ model_type }}", "algorithm": "{{ m.algorithm }}"}'
+                                hx-swap="none"
+                                hx-on::after-request="location.reload()">Activate</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Feature importances -->
+        {% for m in data.all_models[model_type] %}
+        {% if m.feature_names %}
+        <details class="exp-details">
+            <summary>{{ m.algorithm }} feature importance{% if m.is_active %} (active){% endif %}</summary>
+            <div class="exp-features" id="feat-{{ model_type }}-{{ m.algorithm }}">
+            </div>
+        </details>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <!-- Predictions comparison table -->
+    {% if data.recent_predictions %}
+    <div class="exp-section">
+        <div class="exp-header">
+            <span class="exp-title">Recent Predictions Comparison</span>
+        </div>
+        <div class="exp-table-wrap">
+            <table class="exp-table exp-table-compact">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Rules</th>
+                        {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
+                        <th>{{ algo }}</th>
+                        {% endfor %}
+                        <th>Your Label</th>
+                        <th>Agreement</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for item in data.recent_predictions %}
+                <tr>
+                    <td class="exp-item-title">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</td>
+                    <td>
+                        {% set rule_pct = ((item.raw_score or 0) * 100) | round(0) | int %}
+                        {% set rule_agrees = (item.user_label == 'worth_checking' and (item.raw_score or 0) >= 0.6) or (item.user_label == 'skip' and (item.raw_score or 0) < 0.6) %}
+                        <span class="badge {% if rule_agrees %}badge-ml-agree{% else %}badge-ml-disagree{% endif %}">{{ rule_pct }}%</span>
+                    </td>
+                    {% set ns = namespace(agree_count=0) %}
+                    {% if rule_agrees %}{% set ns.agree_count = 1 %}{% endif %}
+                    {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
+                    <td>
+                        {% if item.predictions.get(algo) %}
+                        {% set pred = item.predictions[algo] %}
+                        {% set ml_agrees = pred.prediction == item.user_label %}
+                        {% if ml_agrees %}{% set ns.agree_count = ns.agree_count + 1 %}{% endif %}
+                        <span class="badge {% if ml_agrees %}badge-ml-agree{% else %}badge-ml-disagree{% endif %}">{{ "%.0f"|format((pred.probability or 0) * 100) }}%</span>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td><span class="badge {% if item.user_label == 'worth_checking' %}badge-ml-pos{% else %}badge-ml-neg{% endif %}">{{ item.user_label | replace('_', ' ') }}</span></td>
+                    <td><strong>{{ ns.agree_count }}/5</strong></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
 <!-- Score + Confidence Histograms -->
 <div class="dash-row">
     <section class="dash-card">
@@ -734,6 +858,48 @@
         });
     };
     } /* end initCharts */
+})();
+
+/* ── Feature importance bars (ML Experiment Lab) ──── */
+(function() {
+    var allModels = DATA.all_models || {};
+    ['scoring', 'noise'].forEach(function(mt) {
+        (allModels[mt] || []).forEach(function(m) {
+            if (!m.feature_names) return;
+            var container = document.getElementById('feat-' + mt + '-' + m.algorithm);
+            if (!container) return;
+            try {
+                var fd = JSON.parse(m.feature_names);
+                var names = fd.names || [];
+                var imps = fd.importances || [];
+                if (!names.length || !imps.length) return;
+                var maxImp = Math.max.apply(null, imps) || 1;
+                /* Sort by importance descending */
+                var pairs = names.map(function(n, i) { return { name: n, imp: imps[i] || 0 }; });
+                pairs.sort(function(a, b) { return b.imp - a.imp; });
+                pairs.forEach(function(p) {
+                    var row = document.createElement('div');
+                    row.className = 'exp-feat-row';
+                    var label = document.createElement('span');
+                    label.className = 'exp-feat-name';
+                    label.appendChild(document.createTextNode(p.name.replace(/_/g, ' ')));
+                    var track = document.createElement('div');
+                    track.className = 'exp-feat-bar-track';
+                    var bar = document.createElement('div');
+                    bar.className = 'exp-feat-bar';
+                    bar.style.width = (p.imp / maxImp * 100).toFixed(1) + '%';
+                    var val = document.createElement('span');
+                    val.className = 'exp-feat-val';
+                    val.appendChild(document.createTextNode(p.imp.toFixed(3)));
+                    track.appendChild(bar);
+                    row.appendChild(label);
+                    row.appendChild(track);
+                    row.appendChild(val);
+                    container.appendChild(row);
+                });
+            } catch(e) { /* skip */ }
+        });
+    });
 })();
 </script>
 {% endblock %}

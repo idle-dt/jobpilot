@@ -150,6 +150,31 @@ CREATE INDEX IF NOT EXISTS idx_scraped_email ON scraped_jobs(email_id);
 CREATE INDEX IF NOT EXISTS idx_status_history_app ON application_status_history(application_id);
 """
 
+MIGRATION_SQL = """
+CREATE TABLE IF NOT EXISTS ml_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_version_id INTEGER NOT NULL REFERENCES model_versions(id),
+    item_type TEXT NOT NULL CHECK(item_type IN ('email', 'scraped_job')),
+    item_id TEXT NOT NULL,
+    prediction TEXT NOT NULL,
+    probability REAL,
+    predicted_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ml_pred_item ON ml_predictions(item_type, item_id);
+CREATE INDEX IF NOT EXISTS idx_ml_pred_model ON ml_predictions(model_version_id);
+"""
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Apply incremental schema changes idempotently."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(model_versions)").fetchall()}
+    if "model_type" not in existing:
+        conn.execute("ALTER TABLE model_versions ADD COLUMN model_type TEXT DEFAULT 'scoring'")
+    if "algorithm" not in existing:
+        conn.execute("ALTER TABLE model_versions ADD COLUMN algorithm TEXT DEFAULT 'LR'")
+    conn.executescript(MIGRATION_SQL)
+
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
     """Create a database connection with WAL mode and foreign keys enabled."""
@@ -166,5 +191,6 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     """Initialize the database with schema, return connection."""
     conn = get_connection(db_path)
     conn.executescript(SCHEMA_SQL)
+    _run_migrations(conn)
     conn.commit()
     return conn

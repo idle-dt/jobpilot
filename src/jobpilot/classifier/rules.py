@@ -12,6 +12,28 @@ from jobpilot.classifier.features import (
 )
 from jobpilot.config import settings
 
+FEATURE_NAMES = [
+    "tech_match", "job_title", "location_match",
+    "seniority_match", "salary_match", "negative_signals",
+]
+
+
+def compute_features(subject: str, body: str) -> list[float]:
+    """Compute the 6 rule-based feature scores as a flat list.
+
+    Used by both RuleBasedScorer and MLTrainer.
+    Returns scores in FEATURE_NAMES order.
+    """
+    text = f"{subject}\n{body}"
+    return [
+        score_tech_stack(text),
+        score_job_title(text),
+        score_location(text),
+        score_seniority(text),
+        score_salary(text),
+        score_negatives(text),
+    ]
+
 
 @dataclass
 class ScoringResult:
@@ -25,16 +47,8 @@ class RuleBasedScorer:
     """Computes a score from 0.0 to 1.0 based on extracted signals."""
 
     def score(self, subject: str, body: str) -> ScoringResult:
-        text = f"{subject}\n{body}"
-
-        breakdown = {
-            "tech_match": score_tech_stack(text),
-            "job_title": score_job_title(text),
-            "location_match": score_location(text),
-            "seniority_match": score_seniority(text),
-            "salary_match": score_salary(text),
-            "negative_signals": score_negatives(text),
-        }
+        features = compute_features(subject, body)
+        breakdown = dict(zip(FEATURE_NAMES, features))
 
         weights = {
             "tech_match": settings.weight_tech_match,

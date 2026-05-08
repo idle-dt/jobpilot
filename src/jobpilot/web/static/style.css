@@ -1182,6 +1182,212 @@ button.sync-btn:focus-visible {
     white-space: pre-line;
 }
 
+/* ── ML Prediction Badges ──────────────────────────────────── */
+.badge-pred {
+    font-weight: 500;
+}
+
+.badge-ml {
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 0.12rem 0.5rem;
+    border: 1px solid transparent;
+}
+
+.badge-ml-pos {
+    background: rgba(47, 125, 59, 0.08);
+    color: var(--success);
+    border-color: rgba(47, 125, 59, 0.2);
+}
+
+.badge-ml-neg {
+    background: rgba(197, 48, 48, 0.06);
+    color: var(--danger);
+    border-color: rgba(197, 48, 48, 0.15);
+}
+
+.badge-ml-active {
+    border-width: 1.5px;
+    font-weight: 600;
+}
+
+.badge-ml-agree {
+    background: rgba(47, 125, 59, 0.08);
+    color: var(--success);
+}
+
+.badge-ml-disagree {
+    background: rgba(197, 48, 48, 0.06);
+    color: var(--danger);
+}
+
+[data-theme="dark"] .badge-ml-pos {
+    background: rgba(74, 222, 128, 0.1);
+    border-color: rgba(74, 222, 128, 0.25);
+}
+
+[data-theme="dark"] .badge-ml-neg {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: rgba(248, 113, 113, 0.2);
+}
+
+[data-theme="dark"] .badge-ml-agree {
+    background: rgba(74, 222, 128, 0.08);
+}
+
+[data-theme="dark"] .badge-ml-disagree {
+    background: rgba(248, 113, 113, 0.08);
+}
+
+/* ── Experiment Lab ────────────────────────────────────────── */
+.exp-section {
+    margin-bottom: 28px;
+}
+
+.exp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.exp-header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.exp-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.btn-retrain,
+.btn-activate,
+.btn-export {
+    padding: 4px 14px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    border: 1.5px solid var(--ink);
+    background: transparent;
+    color: var(--ink);
+    text-decoration: none;
+    display: inline-block;
+    line-height: 1.4;
+}
+
+.btn-retrain:hover,
+.btn-activate:hover,
+.btn-export:hover {
+    background: var(--ink);
+    color: var(--canvas);
+}
+
+.exp-table-wrap {
+    overflow-x: auto;
+    margin-bottom: 12px;
+}
+
+.exp-table {
+    width: 100%;
+    font-size: 0.8rem;
+    border-collapse: collapse;
+}
+
+.exp-table th,
+.exp-table td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--dust);
+}
+
+.exp-table th {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--slate);
+}
+
+.exp-row-active {
+    background: rgba(47, 125, 59, 0.04);
+}
+
+[data-theme="dark"] .exp-row-active {
+    background: rgba(74, 222, 128, 0.06);
+}
+
+.exp-table-compact td {
+    padding: 6px 8px;
+    font-size: 0.75rem;
+}
+
+.exp-item-title {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Feature importance bars */
+.exp-details {
+    margin-top: 8px;
+    margin-bottom: 12px;
+}
+
+.exp-details summary {
+    font-size: 0.75rem;
+    color: var(--slate);
+    cursor: pointer;
+    user-select: none;
+}
+
+.exp-features {
+    margin-top: 8px;
+    padding: 12px;
+    background: var(--canvas);
+    border-radius: 12px;
+}
+
+.exp-feat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.exp-feat-name {
+    font-size: 0.7rem;
+    color: var(--slate);
+    min-width: 110px;
+    text-align: right;
+}
+
+.exp-feat-bar-track {
+    flex: 1;
+    height: 8px;
+    background: var(--dust);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.exp-feat-bar {
+    height: 100%;
+    background: var(--light-orange);
+    border-radius: 999px;
+    transition: width 0.3s;
+}
+
+.exp-feat-val {
+    font-size: 0.65rem;
+    color: var(--slate);
+    min-width: 40px;
+}
+
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 768px) {
     .nav-pill {
@@ -1253,6 +1459,21 @@ button.sync-btn:focus-visible {
 
     .row-meta {
         flex-wrap: wrap;
+    }
+
+    .exp-header {
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+    }
+
+    .exp-feat-name {
+        min-width: 80px;
+        font-size: 0.6rem;
+    }
+
+    .exp-item-title {
+        max-width: 120px;
     }
 }
 
