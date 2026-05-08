@@ -155,6 +155,17 @@ class Repository:
             for r in rows
         ]
 
+    def delete_feedback(self, email_id: str) -> None:
+        """Delete the most recent feedback for an email."""
+        self.conn.execute(
+            """DELETE FROM user_feedback WHERE id = (
+                SELECT id FROM user_feedback WHERE email_id = ?
+                ORDER BY feedback_at DESC LIMIT 1
+            )""",
+            (email_id,),
+        )
+        self.conn.commit()
+
     def count_feedback(self) -> int:
         row = self.conn.execute("SELECT COUNT(*) as cnt FROM user_feedback").fetchone()
         return row["cnt"]
@@ -187,10 +198,11 @@ class Repository:
         ).fetchall()
         return [self._row_to_scraped_job(r) for r in rows]
 
-    def update_scraped_job_label(self, job_id: int, label: str) -> None:
+    def update_scraped_job_label(self, job_id: int, label: str | None) -> None:
+        labeled_at = "datetime('now')" if label else "NULL"
         self.conn.execute(
-            """UPDATE scraped_jobs SET user_label = ?, labeled_at = datetime('now')
-            WHERE id = ?""",
+            f"UPDATE scraped_jobs SET user_label = ?, labeled_at = {labeled_at}"
+            " WHERE id = ?",
             (label, job_id),
         )
         self.conn.commit()

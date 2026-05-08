@@ -146,7 +146,19 @@ def submit_feedback(email_id: str):
     repo.insert_feedback(feedback)
 
     _maybe_auto_retrain(repo)
-    return '<div class="feedback-done">Labeled!</div>'
+    return (
+        f'<div class="feedback-done">Labeled!'
+        f' <button class="btn-undo" hx-post="/api/feedback/{email_id}/undo"'
+        f' hx-target="closest .feedback-done" hx-swap="outerHTML">Undo</button></div>'
+    )
+
+
+@bp.route("/api/feedback/<email_id>/undo", methods=["POST"])
+def undo_feedback(email_id: str):
+    """Revert user feedback on an email."""
+    repo = _repo()
+    repo.delete_feedback(email_id)
+    return '<div class="feedback-undone">Undone — refresh to see the card again</div>'
 
 
 @bp.route("/api/feedback/scraped/<int:job_id>", methods=["POST"])
@@ -161,7 +173,19 @@ def submit_scraped_feedback(job_id: int):
     repo.update_scraped_job_label(job_id, label)
 
     _maybe_auto_retrain(repo)
-    return '<div class="feedback-done">Labeled!</div>'
+    return (
+        f'<div class="feedback-done">Labeled!'
+        f' <button class="btn-undo" hx-post="/api/feedback/scraped/{job_id}/undo"'
+        f' hx-target="closest .feedback-done" hx-swap="outerHTML">Undo</button></div>'
+    )
+
+
+@bp.route("/api/feedback/scraped/<int:job_id>/undo", methods=["POST"])
+def undo_scraped_feedback(job_id: int):
+    """Revert user feedback on a scraped job."""
+    repo = _repo()
+    repo.update_scraped_job_label(job_id, None)
+    return '<div class="feedback-undone">Undone — refresh to see the card again</div>'
 
 
 @bp.route("/api/scraped/<int:job_id>/expired", methods=["POST"])

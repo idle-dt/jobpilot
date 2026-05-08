@@ -488,6 +488,73 @@ table {
     color: var(--slate);
     font-style: italic;
     opacity: 0.6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.btn-undo {
+    font-style: normal;
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 2px 12px;
+    border: 1.5px solid var(--dust);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--slate);
+    cursor: pointer;
+    opacity: 1;
+    transition: background 0.15s, color 0.15s;
+}
+
+.btn-undo:hover {
+    background: var(--ink);
+    color: var(--canvas);
+    border-color: var(--ink);
+}
+
+.badge-label-undo {
+    cursor: pointer;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+}
+
+.badge-label-undo {
+    padding-right: 0.55rem;
+    transition: padding-right 0.2s;
+}
+
+.badge-label-undo:hover {
+    padding-right: 1.2rem;
+}
+
+.undo-x {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 0.85rem;
+    line-height: 1;
+    position: absolute;
+    right: 0.4rem;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 0.2s;
+    color: var(--slate);
+}
+
+.badge-label-undo:hover .undo-x {
+    opacity: 0.6;
+}
+
+.feedback-undone {
+    padding: 0.75rem 1rem;
+    text-align: center;
+    color: var(--slate);
+    font-size: 0.8rem;
+    opacity: 0.5;
 }
 
 /* ── Toolbar card (sync + stats strip) ────────────────────── */
@@ -1228,6 +1295,12 @@ button.sync-btn:focus-visible {
 .badge-ml-active {
     border-width: 1.5px;
     font-weight: 500;
+}
+
+td .badge-ml-active {
+    display: inline-flex;
+    justify-content: center;
+    min-width: 72px;
 }
 
 .badge-ml-agree {

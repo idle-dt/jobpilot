@@ -245,17 +245,16 @@
                 <tbody>
                 {% for m in data.all_models[model_type] %}
                 <tr class="{% if m.is_active %}exp-row-active{% endif %}">
-                    <td>
-                        <strong>{{ m.algorithm }}</strong>
-                        {% if m.is_active %}<span class="badge badge-ml-active">Active</span>{% endif %}
-                    </td>
+                    <td><strong>{{ m.algorithm }}</strong></td>
                     <td>{{ "%.1f"|format((m.accuracy or 0) * 100) }}%</td>
                     <td>{{ "%.1f"|format((m.precision or 0) * 100) }}%</td>
                     <td>{{ "%.1f"|format((m.recall or 0) * 100) }}%</td>
                     <td><strong>{{ "%.1f"|format((m.f1 or 0) * 100) }}%</strong></td>
                     <td><small>{{ m.trained_at[:16] if m.trained_at else '—' }}</small></td>
                     <td>
-                        {% if not m.is_active %}
+                        {% if m.is_active %}
+                        <span class="badge badge-ml-active">Active</span>
+                        {% else %}
                         <button class="btn-activate" hx-post="/api/ml/activate"
                                 hx-vals='{"model_type": "{{ model_type }}", "algorithm": "{{ m.algorithm }}"}'
                                 hx-swap="none">Activate</button>
@@ -310,7 +309,7 @@
                         {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
                         <th>{{ algo }}</th>
                         {% endfor %}
-                        <th>Your Label</th>
+                        <th style="min-width: 150px">Your Label</th>
                         <th>Agreement</th>
                     </tr>
                 </thead>
@@ -338,7 +337,12 @@
                         {% endif %}
                     </td>
                     {% endfor %}
-                    <td><span class="badge {% if item.user_label == 'worth_checking' %}badge-ml-pos{% else %}badge-ml-neg{% endif %}">{{ item.user_label | replace('_', ' ') }}</span></td>
+                    <td>
+                        {% set undo_url = '/api/feedback/scraped/' + item.item_id + '/undo' if item.item_type == 'scraped_job' else '/api/feedback/' + item.item_id + '/undo' %}
+                        <button class="badge badge-label-undo {% if item.user_label == 'worth_checking' %}badge-ml-pos{% else %}badge-ml-neg{% endif %}"
+                                hx-post="{{ undo_url }}" hx-swap="none"
+                                title="Click to undo label">{{ item.user_label | replace('_', ' ') }} <span class="undo-x">&times;</span></button>
+                    </td>
                     <td><strong>{{ ns.agree_count }}/5</strong></td>
                 </tr>
                 {% endfor %}
@@ -978,6 +982,13 @@ var DATA = {{ data | tojson }};
 
     /* Activate buttons: smooth refresh on success */
     document.querySelectorAll('.btn-activate').forEach(function(btn) {
+        btn.addEventListener('htmx:afterRequest', function(evt) {
+            if (evt.detail.successful) smoothRefresh();
+        });
+    });
+
+    /* Label undo buttons: smooth refresh on success */
+    document.querySelectorAll('.badge-label-undo').forEach(function(btn) {
         btn.addEventListener('htmx:afterRequest', function(evt) {
             if (evt.detail.successful) smoothRefresh();
         });
