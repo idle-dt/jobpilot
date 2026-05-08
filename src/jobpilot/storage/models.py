@@ -1,6 +1,6 @@
 """Data models for JobPilot storage layer."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 
@@ -57,6 +57,19 @@ class ModelVersion:
     f1_score: float | None = None
     feature_names: str | None = None
     is_active: bool = False
+    model_type: str = "scoring"
+    algorithm: str = "LR"
+
+
+@dataclass
+class MLPrediction:
+    id: int | None
+    model_version_id: int
+    item_type: str
+    item_id: str
+    prediction: str
+    probability: float | None = None
+    predicted_at: str | None = None
 
 
 @dataclass

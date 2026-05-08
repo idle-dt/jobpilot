@@ -8,6 +8,8 @@ from jobpilot.storage.models import (
     ApplicationStatusHistory,
     Email,
     ExtractedSignal,
+    MLPrediction,
+    ModelVersion,
     ScrapedJob,
     UserFeedback,
 )
@@ -153,6 +155,17 @@ class Repository:
             for r in rows
         ]
 
+    def delete_feedback(self, email_id: str) -> None:
+        """Delete the most recent feedback for an email."""
+        self.conn.execute(
+            """DELETE FROM user_feedback WHERE id = (
+                SELECT id FROM user_feedback WHERE email_id = ?
+                ORDER BY feedback_at DESC LIMIT 1
+            )""",
+            (email_id,),
+        )
+        self.conn.commit()
+
     def count_feedback(self) -> int:
         row = self.conn.execute("SELECT COUNT(*) as cnt FROM user_feedback").fetchone()
         return row["cnt"]
@@ -185,10 +198,11 @@ class Repository:
         ).fetchall()
         return [self._row_to_scraped_job(r) for r in rows]
 
-    def update_scraped_job_label(self, job_id: int, label: str) -> None:
+    def update_scraped_job_label(self, job_id: int, label: str | None) -> None:
+        labeled_at = "datetime('now')" if label else "NULL"
         self.conn.execute(
-            """UPDATE scraped_jobs SET user_label = ?, labeled_at = datetime('now')
-            WHERE id = ?""",
+            f"UPDATE scraped_jobs SET user_label = ?, labeled_at = {labeled_at}"
+            " WHERE id = ?",
             (label, job_id),
         )
         self.conn.commit()
@@ -323,7 +337,9 @@ class Repository:
             ).fetchall()
         return [self._row_to_application(r) for r in rows]
 
-    def update_application_status(self, app_id: int, new_status: str, notes: str | None = None) -> None:
+    def update_application_status(
+        self, app_id: int, new_status: str, notes: str | None = None,
+    ) -> None:
         current = self.get_application(app_id)
         if not current:
             return
@@ -394,6 +410,288 @@ class Repository:
             (key, value),
         )
         self.conn.commit()
+
+    # --- ML Models ---
+
+    def insert_model_version(self, mv: ModelVersion) -> int:
+        cursor = self.conn.execute(
+            """INSERT INTO model_versions
+            (version, training_samples, accuracy, precision_score, recall_score,
+             f1_score, model_blob, feature_names, is_active, model_type, algorithm)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (mv.version, mv.training_samples, mv.accuracy, mv.precision_score,
+             mv.recall_score, mv.f1_score, mv.model_blob, mv.feature_names,
+             mv.is_active, mv.model_type, mv.algorithm),
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_model_versions_by_type(self, model_type: str) -> list[ModelVersion]:
+        rows = self.conn.execute(
+            "SELECT * FROM model_versions WHERE model_type = ? ORDER BY trained_at DESC",
+            (model_type,),
+        ).fetchall()
+        return [self._row_to_model_version(r) for r in rows]
+
+    def get_active_model(self, model_type: str) -> ModelVersion | None:
+        row = self.conn.execute(
+            "SELECT * FROM model_versions WHERE model_type = ? AND is_active = TRUE LIMIT 1",
+            (model_type,),
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_model_version(row)
+
+    def get_model_version(self, model_id: int) -> ModelVersion | None:
+        row = self.conn.execute(
+            "SELECT * FROM model_versions WHERE id = ?", (model_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_model_version(row)
+
+    def activate_model(self, model_type: str, algorithm: str) -> None:
+        """Deactivate all models of this type, then activate the matching one."""
+        self.conn.execute(
+            "UPDATE model_versions SET is_active = FALSE WHERE model_type = ?",
+            (model_type,),
+        )
+        self.conn.execute(
+            """UPDATE model_versions SET is_active = TRUE
+            WHERE model_type = ? AND algorithm = ?
+            ORDER BY trained_at DESC LIMIT 1""",
+            (model_type, algorithm),
+        )
+        self.conn.commit()
+
+    def activate_model_by_id(self, model_id: int, model_type: str) -> None:
+        """Deactivate all models of this type, then activate the specified one."""
+        self.conn.execute(
+            "UPDATE model_versions SET is_active = FALSE WHERE model_type = ?",
+            (model_type,),
+        )
+        self.conn.execute(
+            "UPDATE model_versions SET is_active = TRUE WHERE id = ?",
+            (model_id,),
+        )
+        self.conn.commit()
+
+    def delete_model_versions_by_type(self, model_type: str) -> None:
+        """Delete all model versions and their predictions for a model type."""
+        ids = self.conn.execute(
+            "SELECT id FROM model_versions WHERE model_type = ?",
+            (model_type,),
+        ).fetchall()
+        for row in ids:
+            self.conn.execute(
+                "DELETE FROM ml_predictions WHERE model_version_id = ?",
+                (row["id"],),
+            )
+        self.conn.execute(
+            "DELETE FROM model_versions WHERE model_type = ?",
+            (model_type,),
+        )
+        self.conn.commit()
+
+    def get_next_version(self, model_type: str) -> int:
+        row = self.conn.execute(
+            "SELECT MAX(version) as mv FROM model_versions WHERE model_type = ?",
+            (model_type,),
+        ).fetchone()
+        return (row["mv"] or 0) + 1
+
+    def _row_to_model_version(self, row: sqlite3.Row) -> ModelVersion:
+        return ModelVersion(
+            id=row["id"], version=row["version"],
+            training_samples=row["training_samples"],
+            model_blob=row["model_blob"],
+            trained_at=datetime.fromisoformat(row["trained_at"]) if row["trained_at"] else None,
+            accuracy=row["accuracy"], precision_score=row["precision_score"],
+            recall_score=row["recall_score"], f1_score=row["f1_score"],
+            feature_names=row["feature_names"], is_active=bool(row["is_active"]),
+            model_type=row["model_type"], algorithm=row["algorithm"],
+        )
+
+    # --- ML Predictions ---
+
+    def insert_predictions(self, predictions: list[MLPrediction]) -> None:
+        """Bulk insert predictions."""
+        self.conn.executemany(
+            """INSERT INTO ml_predictions
+            (model_version_id, item_type, item_id, prediction, probability)
+            VALUES (?, ?, ?, ?, ?)""",
+            [(p.model_version_id, p.item_type, p.item_id, p.prediction, p.probability)
+             for p in predictions],
+        )
+        self.conn.commit()
+
+    def get_predictions_for_items(
+        self, item_type: str, item_ids: list[str]
+    ) -> dict[str, list[dict]]:
+        """Return predictions grouped by item_id, each with algorithm and probability."""
+        if not item_ids:
+            return {}
+        placeholders = ",".join("?" * len(item_ids))
+        rows = self.conn.execute(
+            f"""SELECT p.item_id, p.prediction, p.probability,
+                       mv.algorithm, mv.model_type, mv.is_active
+                FROM ml_predictions p
+                JOIN model_versions mv ON p.model_version_id = mv.id
+                WHERE p.item_type = ? AND p.item_id IN ({placeholders})
+                ORDER BY p.predicted_at DESC""",
+            [item_type] + item_ids,
+        ).fetchall()
+        result: dict[str, list[dict]] = {}
+        for r in rows:
+            result.setdefault(r["item_id"], []).append({
+                "algorithm": r["algorithm"],
+                "model_type": r["model_type"],
+                "prediction": r["prediction"],
+                "probability": r["probability"],
+                "is_active": bool(r["is_active"]),
+            })
+        return result
+
+    def delete_predictions_for_model(self, model_version_id: int) -> None:
+        self.conn.execute(
+            "DELETE FROM ml_predictions WHERE model_version_id = ?",
+            (model_version_id,),
+        )
+        self.conn.commit()
+
+    # --- Training Data ---
+
+    def get_noise_training_data(self) -> list[dict]:
+        """Get training data for the noise model.
+
+        Positive (1) = any feedback that is NOT 'not_a_job' + all labeled scraped jobs.
+        Negative (0) = feedback with label 'not_a_job'.
+        """
+        data = []
+        rows = self.conn.execute(
+            """SELECT e.id as email_id, e.subject, e.body_text,
+                      CASE WHEN uf.label = 'not_a_job' THEN 0 ELSE 1 END as label
+               FROM user_feedback uf
+               JOIN emails e ON uf.email_id = e.id"""
+        ).fetchall()
+        for r in rows:
+            data.append(dict(r))
+        # Scraped jobs are always job-related (positive class)
+        rows = self.conn.execute(
+            """SELECT id as email_id, title as subject, description as body_text,
+                      1 as label
+               FROM scraped_jobs WHERE user_label IS NOT NULL"""
+        ).fetchall()
+        for r in rows:
+            data.append(dict(r))
+        return data
+
+    def get_scoring_training_data(self) -> list[dict]:
+        """Get training data for the scoring model.
+
+        From user_feedback: worth_checking=1, skip=0.
+        From scraped_jobs: user_label worth_checking=1, skip=0.
+        """
+        data = []
+        rows = self.conn.execute(
+            """SELECT e.id as item_id, e.subject, e.body_text as body,
+                      CASE WHEN uf.label = 'worth_checking' THEN 1 ELSE 0 END as label
+               FROM user_feedback uf
+               JOIN emails e ON uf.email_id = e.id
+               WHERE uf.label IN ('worth_checking', 'skip')"""
+        ).fetchall()
+        for r in rows:
+            data.append({"item_type": "email", "item_id": r["item_id"],
+                         "subject": r["subject"], "body": r["body"] or "", "label": r["label"]})
+        rows = self.conn.execute(
+            """SELECT id as item_id, title, company, location, description,
+                      CASE WHEN user_label = 'worth_checking' THEN 1 ELSE 0 END as label
+               FROM scraped_jobs
+               WHERE user_label IN ('worth_checking', 'skip')"""
+        ).fetchall()
+        for r in rows:
+            body = (
+                f"{r['title']} {r['company'] or ''}"
+                f" {r['location'] or ''} {r['description'] or ''}"
+            )
+            data.append({
+                "item_type": "scraped_job", "item_id": str(r["item_id"]),
+                "subject": r["title"], "body": body, "label": r["label"],
+            })
+        return data
+
+    def get_last_training_time(self, model_type: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT MAX(trained_at) as t FROM model_versions WHERE model_type = ?",
+            (model_type,),
+        ).fetchone()
+        return row["t"] if row and row["t"] else None
+
+    def count_labels_since(self, since_timestamp: str | None) -> int:
+        """Count feedback + scraped labels given since a timestamp."""
+        if not since_timestamp:
+            fb = self.conn.execute(
+                "SELECT COUNT(*) as cnt FROM user_feedback"
+            ).fetchone()["cnt"]
+            sj = self.conn.execute(
+                "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE user_label IS NOT NULL"
+            ).fetchone()["cnt"]
+            return fb + sj
+        fb = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM user_feedback WHERE feedback_at > ?",
+            (since_timestamp,),
+        ).fetchone()["cnt"]
+        sj = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE labeled_at > ?",
+            (since_timestamp,),
+        ).fetchone()["cnt"]
+        return fb + sj
+
+    def get_recent_predictions_comparison(self, limit: int = 20) -> list[dict]:
+        """Get last N labeled items with all model predictions for comparison."""
+        items = []
+        fb_rows = self.conn.execute(
+            """SELECT uf.email_id as item_id, 'email' as item_type,
+                      e.subject as title, uf.label as user_label,
+                      uf.feedback_at as labeled_at, e.raw_score,
+                      e.origin_url as url
+               FROM user_feedback uf
+               JOIN emails e ON uf.email_id = e.id
+               WHERE uf.label IN ('worth_checking', 'skip')
+               ORDER BY uf.feedback_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        for r in fb_rows:
+            items.append(dict(r))
+        sj_rows = self.conn.execute(
+            """SELECT CAST(id AS TEXT) as item_id, 'scraped_job' as item_type,
+                      title, user_label, labeled_at, score as raw_score, url
+               FROM scraped_jobs
+               WHERE user_label IN ('worth_checking', 'skip')
+               ORDER BY labeled_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        for r in sj_rows:
+            items.append(dict(r))
+        items.sort(key=lambda x: x.get("labeled_at") or "", reverse=True)
+        items = items[:limit]
+
+        for item in items:
+            preds = self.conn.execute(
+                """SELECT mv.algorithm, mv.model_type, p.prediction, p.probability
+                   FROM ml_predictions p
+                   JOIN model_versions mv ON p.model_version_id = mv.id
+                   WHERE p.item_type = ? AND p.item_id = ?""",
+                (item["item_type"], item["item_id"]),
+            ).fetchall()
+            item["predictions"] = {
+                r["algorithm"]: {
+                    "prediction": r["prediction"],
+                    "probability": r["probability"],
+                }
+                for r in preds
+            }
+        return items
 
     # --- Stats ---
 
@@ -477,7 +775,14 @@ class Repository:
             )
 
         # ML readiness
-        noise_label_count = self.conn.execute(
+        noise_email_count = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM user_feedback"
+        ).fetchone()["cnt"]
+        noise_scraped_count = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE user_label IS NOT NULL"
+        ).fetchone()["cnt"]
+        noise_label_count = noise_email_count + noise_scraped_count
+        noise_negative_count = self.conn.execute(
             "SELECT COUNT(*) as cnt FROM user_feedback WHERE label = 'not_a_job'"
         ).fetchone()["cnt"]
         scoring_feedback = self.conn.execute(
@@ -490,21 +795,25 @@ class Repository:
         ).fetchone()["cnt"]
         scoring_label_count = scoring_feedback + scoring_scraped
 
-        # Active model
-        model_row = self.conn.execute(
-            "SELECT * FROM model_versions WHERE is_active = TRUE LIMIT 1"
-        ).fetchone()
-        active_model = None
-        if model_row:
-            active_model = {
-                "version": model_row["version"],
-                "trained_at": model_row["trained_at"],
-                "training_samples": model_row["training_samples"],
-                "accuracy": model_row["accuracy"],
-                "precision": model_row["precision_score"],
-                "recall": model_row["recall_score"],
-                "f1": model_row["f1_score"],
-            }
+        # Active models (one per type)
+        active_models = {}
+        for mt in ("noise", "scoring"):
+            row = self.conn.execute(
+                "SELECT * FROM model_versions"
+                " WHERE is_active = TRUE AND model_type = ? LIMIT 1",
+                (mt,),
+            ).fetchone()
+            if row:
+                active_models[mt] = {
+                    "version": row["version"],
+                    "algorithm": row["algorithm"],
+                    "trained_at": row["trained_at"],
+                    "training_samples": row["training_samples"],
+                    "accuracy": row["accuracy"],
+                    "precision": row["precision_score"],
+                    "recall": row["recall_score"],
+                    "f1": row["f1_score"],
+                }
 
         # Score & confidence histograms
         score_rows = self.conn.execute(
@@ -558,6 +867,32 @@ class Repository:
             " GROUP BY location ORDER BY cnt DESC LIMIT 10"
         ).fetchall()
 
+        # All model versions for experiment lab
+        all_models: dict[str, list[dict]] = {}
+        for mt in ("noise", "scoring"):
+            rows = self.conn.execute(
+                "SELECT * FROM model_versions WHERE model_type = ?"
+                " ORDER BY trained_at DESC",
+                (mt,),
+            ).fetchall()
+            all_models[mt] = [
+                {
+                    "id": r["id"], "version": r["version"],
+                    "algorithm": r["algorithm"],
+                    "accuracy": r["accuracy"],
+                    "precision": r["precision_score"],
+                    "recall": r["recall_score"],
+                    "f1": r["f1_score"],
+                    "trained_at": r["trained_at"],
+                    "training_samples": r["training_samples"],
+                    "is_active": bool(r["is_active"]),
+                    "feature_names": r["feature_names"],
+                }
+                for r in rows
+            ]
+
+        recent_predictions = self.get_recent_predictions_comparison(limit=20)
+
         return {
             "total_emails": total_emails,
             "total_jobs": total_jobs,
@@ -571,8 +906,9 @@ class Repository:
             },
             "user_labels": user_labels,
             "noise_label_count": noise_label_count,
+            "noise_negative_count": noise_negative_count,
             "scoring_label_count": scoring_label_count,
-            "active_model": active_model,
+            "active_models": active_models,
             "score_bins": score_bins,
             "score_threshold": score_threshold,
             "confidence_bins": confidence_bins,
@@ -584,4 +920,6 @@ class Repository:
                 {"location": r["location"], "count": r["cnt"]}
                 for r in location_rows
             ],
+            "all_models": all_models,
+            "recent_predictions": recent_predictions,
         }

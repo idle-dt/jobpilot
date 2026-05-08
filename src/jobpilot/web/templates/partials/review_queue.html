@@ -10,9 +10,16 @@
                 {% if email.platform %}
                 <span class="badge platform-{{ email.platform }}">{{ email.platform }}</span>
                 {% endif %}
+                {% if item.predictions %}
+                <span class="badge badge-pred">Rules: {{ "%.0f"|format((email.raw_score or 0) * 100) }}%</span>
+                {% for pred in item.predictions %}
+                <span class="badge badge-ml{% if pred.prediction == 'job' or pred.prediction == 'worth_checking' %} badge-ml-pos{% else %} badge-ml-neg{% endif %}{% if pred.is_active %} badge-ml-active{% endif %}">{{ pred.algorithm }}: {{ "%.0f"|format((pred.probability or 0) * 100) }}%</span>
+                {% endfor %}
+                {% else %}
                 <span class="badge">
                     {{ "%.0f"|format((email.raw_score or 0) * 100) }}%
                 </span>
+                {% endif %}
             </div>
         </div>
         <div class="card-aside">
@@ -28,7 +35,7 @@
         <span class="actions-spacer"></span>
         <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "worth_checking"}' class="btn-approve">Worth Checking</button>
         <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "skip"}' class="btn-skip">Skip</button>
-        <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "not_a_job"}' class="btn-not-job">Not a Job</button>
+        <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "not_a_job"}' class="btn-not-job{% if item.noise_flag %} btn-not-job-suggested{% endif %}">Not a Job</button>
     </div>
 </article>
 {% elif item.type == 'scraped' %}
@@ -40,13 +47,18 @@
             <div class="row-company">{{ job.company or 'Unknown' }} · {{ job.location or 'Unknown location' }}{% if job.salary %} · <strong class="row-salary">{{ job.salary }}</strong>{% endif %}</div>
             <div class="row-meta">
                 <span class="badge badge-scraped">{{ job.source }}</span>
-                {% if job.score is not none %}
+                {% if job.description %}
+                <span class="badge badge-fetched">Details fetched</span>
+                {% endif %}
+                {% if item.predictions %}
+                <span class="badge badge-pred">Rules: {{ "%.0f"|format((job.score or 0) * 100) }}%</span>
+                {% for pred in item.predictions %}
+                <span class="badge badge-ml{% if pred.prediction == 'worth_checking' %} badge-ml-pos{% else %} badge-ml-neg{% endif %}{% if pred.is_active %} badge-ml-active{% endif %}">{{ pred.algorithm }}: {{ "%.0f"|format((pred.probability or 0) * 100) }}%</span>
+                {% endfor %}
+                {% elif job.score is not none %}
                 <span class="badge">
                     {{ "%.0f"|format((job.score or 0) * 100) }}%
                 </span>
-                {% endif %}
-                {% if job.description %}
-                <span class="badge badge-fetched">Details fetched</span>
                 {% endif %}
             </div>
         </div>
@@ -73,7 +85,7 @@
         <span class="actions-spacer"></span>
         <button hx-post="/api/feedback/scraped/{{ job.id }}" hx-vals='{"label": "worth_checking"}' class="btn-approve">Worth Checking</button>
         <button hx-post="/api/feedback/scraped/{{ job.id }}" hx-vals='{"label": "skip"}' class="btn-skip">Skip</button>
-        <button hx-post="/api/feedback/scraped/{{ job.id }}" hx-vals='{"label": "not_a_job"}' class="btn-not-job">Not a Job</button>
+        <button hx-post="/api/feedback/scraped/{{ job.id }}" hx-vals='{"label": "not_a_job"}' class="btn-not-job{% if item.noise_flag %} btn-not-job-suggested{% endif %}">Not a Job</button>
     </div>
 </article>
 {% endif %}

@@ -1,5 +1,6 @@
 """Flask application factory."""
 
+import logging
 import os
 
 from flask import Flask, g, redirect, request, url_for
@@ -8,6 +9,8 @@ from jobpilot.config import settings
 from jobpilot.gmail.auth import GmailAuth
 from jobpilot.storage.database import init_db
 from jobpilot.storage.repository import Repository
+
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> Flask:
@@ -73,12 +76,29 @@ def _classify_unprocessed(repo: Repository) -> None:
     for row in rows:
         text = row["body_text"] or ""
         result = scorer.score(row["subject"], text)
+
+        ml_score = None
+        try:
+            from jobpilot.classifier.ml_trainer import MLTrainer
+            active_noise = repo.get_active_model("noise")
+            if active_noise:
+                trainer = MLTrainer(repo)
+                preds = trainer.predict_single(
+                    "noise", "email", row["id"], row["subject"], text,
+                )
+                for pred_data in preds.values():
+                    if pred_data.get("is_active"):
+                        ml_score = pred_data.get("probability")
+                        break
+        except Exception:
+            logger.exception("ML noise prediction failed for %s", row["id"])
+
         repo.update_email_scores(
             row["id"],
             raw_score=result.score,
-            ml_score=None,
+            ml_score=ml_score,
             classification=result.classification,
-            confidence=None,
+            confidence=result.confidence,
         )
 
 
@@ -135,10 +155,33 @@ def _score_pending_jobs(repo: Repository) -> None:
 
     scorer = RuleBasedScorer()
     rows = repo.conn.execute(
-        "SELECT id, title, company, location FROM scraped_jobs WHERE classification = 'pending'"
+        "SELECT id, title, company, location, description"
+        " FROM scraped_jobs WHERE classification = 'pending'"
     ).fetchall()
 
     for row in rows:
-        text = f"{row['title']} {row['company'] or ''} {row['location'] or ''}"
-        result = scorer.score(row["title"], text)
-        repo.update_scraped_job_scores(row["id"], result.score, None, result.classification)
+        body = (
+            f"{row['title']} {row['company'] or ''}"
+            f" {row['location'] or ''} {row['description'] or ''}"
+        )
+        result = scorer.score(row["title"], body)
+
+        ml_score = None
+        try:
+            from jobpilot.classifier.ml_trainer import MLTrainer
+            active_scoring = repo.get_active_model("scoring")
+            if active_scoring:
+                trainer = MLTrainer(repo)
+                preds = trainer.predict_single(
+                    "scoring", "scraped_job", str(row["id"]), row["title"], body,
+                )
+                for pred_data in preds.values():
+                    if pred_data.get("is_active"):
+                        ml_score = pred_data.get("probability")
+                        break
+        except Exception:
+            logger.exception("ML scoring prediction failed for job %d", row["id"])
+
+        repo.update_scraped_job_scores(
+            row["id"], result.score, ml_score, result.classification,
+        )
