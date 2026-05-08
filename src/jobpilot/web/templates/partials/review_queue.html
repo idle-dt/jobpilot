@@ -35,7 +35,7 @@
         <span class="actions-spacer"></span>
         <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "worth_checking"}' class="btn-approve">Worth Checking</button>
         <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "skip"}' class="btn-skip">Skip</button>
-        <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "not_a_job"}' class="btn-not-job">Not a Job</button>
+        <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "not_a_job"}' class="btn-not-job{% if item.noise_flag %} btn-not-job-suggested{% endif %}">Not a Job</button>
     </div>
 </article>
 {% elif item.type == 'scraped' %}
@@ -85,7 +85,7 @@
         <span class="actions-spacer"></span>
         <button hx-post="/api/feedback/scraped/{{ job.id }}" hx-vals='{"label": "worth_checking"}' class="btn-approve">Worth Checking</button>
         <button hx-post="/api/feedback/scraped/{{ job.id }}" hx-vals='{"label": "skip"}' class="btn-skip">Skip</button>
-        <button hx-post="/api/feedback/scraped/{{ job.id }}" hx-vals='{"label": "not_a_job"}' class="btn-not-job">Not a Job</button>
+        <button hx-post="/api/feedback/scraped/{{ job.id }}" hx-vals='{"label": "not_a_job"}' class="btn-not-job{% if item.noise_flag %} btn-not-job-suggested{% endif %}">Not a Job</button>
     </div>
 </article>
 {% endif %}

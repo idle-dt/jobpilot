@@ -96,6 +96,14 @@ def inbox():
             item["predictions"] = email_preds.get(item["obj"].id, [])
         else:
             item["predictions"] = job_preds.get(str(item["obj"].id), [])
+        # Flag items the active noise model confidently marks as not-a-job
+        item["noise_flag"] = any(
+            p.get("model_type") == "noise"
+            and p.get("is_active")
+            and p.get("prediction") == "not_a_job"
+            and (p.get("probability") or 1) < 0.3
+            for p in item["predictions"]
+        )
 
     return render_template("inbox.html", items=items, sort=sort,
                            email_count=len(emails), scraped_count=len(scraped))

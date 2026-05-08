@@ -310,7 +310,7 @@ table {
     padding: 0.15rem 0.55rem;
     border-radius: var(--radius-pill);
     font-size: 0.7rem;
-    font-weight: 600;
+    font-weight: 450;
     white-space: nowrap;
     background: rgba(0, 0, 0, 0.06);
     color: var(--slate);
@@ -468,6 +468,17 @@ table {
 .btn-not-job:active {
     background: #2a2a29;
     color: var(--canvas);
+}
+
+.btn-not-job-suggested {
+    color: var(--danger);
+    border-color: rgba(197, 48, 48, 0.35);
+}
+
+.btn-not-job-suggested:hover {
+    background: var(--ink);
+    color: var(--canvas);
+    border-color: var(--ink);
 }
 
 /* Feedback confirmation */
@@ -1197,7 +1208,7 @@ button.sync-btn:focus-visible {
 
 .badge-ml {
     font-size: 0.65rem;
-    font-weight: 500;
+    font-weight: 450;
     padding: 0.12rem 0.5rem;
     border: 1px solid transparent;
 }
@@ -1216,7 +1227,7 @@ button.sync-btn:focus-visible {
 
 .badge-ml-active {
     border-width: 1.5px;
-    font-weight: 600;
+    font-weight: 500;
 }
 
 .badge-ml-agree {
