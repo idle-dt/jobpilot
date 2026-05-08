@@ -311,89 +311,6 @@
 
     var charts = {};
 
-    /* ── Custom donut with rounded segment edges ────── */
-    /* Hide native Chart.js arcs, draw each segment as a thick arc
-       with round lineCap so edges are convex semicircles */
-    var roundedArcPlugin = {
-        id: 'roundedArcs',
-        /* Fix tooltip: check if mouse is over a cap, override active element */
-        beforeEvent: function(chart, args) {
-            var event = args.event;
-            if (event.type !== 'mousemove' && event.type !== 'click') return;
-            var meta = chart.getDatasetMeta(0);
-            if (!meta || !meta.data) return;
-            var mx = event.x, my = event.y;
-            /* Check caps in draw order (reverse, then forward) to match visual layering */
-            var order = [];
-            var n = meta.data.length;
-            for (var i = n - 2; i >= 0; i--) order.push(i);
-            if (n > 1) order.unshift(n - 1);
-            /* Check in reverse of draw order so topmost cap wins */
-            for (var j = order.length - 1; j >= 0; j--) {
-                var arc = meta.data[order[j]];
-                var midR = (arc.innerRadius + arc.outerRadius) / 2;
-                var halfW = (arc.outerRadius - arc.innerRadius) / 2;
-                var arcLen = (arc.endAngle - arc.startAngle) * midR;
-                var capR = Math.min(halfW, arcLen / 2);
-                if (capR < 2) continue;
-                var ea = arc.endAngle;
-                var cx = arc.x + Math.cos(ea) * midR;
-                var cy = arc.y + Math.sin(ea) * midR;
-                var dx = mx - cx, dy = my - cy;
-                if (dx * dx + dy * dy <= capR * capR) {
-                    chart.setActiveElements([{ datasetIndex: 0, index: order[j] }]);
-                    chart.tooltip.setActiveElements([{ datasetIndex: 0, index: order[j] }]);
-                    chart.tooltip.update(true);
-                    chart.draw();
-                    args.changed = true;
-                    return;
-                }
-            }
-        },
-        afterDatasetDraw: function(chart) {
-            var meta = chart.getDatasetMeta(0);
-            if (!meta || !meta.data || !meta.data.length) return;
-            var area = chart.chartArea;
-            var ctx = chart.ctx;
-            ctx.save();
-            ctx.clearRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
-            /* Pass 1: flat arcs — continuous ring */
-            meta.data.forEach(function(arc) {
-                ctx.beginPath();
-                ctx.arc(arc.x, arc.y, arc.outerRadius, arc.startAngle, arc.endAngle);
-                ctx.arc(arc.x, arc.y, arc.innerRadius, arc.endAngle, arc.startAngle, true);
-                ctx.closePath();
-                ctx.fillStyle = arc.options.backgroundColor;
-                ctx.fill();
-            });
-            /* Pass 2: end caps. Cap radius shrinks for tiny segments. */
-            function drawCap(arc) {
-                var midR = (arc.innerRadius + arc.outerRadius) / 2;
-                var halfW = (arc.outerRadius - arc.innerRadius) / 2;
-                /* Shrink cap if segment arc is smaller than cap diameter */
-                var arcLen = (arc.endAngle - arc.startAngle) * midR;
-                var capR = Math.min(halfW, arcLen / 2);
-                if (capR < 2) return; /* skip invisible caps */
-                var ea = arc.endAngle;
-                var cx = arc.x + Math.cos(ea) * midR;
-                var cy = arc.y + Math.sin(ea) * midR;
-                ctx.beginPath();
-                ctx.arc(cx, cy, capR, ea, ea + Math.PI);
-                ctx.closePath();
-                ctx.fillStyle = arc.options.backgroundColor;
-                ctx.fill();
-            }
-            var n = meta.data.length;
-            /* Last segment's cap first (sits under first segment) */
-            if (n > 1) drawCap(meta.data[n - 1]);
-            /* Then remaining caps in reverse */
-            for (var i = n - 2; i >= 0; i--) {
-                drawCap(meta.data[i]);
-            }
-            ctx.restore();
-        }
-    };
-
     function donut(canvas, labels, values, colors, opts) {
         return new Chart(canvas, {
             type: 'doughnut',
@@ -402,17 +319,18 @@
                 datasets: [{
                     data: values,
                     backgroundColor: colors,
-                    borderWidth: 0,
-                    hoverOffset: 0,
-                    spacing: 0,
-                    borderRadius: 0,
+                    borderWidth: 2,
+                    borderColor: css('--white'),
+                    hoverOffset: 4,
+                    spacing: 1,
+                    borderRadius: 6,
                 }]
             },
             options: Object.assign({
                 responsive: true,
                 maintainAspectRatio: true,
                 aspectRatio: 1,
-                cutout: '55%',
+                cutout: '58%',
                 plugins: {
                     legend: {
                         position: 'bottom',
@@ -429,11 +347,7 @@
                     }
                 },
                 layout: { padding: 8 },
-                elements: {
-                    arc: { borderWidth: 0 }
-                },
             }, opts || {}),
-            plugins: [roundedArcPlugin],
         });
     }
 
