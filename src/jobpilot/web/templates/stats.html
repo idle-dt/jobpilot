@@ -72,10 +72,12 @@
             <div class="dash-progress">
                 <div class="dash-progress-fill{% if noise_pct >= 100 %} dash-progress-ready{% endif %}" style="width: {{ noise_pct | round(1) }}%"></div>
             </div>
-            {% if noise_pct >= 100 %}
+            {% if noise_pct >= 100 and data.noise_negative_count >= 5 %}
             <div class="dash-progress-status dash-ready">Ready to train!</div>
+            {% elif noise_pct >= 100 %}
+            <div class="dash-progress-status">Need {{ 5 - data.noise_negative_count }} more "not a job" labels</div>
             {% else %}
-            <div class="dash-progress-status">{{ noise_pct | round(0) | int }}% ready</div>
+            <div class="dash-progress-status">{{ noise_pct | round(0) | int }}% ready · {{ data.noise_negative_count }} / 5 "not a job"</div>
             {% endif %}
         </div>
         <div class="dash-progress-wrap">
@@ -94,147 +96,34 @@
             {% endif %}
         </div>
     </div>
-    {% if data.active_model %}
-    <div class="dash-metric-section">
-        <div class="dash-donut-title">Active Model (v{{ data.active_model.version }})</div>
-        <table class="dash-metric-table">
-            <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-            <tbody>
-                <tr><td>Accuracy</td><td>{{ (data.active_model.accuracy * 100) | round(1) }}%</td></tr>
-                <tr><td>Precision</td><td>{{ (data.active_model.precision * 100) | round(1) }}%</td></tr>
-                <tr><td>Recall</td><td>{{ (data.active_model.recall * 100) | round(1) }}%</td></tr>
-                <tr><td>F1 Score</td><td>{{ (data.active_model.f1 * 100) | round(1) }}%</td></tr>
-                <tr><td>Training Samples</td><td>{{ data.active_model.training_samples }}</td></tr>
-                <tr><td>Trained At</td><td>{{ data.active_model.trained_at }}</td></tr>
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
-</section>
-
-<!-- ML Experiment Lab -->
-{% if data.all_models and (data.all_models.noise or data.all_models.scoring) %}
-<section class="dash-card" id="experiment-lab">
-    <h3>ML Experiment Lab</h3>
-
-    {% for model_type in ['scoring', 'noise'] %}
-    {% if data.all_models[model_type] %}
-    <div class="exp-section">
-        <div class="exp-header">
-            <span class="exp-title">{{ model_type | capitalize }} Model</span>
-            <div class="exp-header-actions">
-                <button class="btn-retrain" hx-post="/api/ml/train"
-                        hx-vals='{"model_type": "{{ model_type }}"}'
-                        hx-swap="none"
-                        hx-on::after-request="location.reload()">Retrain</button>
-                <a href="/api/ml/export?model_type={{ model_type }}" class="btn-export" download>Export</a>
-            </div>
-        </div>
-
-        <!-- Algorithm comparison table -->
-        <div class="exp-table-wrap">
-            <table class="exp-table">
-                <thead>
-                    <tr>
-                        <th>Algorithm</th><th>Accuracy</th><th>Precision</th>
-                        <th>Recall</th><th>F1</th><th>Samples</th>
-                        <th>Trained</th><th></th>
-                    </tr>
-                </thead>
+    {% if data.active_models %}
+    <div class="dash-metric-pair">
+        {% set model_labels = {"noise": "Job vs Noise", "scoring": "Scoring"} %}
+        {% for mt in ["noise", "scoring"] %}
+        <div class="dash-metric-section">
+            {% if data.active_models.get(mt) %}
+            {% set m = data.active_models[mt] %}
+            <div class="dash-donut-title">{{ model_labels[mt] }} — {{ m.algorithm }} (v{{ m.version }})</div>
+            <table class="dash-metric-table">
+                <thead><tr><th>Metric</th><th>Value</th></tr></thead>
                 <tbody>
-                {% for m in data.all_models[model_type] %}
-                <tr class="{% if m.is_active %}exp-row-active{% endif %}">
-                    <td>
-                        <strong>{{ m.algorithm }}</strong>
-                        {% if m.is_active %}<span class="badge badge-ml-active">Active</span>{% endif %}
-                    </td>
-                    <td>{{ "%.1f"|format((m.accuracy or 0) * 100) }}%</td>
-                    <td>{{ "%.1f"|format((m.precision or 0) * 100) }}%</td>
-                    <td>{{ "%.1f"|format((m.recall or 0) * 100) }}%</td>
-                    <td><strong>{{ "%.1f"|format((m.f1 or 0) * 100) }}%</strong></td>
-                    <td>{{ m.training_samples }}</td>
-                    <td><small>{{ m.trained_at[:16] if m.trained_at else '—' }}</small></td>
-                    <td>
-                        {% if not m.is_active %}
-                        <button class="btn-activate" hx-post="/api/ml/activate"
-                                hx-vals='{"model_type": "{{ model_type }}", "algorithm": "{{ m.algorithm }}"}'
-                                hx-swap="none"
-                                hx-on::after-request="location.reload()">Activate</button>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
+                    <tr><td>Accuracy</td><td>{{ (m.accuracy * 100) | round(1) }}%</td></tr>
+                    <tr><td>Precision</td><td>{{ (m.precision * 100) | round(1) }}%</td></tr>
+                    <tr><td>Recall</td><td>{{ (m.recall * 100) | round(1) }}%</td></tr>
+                    <tr><td>F1 Score</td><td>{{ (m.f1 * 100) | round(1) }}%</td></tr>
+                    <tr><td>Samples</td><td>{{ m.training_samples }}</td></tr>
+                    <tr><td>Trained</td><td>{{ m.trained_at[:16] if m.trained_at else '—' }}</td></tr>
                 </tbody>
             </table>
+            {% else %}
+            <div class="dash-donut-title">{{ model_labels[mt] }}</div>
+            <p class="dash-empty">Not trained yet</p>
+            {% endif %}
         </div>
-
-        <!-- Feature importances -->
-        {% for m in data.all_models[model_type] %}
-        {% if m.feature_names %}
-        <details class="exp-details">
-            <summary>{{ m.algorithm }} feature importance{% if m.is_active %} (active){% endif %}</summary>
-            <div class="exp-features" id="feat-{{ model_type }}-{{ m.algorithm }}">
-            </div>
-        </details>
-        {% endif %}
         {% endfor %}
     </div>
     {% endif %}
-    {% endfor %}
-
-    <!-- Predictions comparison table -->
-    {% if data.recent_predictions %}
-    <div class="exp-section">
-        <div class="exp-header">
-            <span class="exp-title">Recent Predictions Comparison</span>
-        </div>
-        <div class="exp-table-wrap">
-            <table class="exp-table exp-table-compact">
-                <thead>
-                    <tr>
-                        <th>Item</th>
-                        <th>Rules</th>
-                        {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
-                        <th>{{ algo }}</th>
-                        {% endfor %}
-                        <th>Your Label</th>
-                        <th>Agreement</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for item in data.recent_predictions %}
-                <tr>
-                    <td class="exp-item-title">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</td>
-                    <td>
-                        {% set rule_pct = ((item.raw_score or 0) * 100) | round(0) | int %}
-                        {% set rule_agrees = (item.user_label == 'worth_checking' and (item.raw_score or 0) >= 0.6) or (item.user_label == 'skip' and (item.raw_score or 0) < 0.6) %}
-                        <span class="badge {% if rule_agrees %}badge-ml-agree{% else %}badge-ml-disagree{% endif %}">{{ rule_pct }}%</span>
-                    </td>
-                    {% set ns = namespace(agree_count=0) %}
-                    {% if rule_agrees %}{% set ns.agree_count = 1 %}{% endif %}
-                    {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
-                    <td>
-                        {% if item.predictions.get(algo) %}
-                        {% set pred = item.predictions[algo] %}
-                        {% set ml_agrees = pred.prediction == item.user_label %}
-                        {% if ml_agrees %}{% set ns.agree_count = ns.agree_count + 1 %}{% endif %}
-                        <span class="badge {% if ml_agrees %}badge-ml-agree{% else %}badge-ml-disagree{% endif %}">{{ "%.0f"|format((pred.probability or 0) * 100) }}%</span>
-                        {% else %}
-                        —
-                        {% endif %}
-                    </td>
-                    {% endfor %}
-                    <td><span class="badge {% if item.user_label == 'worth_checking' %}badge-ml-pos{% else %}badge-ml-neg{% endif %}">{{ item.user_label | replace('_', ' ') }}</span></td>
-                    <td><strong>{{ ns.agree_count }}/5</strong></td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
 </section>
-{% endif %}
 
 <!-- Score + Confidence Histograms -->
 <div class="dash-row">
@@ -317,13 +206,160 @@
         {% endif %}
     </section>
 </div>
+
+<!-- ML Experiment Lab -->
+{% if data.all_models and (data.all_models.noise or data.all_models.scoring) %}
+<section class="dash-card" id="experiment-lab">
+    <h3>ML Experiment Lab</h3>
+
+    {% for model_type in ['scoring', 'noise'] %}
+    {% if data.all_models[model_type] %}
+    <div class="exp-section">
+        <div class="exp-header">
+            <span class="exp-title">{{ model_type | capitalize }} Model</span>
+            <div class="exp-header-actions">
+                <div class="retrain-wrap">
+                    <button class="btn-retrain" data-model-type="{{ model_type }}"
+                            hx-post="/api/ml/train"
+                            hx-vals='{"model_type": "{{ model_type }}"}'
+                            hx-swap="none">Retrain</button>
+                    <div class="retrain-progress">
+                        <div class="retrain-progress-fill"></div>
+                    </div>
+                    <span class="retrain-status"></span>
+                </div>
+                <a href="/api/ml/export?model_type={{ model_type }}" class="btn-export" download>Export</a>
+            </div>
+        </div>
+
+        <!-- Algorithm comparison table -->
+        <div class="exp-table-wrap">
+            <table class="exp-table">
+                <thead>
+                    <tr>
+                        <th>Algorithm</th><th>Accuracy</th><th>Precision</th>
+                        <th>Recall</th><th>F1</th>
+                        <th>Trained</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for m in data.all_models[model_type] %}
+                <tr class="{% if m.is_active %}exp-row-active{% endif %}">
+                    <td>
+                        <strong>{{ m.algorithm }}</strong>
+                        {% if m.is_active %}<span class="badge badge-ml-active">Active</span>{% endif %}
+                    </td>
+                    <td>{{ "%.1f"|format((m.accuracy or 0) * 100) }}%</td>
+                    <td>{{ "%.1f"|format((m.precision or 0) * 100) }}%</td>
+                    <td>{{ "%.1f"|format((m.recall or 0) * 100) }}%</td>
+                    <td><strong>{{ "%.1f"|format((m.f1 or 0) * 100) }}%</strong></td>
+                    <td><small>{{ m.trained_at[:16] if m.trained_at else '—' }}</small></td>
+                    <td>
+                        {% if not m.is_active %}
+                        <button class="btn-activate" hx-post="/api/ml/activate"
+                                hx-vals='{"model_type": "{{ model_type }}", "algorithm": "{{ m.algorithm }}"}'
+                                hx-swap="none">Activate</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="exp-legend">
+            <span><strong>Accuracy</strong> — overall correct predictions</span>
+            <span><strong>Precision</strong> — of predicted positives, how many were correct</span>
+            <span><strong>Recall</strong> — of actual positives, how many were found</span>
+            <span><strong>F1</strong> — balance of precision and recall (used to pick the active model)</span>
+        </div>
+
+        <!-- Feature importances -->
+        {% set has_features = data.all_models[model_type] | selectattr('feature_names') | list %}
+        {% if has_features %}
+        <div class="exp-sub-section">
+            <span class="exp-title">Feature Importance</span>
+            {% for m in data.all_models[model_type] %}
+            {% if m.feature_names %}
+            {% set algo_names = {"LR": "Logistic Regression", "RF": "Random Forest", "GBC": "Gradient Boosting", "SVM": "Support Vector Machine"} %}
+            <details class="exp-details">
+                <summary>{{ algo_names.get(m.algorithm, m.algorithm) }}{% if m.is_active %} (active){% endif %}</summary>
+                <div class="exp-details-body">
+                    <div class="exp-details-inner">
+                        <div class="exp-features" id="feat-{{ model_type }}-{{ m.algorithm }}">
+                            <div class="exp-feat-hint">Higher weight = stronger influence on the model's prediction</div>
+                        </div>
+                    </div>
+                </div>
+            </details>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Predictions comparison (scoring only) -->
+        {% if model_type == 'scoring' and data.recent_predictions %}
+        <div class="exp-sub-section">
+            <span class="exp-title">Recent Predictions Comparison</span>
+        <div class="exp-table-wrap">
+            <table class="exp-table exp-table-compact">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Rules</th>
+                        {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
+                        <th>{{ algo }}</th>
+                        {% endfor %}
+                        <th>Your Label</th>
+                        <th>Agreement</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for item in data.recent_predictions %}
+                <tr>
+                    {% set link = item.url if item.url and item.url.startswith(('http://', 'https://')) else ('https://mail.google.com/mail/u/0/#inbox/' + item.item_id if item.item_type == 'email' else '') %}
+                    <td class="exp-item-title">{% if link %}<a href="{{ link }}" target="_blank">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</a>{% else %}{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}{% endif %}</td>
+                    <td>
+                        {% set rule_pct = ((item.raw_score or 0) * 100) | round(0) | int %}
+                        {% set rule_agrees = (item.user_label == 'worth_checking' and (item.raw_score or 0) >= 0.6) or (item.user_label == 'skip' and (item.raw_score or 0) < 0.6) %}
+                        <span class="badge {% if rule_agrees %}badge-ml-agree{% else %}badge-ml-disagree{% endif %}">{{ rule_pct }}%</span>
+                    </td>
+                    {% set ns = namespace(agree_count=0) %}
+                    {% if rule_agrees %}{% set ns.agree_count = 1 %}{% endif %}
+                    {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
+                    <td>
+                        {% if item.predictions.get(algo) %}
+                        {% set pred = item.predictions[algo] %}
+                        {% set ml_agrees = pred.prediction == item.user_label %}
+                        {% if ml_agrees %}{% set ns.agree_count = ns.agree_count + 1 %}{% endif %}
+                        <span class="badge {% if ml_agrees %}badge-ml-agree{% else %}badge-ml-disagree{% endif %}">{{ "%.0f"|format((pred.probability or 0) * 100) }}%</span>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td><span class="badge {% if item.user_label == 'worth_checking' %}badge-ml-pos{% else %}badge-ml-neg{% endif %}">{{ item.user_label | replace('_', ' ') }}</span></td>
+                    <td><strong>{{ ns.agree_count }}/5</strong></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% endfor %}
+</section>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
+var DATA = {{ data | tojson }};
+
 /* Chart.js loader — works with htmx boost navigation */
 (function() {
-    var DATA = {{ data | tojson }};
 
     function boot() {
         if (typeof Chart === 'undefined') {
@@ -806,13 +842,7 @@
                 aspectRatio: 1.4,
                 plugins: {
                     legend: { display: false },
-                    tooltip: {
-                        position: 'barEnd',
-                        callbacks: {
-                            title: function() { return ''; },
-                            label: function(ctx) { return ctx.label + ':  ' + ctx.raw; }
-                        }
-                    }
+                    tooltip: { enabled: false }
                 },
                 scales: {
                     x: {
@@ -863,15 +893,22 @@
 /* ── Feature importance bars (ML Experiment Lab) ──── */
 (function() {
     var allModels = DATA.all_models || {};
+    console.log('[ML] all_models keys:', Object.keys(allModels));
     ['scoring', 'noise'].forEach(function(mt) {
-        (allModels[mt] || []).forEach(function(m) {
+        var models = allModels[mt] || [];
+        console.log('[ML] ' + mt + ': ' + models.length + ' models');
+        models.forEach(function(m) {
+            console.log('[ML] ' + mt + '/' + m.algorithm + ' feature_names type:', typeof m.feature_names, 'value:', m.feature_names ? m.feature_names.substring(0, 80) : 'null');
             if (!m.feature_names) return;
-            var container = document.getElementById('feat-' + mt + '-' + m.algorithm);
+            var containerId = 'feat-' + mt + '-' + m.algorithm;
+            var container = document.getElementById(containerId);
+            console.log('[ML] container #' + containerId + ':', container ? 'found' : 'NOT FOUND');
             if (!container) return;
             try {
                 var fd = JSON.parse(m.feature_names);
                 var names = fd.names || [];
                 var imps = fd.importances || [];
+                console.log('[ML] ' + m.algorithm + ' parsed: names=' + names.length + ', imps=' + imps.length, imps);
                 if (!names.length || !imps.length) return;
                 var maxImp = Math.max.apply(null, imps) || 1;
                 /* Sort by importance descending */
@@ -898,6 +935,51 @@
                     container.appendChild(row);
                 });
             } catch(e) { /* skip */ }
+        });
+    });
+})();
+
+/* ── Feature details: no JS animation needed — pure CSS grid transition ── */
+
+/* ── Retrain / Activate — smooth progress + refresh ──── */
+(function() {
+    function smoothRefresh() {
+        htmx.ajax('GET', '/stats', { target: 'body', swap: 'innerHTML' });
+    }
+
+    /* Retrain buttons: show progress bar during training */
+    document.querySelectorAll('.btn-retrain').forEach(function(btn) {
+        var wrap = btn.closest('.retrain-wrap');
+        if (!wrap) return;
+        var bar = wrap.querySelector('.retrain-progress');
+        var fill = wrap.querySelector('.retrain-progress-fill');
+        var status = wrap.querySelector('.retrain-status');
+
+        btn.addEventListener('htmx:beforeRequest', function() {
+            btn.disabled = true;
+            btn.textContent = 'Training…';
+            bar.classList.add('active');
+            fill.style.animation = 'none';
+            void fill.offsetWidth;
+            fill.style.animation = '';
+            status.textContent = '';
+        });
+
+        btn.addEventListener('htmx:afterRequest', function(evt) {
+            bar.classList.remove('active');
+            btn.disabled = false;
+            btn.textContent = 'Retrain';
+            var ok = evt.detail.successful;
+            status.textContent = ok ? 'Done!' : 'Failed';
+            status.className = 'retrain-status ' + (ok ? 'retrain-ok' : 'retrain-err');
+            if (ok) setTimeout(smoothRefresh, 600);
+        });
+    });
+
+    /* Activate buttons: smooth refresh on success */
+    document.querySelectorAll('.btn-activate').forEach(function(btn) {
+        btn.addEventListener('htmx:afterRequest', function(evt) {
+            if (evt.detail.successful) smoothRefresh();
         });
     });
 })();

@@ -5,12 +5,12 @@ import os
 
 from flask import Flask, g, redirect, request, url_for
 
-logger = logging.getLogger(__name__)
-
 from jobpilot.config import settings
 from jobpilot.gmail.auth import GmailAuth
 from jobpilot.storage.database import init_db
 from jobpilot.storage.repository import Repository
+
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> Flask:

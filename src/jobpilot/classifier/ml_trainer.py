@@ -59,6 +59,9 @@ class MLTrainer:
         ])
         y_train = np.array([d["label"] for d in data])
 
+        # Clean up previous training run for this model type
+        self.repo.delete_model_versions_by_type(model_type)
+
         version = self.repo.get_next_version(model_type)
         model_ids = []
         best_f1 = -1.0

@@ -1,5 +1,11 @@
 /* JobPilot — Mastercard-inspired warm cream theme on Pico CSS */
 
+/* ── Focus: remove tap highlight, keep keyboard-visible ───── */
+:focus:not(:focus-visible) {
+    outline: none;
+    box-shadow: none;
+}
+
 /* ── Global: override Pico defaults ────────────────────────── */
 :root,
 [data-theme="light"] {
@@ -734,10 +740,6 @@ button.sync-btn:focus-visible {
     margin-bottom: 16px;
 }
 
-.dash-card h3::before {
-    content: "\2022 ";
-    color: var(--light-orange);
-}
 
 .dash-card canvas {
     max-height: 280px;
@@ -841,10 +843,16 @@ button.sync-btn:focus-visible {
     font-weight: 500;
 }
 
-.dash-metric-section {
+.dash-metric-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
     margin-top: 20px;
     padding-top: 16px;
     border-top: 1px solid var(--dust);
+}
+
+.dash-metric-section {
 }
 
 .dash-metric-table {
@@ -1241,7 +1249,11 @@ button.sync-btn:focus-visible {
 
 /* ── Experiment Lab ────────────────────────────────────────── */
 .exp-section {
-    margin-bottom: 28px;
+    margin-bottom: 40px;
+}
+
+.exp-section:last-child {
+    margin-bottom: 0;
 }
 
 .exp-header {
@@ -1255,12 +1267,24 @@ button.sync-btn:focus-visible {
     display: flex;
     gap: 8px;
     align-items: center;
+    padding-right: 10px;
 }
 
 .exp-title {
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--ink);
+}
+
+
+
+.exp-sub-section {
+    margin-top: 24px;
+}
+
+.exp-sub-section > .exp-title {
+    display: block;
+    margin-bottom: 8px;
 }
 
 .btn-retrain,
@@ -1287,15 +1311,67 @@ button.sync-btn:focus-visible {
     color: var(--canvas);
 }
 
+/* Retrain progress bar */
+.retrain-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.retrain-progress {
+    display: none;
+    width: 80px;
+    height: 4px;
+    background: var(--dust);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.retrain-progress.active {
+    display: block;
+}
+
+.retrain-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--light-orange);
+    border-radius: 999px;
+    animation: retrain-fill 2.5s ease-in-out infinite;
+}
+
+@keyframes retrain-fill {
+    0% { width: 0%; }
+    50% { width: 85%; }
+    100% { width: 100%; }
+}
+
+.retrain-status {
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+.retrain-ok {
+    color: var(--success);
+}
+
+.retrain-err {
+    color: var(--danger);
+}
+
 .exp-table-wrap {
     overflow-x: auto;
-    margin-bottom: 12px;
+    margin-bottom: 0;
 }
 
 .exp-table {
     width: 100%;
     font-size: 0.8rem;
     border-collapse: collapse;
+}
+
+.exp-table th:last-child,
+.exp-table td:last-child {
+    text-align: right;
 }
 
 .exp-table th,
@@ -1335,8 +1411,8 @@ button.sync-btn:focus-visible {
 
 /* Feature importance bars */
 .exp-details {
-    margin-top: 8px;
-    margin-bottom: 12px;
+    margin-top: 0;
+    margin-bottom: 0;
 }
 
 .exp-details summary {
@@ -1344,13 +1420,77 @@ button.sync-btn:focus-visible {
     color: var(--slate);
     cursor: pointer;
     user-select: none;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0 4px !important;
+    margin: 0 !important;
+}
+
+.exp-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.exp-details summary::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid var(--slate);
+    border-bottom: 1.5px solid var(--slate);
+    transform: rotate(-45deg);
+    transition: transform 0.25s ease-out;
+    flex-shrink: 0;
+}
+
+.exp-details[open] summary::after {
+    transform: rotate(45deg);
+}
+
+/* Grid-row collapse: 0fr ↔ 1fr transition (GPU-friendly, no height calc) */
+.exp-details-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows 0.3s ease-out, opacity 0.25s ease-out;
+}
+
+.exp-details[open] .exp-details-body {
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+
+.exp-details-inner {
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+}
+
+.exp-details-body,
+.exp-details-inner,
+.exp-details > *:not(summary) {
+    margin-top: 0;
+    margin-bottom: 0;
 }
 
 .exp-features {
-    margin-top: 8px;
-    padding: 12px;
+    padding: 6px 12px 16px;
+    margin: 0;
     background: var(--canvas);
     border-radius: 12px;
+}
+
+.exp-details[open] .exp-feat-bar {
+    animation: exp-bar-grow 0.4s ease-out forwards;
+}
+
+@keyframes exp-bar-grow {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+
+.exp-feat-bar {
+    transform-origin: left;
 }
 
 .exp-feat-row {
@@ -1386,6 +1526,33 @@ button.sync-btn:focus-visible {
     font-size: 0.65rem;
     color: var(--slate);
     min-width: 40px;
+}
+
+.exp-legend {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: start;
+    gap: 4px 24px;
+    padding: 2px 10px 0;
+    font-size: 0.7rem;
+    color: var(--slate);
+}
+
+.exp-legend strong {
+    color: var(--ink);
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    .exp-legend {
+        grid-template-columns: 1fr;
+    }
+}
+
+.exp-feat-hint {
+    font-size: 0.65rem;
+    color: var(--dust);
+    margin: 0 0 4px;
 }
 
 /* ── Responsive ──────────────────────────────────────────── */
@@ -1461,6 +1628,10 @@ button.sync-btn:focus-visible {
         flex-wrap: wrap;
     }
 
+    .dash-metric-pair {
+        grid-template-columns: 1fr;
+    }
+
     .exp-header {
         flex-direction: column;
         gap: 8px;
@@ -1493,6 +1664,18 @@ button.sync-btn:focus-visible {
     .sync-btn,
     .sync-dot,
     .progress-fill {
+        transition: none;
+    }
+
+    .exp-details-body {
+        transition: none;
+    }
+
+    .exp-details[open] .exp-feat-bar {
+        animation: none;
+    }
+
+    .exp-details summary::after {
         transition: none;
     }
 }

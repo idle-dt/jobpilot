@@ -464,6 +464,23 @@ class Repository:
         )
         self.conn.commit()
 
+    def delete_model_versions_by_type(self, model_type: str) -> None:
+        """Delete all model versions and their predictions for a model type."""
+        ids = self.conn.execute(
+            "SELECT id FROM model_versions WHERE model_type = ?",
+            (model_type,),
+        ).fetchall()
+        for row in ids:
+            self.conn.execute(
+                "DELETE FROM ml_predictions WHERE model_version_id = ?",
+                (row["id"],),
+            )
+        self.conn.execute(
+            "DELETE FROM model_versions WHERE model_type = ?",
+            (model_type,),
+        )
+        self.conn.commit()
+
     def get_next_version(self, model_type: str) -> int:
         row = self.conn.execute(
             "SELECT MAX(version) as mv FROM model_versions WHERE model_type = ?",
@@ -535,16 +552,27 @@ class Repository:
     def get_noise_training_data(self) -> list[dict]:
         """Get training data for the noise model.
 
-        Positive (1) = any feedback that is NOT 'not_a_job'.
+        Positive (1) = any feedback that is NOT 'not_a_job' + all labeled scraped jobs.
         Negative (0) = feedback with label 'not_a_job'.
         """
+        data = []
         rows = self.conn.execute(
             """SELECT e.id as email_id, e.subject, e.body_text,
                       CASE WHEN uf.label = 'not_a_job' THEN 0 ELSE 1 END as label
                FROM user_feedback uf
                JOIN emails e ON uf.email_id = e.id"""
         ).fetchall()
-        return [dict(r) for r in rows]
+        for r in rows:
+            data.append(dict(r))
+        # Scraped jobs are always job-related (positive class)
+        rows = self.conn.execute(
+            """SELECT id as email_id, title as subject, description as body_text,
+                      1 as label
+               FROM scraped_jobs WHERE user_label IS NOT NULL"""
+        ).fetchall()
+        for r in rows:
+            data.append(dict(r))
+        return data
 
     def get_scoring_training_data(self) -> list[dict]:
         """Get training data for the scoring model.
@@ -613,7 +641,8 @@ class Repository:
         fb_rows = self.conn.execute(
             """SELECT uf.email_id as item_id, 'email' as item_type,
                       e.subject as title, uf.label as user_label,
-                      uf.feedback_at as labeled_at, e.raw_score
+                      uf.feedback_at as labeled_at, e.raw_score,
+                      e.origin_url as url
                FROM user_feedback uf
                JOIN emails e ON uf.email_id = e.id
                WHERE uf.label IN ('worth_checking', 'skip')
@@ -624,7 +653,7 @@ class Repository:
             items.append(dict(r))
         sj_rows = self.conn.execute(
             """SELECT CAST(id AS TEXT) as item_id, 'scraped_job' as item_type,
-                      title, user_label, labeled_at, score as raw_score
+                      title, user_label, labeled_at, score as raw_score, url
                FROM scraped_jobs
                WHERE user_label IN ('worth_checking', 'skip')
                ORDER BY labeled_at DESC LIMIT ?""",
@@ -734,7 +763,14 @@ class Repository:
             )
 
         # ML readiness
-        noise_label_count = self.conn.execute(
+        noise_email_count = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM user_feedback"
+        ).fetchone()["cnt"]
+        noise_scraped_count = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE user_label IS NOT NULL"
+        ).fetchone()["cnt"]
+        noise_label_count = noise_email_count + noise_scraped_count
+        noise_negative_count = self.conn.execute(
             "SELECT COUNT(*) as cnt FROM user_feedback WHERE label = 'not_a_job'"
         ).fetchone()["cnt"]
         scoring_feedback = self.conn.execute(
@@ -747,21 +783,25 @@ class Repository:
         ).fetchone()["cnt"]
         scoring_label_count = scoring_feedback + scoring_scraped
 
-        # Active model
-        model_row = self.conn.execute(
-            "SELECT * FROM model_versions WHERE is_active = TRUE LIMIT 1"
-        ).fetchone()
-        active_model = None
-        if model_row:
-            active_model = {
-                "version": model_row["version"],
-                "trained_at": model_row["trained_at"],
-                "training_samples": model_row["training_samples"],
-                "accuracy": model_row["accuracy"],
-                "precision": model_row["precision_score"],
-                "recall": model_row["recall_score"],
-                "f1": model_row["f1_score"],
-            }
+        # Active models (one per type)
+        active_models = {}
+        for mt in ("noise", "scoring"):
+            row = self.conn.execute(
+                "SELECT * FROM model_versions"
+                " WHERE is_active = TRUE AND model_type = ? LIMIT 1",
+                (mt,),
+            ).fetchone()
+            if row:
+                active_models[mt] = {
+                    "version": row["version"],
+                    "algorithm": row["algorithm"],
+                    "trained_at": row["trained_at"],
+                    "training_samples": row["training_samples"],
+                    "accuracy": row["accuracy"],
+                    "precision": row["precision_score"],
+                    "recall": row["recall_score"],
+                    "f1": row["f1_score"],
+                }
 
         # Score & confidence histograms
         score_rows = self.conn.execute(
@@ -854,8 +894,9 @@ class Repository:
             },
             "user_labels": user_labels,
             "noise_label_count": noise_label_count,
+            "noise_negative_count": noise_negative_count,
             "scoring_label_count": scoring_label_count,
-            "active_model": active_model,
+            "active_models": active_models,
             "score_bins": score_bins,
             "score_threshold": score_threshold,
             "confidence_bins": confidence_bins,
