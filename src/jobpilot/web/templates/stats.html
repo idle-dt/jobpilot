@@ -1,56 +1,748 @@
 {% extends "base.html" %}
-{% block title %}Stats — JobPilot{% endblock %}
+{% block title %}Dashboard — JobPilot{% endblock %}
 
 {% block content %}
-<h2>Statistics</h2>
+<h2>Dashboard</h2>
 
-<div class="grid">
-    <article>
-        <h3>{{ email_stats.total }}</h3>
-        <p>Total Emails</p>
-    </article>
-    <article>
-        <h3>{{ email_stats.processed }}</h3>
-        <p>Processed</p>
-    </article>
-    <article>
-        <h3>{{ email_stats.labeled }}</h3>
-        <p>Labeled</p>
-    </article>
-    <article>
-        <h3>{{ email_stats.by_classification.get('worth_checking', 0) }}</h3>
-        <p>Worth Checking</p>
-    </article>
-    <article>
-        <h3>{{ email_stats.noise_count }}</h3>
-        <p>Filtered as Noise</p>
-    </article>
+<!-- Overview Strip -->
+<div class="dash-strip">
+    <div class="dash-stat">
+        <div class="dash-stat-value">{{ data.total_emails }}</div>
+        <div class="dash-stat-label">Total Emails</div>
+    </div>
+    <div class="dash-stat">
+        <div class="dash-stat-value">{{ data.total_jobs }}</div>
+        <div class="dash-stat-label">Scraped Jobs</div>
+    </div>
+    <div class="dash-stat">
+        <div class="dash-stat-value" id="last-sync-value">{{ data.last_sync or '—' }}</div>
+        <div class="dash-stat-label">Last Sync</div>
+    </div>
+    <div class="dash-stat">
+        <div class="dash-stat-value">{{ data.labels_given }}</div>
+        <div class="dash-stat-label">Labels Given</div>
+    </div>
 </div>
 
-{% if email_stats.by_platform %}
-<h3>By Platform</h3>
-<table>
-    <thead><tr><th>Platform</th><th>Count</th></tr></thead>
-    <tbody>
-        {% for platform, count in email_stats.by_platform.items()|sort(attribute='1', reverse=true) %}
-        <tr>
-            <td>{{ platform or 'unknown' }}</td>
-            <td>{{ count }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% endif %}
+<!-- Sources + Classification/Labels -->
+<div class="dash-row">
+    <section class="dash-card">
+        <h3>Job Sources</h3>
+        {% if data.jobs_by_source %}
+        <div class="dash-donut-wrap">
+            <canvas id="chart-sources"></canvas>
+        </div>
+        {% else %}
+        <p class="dash-empty">No scraped jobs yet</p>
+        {% endif %}
+    </section>
+    <section class="dash-card">
+        <h3>Classification & Labels</h3>
+        {% if data.jobs_by_classification or data.user_labels %}
+        <div class="dash-donut-pair">
+            <div class="dash-donut-col">
+                <div class="dash-donut-title">Rule-Based</div>
+                <canvas id="chart-classification"></canvas>
+            </div>
+            <div class="dash-donut-col">
+                <div class="dash-donut-title">Your Labels</div>
+                {% if data.user_labels %}
+                <canvas id="chart-labels"></canvas>
+                {% else %}
+                <p class="dash-empty">No labels yet</p>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <p class="dash-empty">No classification data yet</p>
+        {% endif %}
+    </section>
+</div>
 
-{% if app_stats %}
-<h3>Applications</h3>
-<table>
-    <thead><tr><th>Status</th><th>Count</th></tr></thead>
-    <tbody>
-        {% for status, count in app_stats.items() %}
-        <tr><td>{{ status }}</td><td>{{ count }}</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% endif %}
+<!-- ML Readiness -->
+<section class="dash-card">
+    <h3>ML Model Readiness</h3>
+    <div class="dash-progress-pair">
+        <div class="dash-progress-wrap">
+            <div class="dash-progress-header">
+                <span class="dash-progress-title">Job vs Noise Model</span>
+                <span class="dash-progress-count">{{ data.noise_label_count }} / {{ data.min_training_samples }} labels</span>
+            </div>
+            {% set noise_pct = [data.noise_label_count / data.min_training_samples * 100, 100] | min %}
+            <div class="dash-progress">
+                <div class="dash-progress-fill{% if noise_pct >= 100 %} dash-progress-ready{% endif %}" style="width: {{ noise_pct | round(1) }}%"></div>
+            </div>
+            {% if noise_pct >= 100 %}
+            <div class="dash-progress-status dash-ready">Ready to train!</div>
+            {% else %}
+            <div class="dash-progress-status">{{ noise_pct | round(0) | int }}% ready</div>
+            {% endif %}
+        </div>
+        <div class="dash-progress-wrap">
+            <div class="dash-progress-header">
+                <span class="dash-progress-title">Scoring Model</span>
+                <span class="dash-progress-count">{{ data.scoring_label_count }} / {{ data.min_training_samples }} labels</span>
+            </div>
+            {% set score_pct = [data.scoring_label_count / data.min_training_samples * 100, 100] | min %}
+            <div class="dash-progress">
+                <div class="dash-progress-fill{% if score_pct >= 100 %} dash-progress-ready{% endif %}" style="width: {{ score_pct | round(1) }}%"></div>
+            </div>
+            {% if score_pct >= 100 %}
+            <div class="dash-progress-status dash-ready">Ready to train!</div>
+            {% else %}
+            <div class="dash-progress-status">{{ score_pct | round(0) | int }}% ready</div>
+            {% endif %}
+        </div>
+    </div>
+    {% if data.active_model %}
+    <div class="dash-metric-section">
+        <div class="dash-donut-title">Active Model (v{{ data.active_model.version }})</div>
+        <table class="dash-metric-table">
+            <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+            <tbody>
+                <tr><td>Accuracy</td><td>{{ (data.active_model.accuracy * 100) | round(1) }}%</td></tr>
+                <tr><td>Precision</td><td>{{ (data.active_model.precision * 100) | round(1) }}%</td></tr>
+                <tr><td>Recall</td><td>{{ (data.active_model.recall * 100) | round(1) }}%</td></tr>
+                <tr><td>F1 Score</td><td>{{ (data.active_model.f1 * 100) | round(1) }}%</td></tr>
+                <tr><td>Training Samples</td><td>{{ data.active_model.training_samples }}</td></tr>
+                <tr><td>Trained At</td><td>{{ data.active_model.trained_at }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</section>
+
+<!-- Score + Confidence Histograms -->
+<div class="dash-row">
+    <section class="dash-card">
+        <h3>Score Distribution</h3>
+        {% if data.score_bins | sum > 0 %}
+        <canvas id="chart-scores"></canvas>
+        {% else %}
+        <p class="dash-empty">No scored jobs yet</p>
+        {% endif %}
+    </section>
+    <section class="dash-card">
+        <h3>Confidence Distribution</h3>
+        {% if data.confidence_bins | sum > 0 %}
+        <canvas id="chart-confidence"></canvas>
+        {% else %}
+        <p class="dash-empty">No scored jobs yet</p>
+        {% endif %}
+    </section>
+</div>
+
+<!-- Labels vs Rules Agreement -->
+<section class="dash-card">
+    <h3>Labels vs Rules Agreement</h3>
+    {% if data.agreement.total > 0 %}
+    <div class="dash-agreement">
+        <div class="dash-agreement-pct">
+            <span class="dash-big-number">{{ data.agreement.percentage }}%</span>
+            <span class="dash-big-label">agreement</span>
+            <span class="dash-big-sub">{{ data.agreement.agreed }} of {{ data.agreement.total }} compared</span>
+        </div>
+        <table class="dash-matrix">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>User: Worth</th>
+                    <th>User: Skip</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="dash-matrix-header">Rule: Worth</td>
+                    <td class="dash-matrix-agree">{{ data.agreement.matrix.tp }}</td>
+                    <td class="dash-matrix-disagree">{{ data.agreement.matrix.fp }}</td>
+                </tr>
+                <tr>
+                    <td class="dash-matrix-header">Rule: Skip</td>
+                    <td class="dash-matrix-disagree">{{ data.agreement.matrix.fn }}</td>
+                    <td class="dash-matrix-agree">{{ data.agreement.matrix.tn }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="dash-empty">No comparable labels yet — label some jobs to see how rules match your preferences</p>
+    {% endif %}
+</section>
+
+<!-- Trend + Top Locations -->
+<div class="dash-row">
+    <section class="dash-card">
+        <h3>Jobs per Day (30d)</h3>
+        {% if data.jobs_per_day %}
+        <canvas id="chart-trend"></canvas>
+        {% else %}
+        <p class="dash-empty">No scraped jobs yet</p>
+        {% endif %}
+    </section>
+    <section class="dash-card">
+        <h3>Top Locations</h3>
+        {% if data.top_locations %}
+        <canvas id="chart-locations"></canvas>
+        {% else %}
+        <p class="dash-empty">No location data yet</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Chart.js loader — works with htmx boost navigation */
+(function() {
+    var DATA = {{ data | tojson }};
+
+    function boot() {
+        if (typeof Chart === 'undefined') {
+            var s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
+            s.onload = initCharts;
+            document.head.appendChild(s);
+        } else {
+            initCharts();
+        }
+    }
+
+    /* ── Last sync relative time (runs immediately) ──── */
+    var syncEl = document.getElementById('last-sync-value');
+    if (syncEl && DATA.last_sync) {
+        var diff = (Date.now() - new Date(DATA.last_sync).getTime()) / 1000;
+        var text;
+        if (diff < 0) text = 'just now';
+        else if (diff < 60) text = 'just now';
+        else if (diff < 3600) text = Math.floor(diff / 60) + 'm ago';
+        else if (diff < 86400) text = Math.floor(diff / 3600) + 'h ago';
+        else text = Math.floor(diff / 86400) + 'd ago';
+        syncEl.textContent = text;
+    }
+
+    boot();
+    return;
+
+    function initCharts() {
+
+    /* ── Helpers ─────────────────────────────────────── */
+    function css(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function palette() {
+        return {
+            ink: css('--ink'),
+            slate: css('--slate'),
+            dust: css('--dust'),
+            canvas: css('--canvas'),
+            lifted: css('--lifted'),
+            orange: css('--signal-orange'),
+            lightOrange: css('--light-orange'),
+            success: css('--success'),
+            danger: css('--danger'),
+        };
+    }
+
+    /* Warm contrasting palette — each platform clearly distinct */
+    var PLATFORM_COLORS = {
+        linkedin: '#5B8DB8',
+        indeed: '#D4956A',
+        glassdoor: '#6BAF8A',
+        wellfound: '#A68BBF',
+        relocate_me: '#E07B5A',
+        google_alerts: '#7BAFD4',
+        djinni: '#5AAF9A',
+        dou: '#CB8E6E',
+        email: '#C4A87A',
+    };
+
+    var FALLBACK_COLORS = [
+        '#5B8DB8', '#D4956A', '#6BAF8A', '#A68BBF', '#E07B5A',
+        '#7BAFD4', '#5AAF9A', '#CB8E6E', '#B5A0C6', '#C4A87A',
+    ];
+
+    function platformColor(name, idx) {
+        var key = (name || '').toLowerCase().replace(/[\s.-]/g, '_');
+        return PLATFORM_COLORS[key] || FALLBACK_COLORS[idx % FALLBACK_COLORS.length];
+    }
+
+    /* Shared scale options — dotted grid, no border */
+    function gridOpts() {
+        var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        return {
+            color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+            drawBorder: false,
+            lineWidth: 1,
+            drawTicks: false,
+        };
+    }
+
+    /* Lighten a hex color to an rgba with alpha */
+    function alpha(hex, a) {
+        var r = parseInt(hex.slice(1, 3), 16);
+        var g = parseInt(hex.slice(3, 5), 16);
+        var b = parseInt(hex.slice(5, 7), 16);
+        return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+    }
+
+    /* ── Chart.js defaults ───────────────────────────── */
+    function applyDefaults() {
+        var p = palette();
+        Chart.defaults.font.family = "'Sofia Sans', Arial, sans-serif";
+        Chart.defaults.font.size = 11;
+        Chart.defaults.font.weight = 450;
+        Chart.defaults.color = p.slate;
+        Chart.defaults.borderColor = 'transparent';
+        Chart.defaults.plugins.legend.labels.usePointStyle = true;
+        Chart.defaults.plugins.legend.labels.pointStyle = 'circle';
+        Chart.defaults.plugins.legend.labels.padding = 16;
+        Chart.defaults.plugins.legend.labels.font = { size: 11, weight: 450 };
+        Chart.defaults.plugins.tooltip.backgroundColor = p.ink;
+        Chart.defaults.plugins.tooltip.titleFont = { size: 12, weight: 500 };
+        Chart.defaults.plugins.tooltip.bodyFont = { size: 11, weight: 450 };
+        Chart.defaults.plugins.tooltip.titleColor = p.canvas;
+        Chart.defaults.plugins.tooltip.bodyColor = p.canvas;
+        Chart.defaults.plugins.tooltip.cornerRadius = 10;
+        Chart.defaults.plugins.tooltip.padding = { x: 12, y: 8 };
+        Chart.defaults.plugins.tooltip.displayColors = false;
+    }
+    applyDefaults();
+
+    var charts = {};
+
+    /* ── Custom donut with rounded segment edges ────── */
+    /* Hide native Chart.js arcs, draw each segment as a thick arc
+       with round lineCap so edges are convex semicircles */
+    var roundedArcPlugin = {
+        id: 'roundedArcs',
+        afterDatasetDraw: function(chart) {
+            var meta = chart.getDatasetMeta(0);
+            if (!meta || !meta.data || !meta.data.length) return;
+            var area = chart.chartArea;
+            var ctx = chart.ctx;
+            ctx.save();
+            ctx.clearRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+            /* Pass 1: flat arcs — continuous ring */
+            meta.data.forEach(function(arc) {
+                ctx.beginPath();
+                ctx.arc(arc.x, arc.y, arc.outerRadius, arc.startAngle, arc.endAngle);
+                ctx.arc(arc.x, arc.y, arc.innerRadius, arc.endAngle, arc.startAngle, true);
+                ctx.closePath();
+                ctx.fillStyle = arc.options.backgroundColor;
+                ctx.fill();
+            });
+            /* Pass 2: end caps. Last segment's cap drawn first (underneath),
+               then remaining caps in reverse so each overlaps the next segment. */
+            function drawCap(arc) {
+                var midR = (arc.innerRadius + arc.outerRadius) / 2;
+                var halfW = (arc.outerRadius - arc.innerRadius) / 2;
+                var ea = arc.endAngle;
+                var cx = arc.x + Math.cos(ea) * midR;
+                var cy = arc.y + Math.sin(ea) * midR;
+                ctx.beginPath();
+                ctx.arc(cx, cy, halfW, ea, ea + Math.PI);
+                ctx.closePath();
+                ctx.fillStyle = arc.options.backgroundColor;
+                ctx.fill();
+            }
+            var n = meta.data.length;
+            /* Last segment's cap first (sits under first segment) */
+            if (n > 1) drawCap(meta.data[n - 1]);
+            /* Then remaining caps in reverse */
+            for (var i = n - 2; i >= 0; i--) {
+                drawCap(meta.data[i]);
+            }
+            ctx.restore();
+        }
+    };
+
+    function donut(canvas, labels, values, colors, opts) {
+        return new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors,
+                    borderWidth: 0,
+                    hoverOffset: 0,
+                    spacing: 0,
+                    borderRadius: 0,
+                }]
+            },
+            options: Object.assign({
+                responsive: true,
+                maintainAspectRatio: true,
+                aspectRatio: 1,
+                cutout: '55%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { padding: 12, boxWidth: 8, boxHeight: 8 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                                var pct = total ? Math.round(ctx.raw / total * 100) : 0;
+                                return ctx.label + ': ' + ctx.raw + ' (' + pct + '%)';
+                            }
+                        }
+                    }
+                },
+                layout: { padding: 8 },
+                elements: {
+                    arc: { borderWidth: 0 }
+                },
+            }, opts || {}),
+            plugins: [roundedArcPlugin],
+        });
+    }
+
+    /* ── Tooltip positioner: side when bar is tall, above when short ── */
+    Chart.Tooltip.positioners.sideOrAbove = function(elements) {
+        if (!elements.length) return false;
+        var el = elements[0].element;
+        var barH = Math.abs(el.base - el.y);
+        var tooltipH = 36;
+        if (barH > tooltipH + 12) {
+            /* Place to the right of the bar, vertically centered */
+            var tipX = el.x + el.width / 2 + 4;
+            var tipY = el.y + barH / 2;
+            /* If too close to right edge, flip to left */
+            var chartRight = el.$context.chart.chartArea.right;
+            if (tipX + 80 > chartRight) {
+                return { x: el.x - el.width / 2 - 4, y: tipY, xAlign: 'right', yAlign: 'center' };
+            }
+            return { x: tipX, y: tipY, xAlign: 'left', yAlign: 'center' };
+        }
+        /* Short bar — show above */
+        return { x: el.x, y: el.y - 8, xAlign: 'center', yAlign: 'bottom' };
+    };
+
+    /* Horizontal bar positioner: end of bar, vertically centered */
+    Chart.Tooltip.positioners.barEnd = function(elements) {
+        if (!elements.length) return false;
+        var el = elements[0].element;
+        var barW = Math.abs(el.x - el.base);
+        if (barW > 80) {
+            return { x: el.x + 4, y: el.y, xAlign: 'left', yAlign: 'center' };
+        }
+        return { x: el.x + 4, y: el.y - 6, xAlign: 'left', yAlign: 'bottom' };
+    };
+
+    /* ── Bar helper — transparent pill bars, darken on hover ── */
+    function barChart(canvas, labels, values, baseColors, opts) {
+        var bgColors = baseColors.map(function(c) { return alpha(c, 0.45); });
+        var hoverColors = baseColors.map(function(c) { return alpha(c, 0.85); });
+        var defaults = {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 1.6,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    position: 'sideOrAbove',
+                    callbacks: {
+                        title: function() { return ''; },
+                        label: function(ctx) {
+                            return ctx.label + ':  ' + ctx.raw;
+                        }
+                    }
+                },
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { font: { size: 10 }, padding: 4 },
+                    border: { display: false },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: gridOpts(),
+                    ticks: { precision: 0, font: { size: 10 }, padding: 8 },
+                    border: { display: false },
+                }
+            },
+            interaction: { intersect: true, mode: 'index' },
+        };
+        var merged = {};
+        Object.keys(defaults).forEach(function(k) { merged[k] = defaults[k]; });
+        if (opts) {
+            Object.keys(opts).forEach(function(k) {
+                if (k !== '_plugins') merged[k] = opts[k];
+            });
+        }
+        return new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Jobs',
+                    data: values,
+                    backgroundColor: bgColors,
+                    hoverBackgroundColor: hoverColors,
+                    borderRadius: { topLeft: 20, topRight: 20, bottomLeft: 4, bottomRight: 4 },
+                    borderSkipped: false,
+                    maxBarThickness: 28,
+                    barPercentage: 0.7,
+                    categoryPercentage: 0.7,
+                }]
+            },
+            options: merged,
+            plugins: (opts && opts._plugins) || [],
+        });
+    }
+
+    /* ── Sources donut ───────────────────────────────── */
+    var srcCanvas = document.getElementById('chart-sources');
+    if (srcCanvas) {
+        var srcLabels = Object.keys(DATA.jobs_by_source);
+        var srcValues = Object.values(DATA.jobs_by_source);
+        var srcColors = srcLabels.map(function(l, i) { return platformColor(l, i); });
+        charts.sources = donut(srcCanvas, srcLabels, srcValues, srcColors);
+    }
+
+    /* ── Classification donut ────────────────────────── */
+    var classCanvas = document.getElementById('chart-classification');
+    if (classCanvas) {
+        var p = palette();
+        var classOrder = ['worth_checking', 'skip', 'pending'];
+        var classColorMap = ['#7AB89A', '#C4B8AD', '#D4A574'];
+        var classLabels = [], classValues = [], classClrs = [];
+        classOrder.forEach(function(key, i) {
+            if (DATA.jobs_by_classification[key]) {
+                classLabels.push(key.replace('_', ' '));
+                classValues.push(DATA.jobs_by_classification[key]);
+                classClrs.push(classColorMap[i]);
+            }
+        });
+        Object.keys(DATA.jobs_by_classification).forEach(function(key) {
+            if (classOrder.indexOf(key) === -1) {
+                classLabels.push(key);
+                classValues.push(DATA.jobs_by_classification[key]);
+                classClrs.push('#D1CDC7');
+            }
+        });
+        charts.classification = donut(classCanvas, classLabels, classValues, classClrs);
+    }
+
+    /* ── User labels donut ───────────────────────────── */
+    var labelsCanvas = document.getElementById('chart-labels');
+    if (labelsCanvas) {
+        var labelOrder = ['worth_checking', 'skip', 'not_a_job'];
+        var labelColorMap = ['#7AB89A', '#C4B8AD', '#CB8080'];
+        var lLabels = [], lValues = [], lClrs = [];
+        labelOrder.forEach(function(key, i) {
+            if (DATA.user_labels[key]) {
+                lLabels.push(key.replace(/_/g, ' '));
+                lValues.push(DATA.user_labels[key]);
+                lClrs.push(labelColorMap[i]);
+            }
+        });
+        Object.keys(DATA.user_labels).forEach(function(key) {
+            if (labelOrder.indexOf(key) === -1) {
+                lLabels.push(key);
+                lValues.push(DATA.user_labels[key]);
+                lClrs.push('#D1CDC7');
+            }
+        });
+        charts.labels = donut(labelsCanvas, lLabels, lValues, lClrs);
+    }
+
+    /* ── Bin labels helper ────────────────────────────── */
+    function makeBinLabels() {
+        var l = [];
+        for (var i = 0; i < 10; i++) {
+            l.push('.' + i + '\u2013.' + (i + 1 === 10 ? '0' : String(i + 1)));
+        }
+        l[0] = '0\u2013.1'; l[9] = '.9\u20131';
+        return l;
+    }
+
+    /* ── Score histogram ──────────────────────────────── */
+    var scoreCanvas = document.getElementById('chart-scores');
+    if (scoreCanvas) {
+        var p = palette();
+        var threshIdx = Math.floor(DATA.score_threshold * 10);
+        var scoreBaseColors = DATA.score_bins.map(function(_, i) {
+            return i < threshIdx ? '#9E9B96' : '#5CC09C';
+        });
+        var thresholdPlugin = {
+            id: 'thresholdLine',
+            afterDraw: function(chart) {
+                var xScale = chart.scales.x;
+                var x = xScale.getPixelForValue(threshIdx);
+                var ctx = chart.ctx;
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([3, 3]);
+                ctx.strokeStyle = palette().orange;
+                ctx.lineWidth = 1;
+                ctx.moveTo(x, chart.chartArea.top);
+                ctx.lineTo(x, chart.chartArea.bottom);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.font = "500 9px 'Sofia Sans', sans-serif";
+                ctx.fillStyle = palette().orange;
+                ctx.textAlign = 'center';
+                ctx.fillText('threshold', x, chart.chartArea.top - 5);
+                ctx.restore();
+            }
+        };
+        charts.scores = barChart(scoreCanvas, makeBinLabels(), DATA.score_bins, scoreBaseColors, {
+            layout: { padding: { top: 16 } },
+            _plugins: [thresholdPlugin],
+        });
+    }
+
+    /* ── Confidence histogram ────────────────────────── */
+    var confCanvas = document.getElementById('chart-confidence');
+    if (confCanvas) {
+        var confBaseColors = DATA.confidence_bins.map(function(_, i) {
+            return i < 3 ? '#E8956A' : '#5CC09C';
+        });
+        charts.confidence = barChart(confCanvas, makeBinLabels(), DATA.confidence_bins, confBaseColors);
+    }
+
+    /* ── Trend line ───────────────────────────────────── */
+    var trendCanvas = document.getElementById('chart-trend');
+    if (trendCanvas) {
+        var p = palette();
+        var dayMap = {};
+        DATA.jobs_per_day.forEach(function(d) { dayMap[d.date] = d.count; });
+        var trendLabels = [];
+        var trendValues = [];
+        var today = new Date();
+        for (var i = 29; i >= 0; i--) {
+            var d = new Date(today);
+            d.setDate(d.getDate() - i);
+            var key = d.toISOString().slice(0, 10);
+            trendLabels.push(key.slice(5));
+            trendValues.push(dayMap[key] || 0);
+        }
+        charts.trend = new Chart(trendCanvas, {
+            type: 'line',
+            data: {
+                labels: trendLabels,
+                datasets: [{
+                    label: 'Jobs',
+                    data: trendValues,
+                    borderColor: alpha('#5CC09C', 0.6),
+                    backgroundColor: alpha('#5CC09C', 0.08),
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
+                    pointHoverBackgroundColor: alpha('#5CC09C', 0.8),
+                    pointHoverBorderColor: '#5CC09C',
+                    pointHoverBorderWidth: 2,
+                    borderWidth: 2,
+                }]
+            },
+            options: {
+                responsive: true,
+                aspectRatio: 2.2,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        border: { display: false },
+                        ticks: { maxTicksLimit: 8, font: { size: 10 } },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: gridOpts(),
+                        border: { display: false },
+                        ticks: { precision: 0, font: { size: 10 } },
+                    }
+                },
+                interaction: { intersect: false, mode: 'index' },
+            }
+        });
+    }
+
+    /* ── Top locations bar ────────────────────────────── */
+    var locCanvas = document.getElementById('chart-locations');
+    if (locCanvas) {
+        var locLabels = DATA.top_locations.map(function(l) { return l.location; });
+        var locValues = DATA.top_locations.map(function(l) { return l.count; });
+        var locBase = '#5B9BD5';
+        charts.locations = new Chart(locCanvas, {
+            type: 'bar',
+            data: {
+                labels: locLabels,
+                datasets: [{
+                    label: 'Jobs',
+                    data: locValues,
+                    backgroundColor: alpha(locBase, 0.45),
+                    hoverBackgroundColor: alpha(locBase, 0.85),
+                    borderRadius: { topLeft: 4, topRight: 20, bottomLeft: 4, bottomRight: 20 },
+                    borderSkipped: false,
+                    maxBarThickness: 18,
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.7,
+                }]
+            },
+            options: {
+                responsive: true,
+                indexAxis: 'y',
+                aspectRatio: 1.4,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        position: 'barEnd',
+                        callbacks: {
+                            title: function() { return ''; },
+                            label: function(ctx) { return ctx.label + ':  ' + ctx.raw; }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        grid: gridOpts(),
+                        border: { display: false },
+                        ticks: { precision: 0, font: { size: 10 }, padding: 8 },
+                    },
+                    y: {
+                        grid: { display: false },
+                        border: { display: false },
+                        ticks: { font: { size: 11 }, padding: 4 },
+                    }
+                }
+            }
+        });
+    }
+
+    /* ── Theme toggle hook ────────────────────────────── */
+    var origToggle = window.toggleTheme;
+    window.toggleTheme = function() {
+        origToggle();
+        requestAnimationFrame(function() {
+            applyDefaults();
+            var p = palette();
+            var g = gridOpts();
+            Object.keys(charts).forEach(function(key) {
+                var chart = charts[key];
+                chart.data.datasets.forEach(function(ds) {
+                    if (ds.borderColor && typeof ds.borderColor === 'string') {
+                        ds.borderColor = css('--white');
+                    }
+                });
+                if (chart.options.scales) {
+                    Object.keys(chart.options.scales).forEach(function(axis) {
+                        var scale = chart.options.scales[axis];
+                        if (scale.grid && scale.grid.color) scale.grid = g;
+                        if (scale.ticks) scale.ticks.color = p.slate;
+                    });
+                }
+                chart.update('none');
+            });
+        });
+    };
+    } /* end initCharts */
+})();
+</script>
 {% endblock %}

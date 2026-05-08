@@ -153,11 +153,11 @@ def toggle_expired(job_id: int):
 
 @bp.route("/stats")
 def stats():
-    """Statistics and model performance."""
+    """Dashboard statistics with charts."""
     repo = _repo()
-    email_stats = repo.get_email_stats()
-    app_stats = repo.count_applications_by_status()
-    return render_template("stats.html", email_stats=email_stats, app_stats=app_stats)
+    data = repo.get_dashboard_stats(score_threshold=settings.score_threshold)
+    data["min_training_samples"] = settings.min_training_samples
+    return render_template("stats.html", data=data)
 
 
 @bp.route("/settings")

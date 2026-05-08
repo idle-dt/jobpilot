@@ -429,3 +429,159 @@ class Repository:
         if row and row["last_sync"]:
             return datetime.fromisoformat(row["last_sync"])
         return None
+
+    def get_dashboard_stats(self, score_threshold: float = 0.6) -> dict:
+        """Aggregate all dashboard statistics in one call."""
+        # Overview strip
+        total_emails = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM emails"
+        ).fetchone()["cnt"]
+        total_jobs = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM scraped_jobs"
+        ).fetchone()["cnt"]
+        last_sync = self.get_last_sync_time()
+        expired_count = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE expired = TRUE"
+        ).fetchone()["cnt"]
+        email_label_count = self.count_feedback()
+        scraped_label_count = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE user_label IS NOT NULL"
+        ).fetchone()["cnt"]
+
+        # Sources donut
+        source_rows = self.conn.execute(
+            "SELECT source, COUNT(*) as cnt FROM scraped_jobs GROUP BY source"
+            " ORDER BY cnt DESC"
+        ).fetchall()
+
+        # Classification donut
+        class_rows = self.conn.execute(
+            "SELECT classification, COUNT(*) as cnt FROM scraped_jobs"
+            " GROUP BY classification"
+        ).fetchall()
+
+        # User labels donut — merge email feedback + scraped job labels
+        feedback_rows = self.conn.execute(
+            "SELECT label, COUNT(*) as cnt FROM user_feedback GROUP BY label"
+        ).fetchall()
+        scraped_label_rows = self.conn.execute(
+            "SELECT user_label, COUNT(*) as cnt FROM scraped_jobs"
+            " WHERE user_label IS NOT NULL GROUP BY user_label"
+        ).fetchall()
+        user_labels: dict[str, int] = {}
+        for r in feedback_rows:
+            user_labels[r["label"]] = user_labels.get(r["label"], 0) + r["cnt"]
+        for r in scraped_label_rows:
+            user_labels[r["user_label"]] = (
+                user_labels.get(r["user_label"], 0) + r["cnt"]
+            )
+
+        # ML readiness
+        noise_label_count = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM user_feedback WHERE label = 'not_a_job'"
+        ).fetchone()["cnt"]
+        scoring_feedback = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM user_feedback"
+            " WHERE label IN ('worth_checking', 'skip')"
+        ).fetchone()["cnt"]
+        scoring_scraped = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM scraped_jobs"
+            " WHERE user_label IN ('worth_checking', 'skip')"
+        ).fetchone()["cnt"]
+        scoring_label_count = scoring_feedback + scoring_scraped
+
+        # Active model
+        model_row = self.conn.execute(
+            "SELECT * FROM model_versions WHERE is_active = TRUE LIMIT 1"
+        ).fetchone()
+        active_model = None
+        if model_row:
+            active_model = {
+                "version": model_row["version"],
+                "trained_at": model_row["trained_at"],
+                "training_samples": model_row["training_samples"],
+                "accuracy": model_row["accuracy"],
+                "precision": model_row["precision_score"],
+                "recall": model_row["recall_score"],
+                "f1": model_row["f1_score"],
+            }
+
+        # Score & confidence histograms
+        score_rows = self.conn.execute(
+            "SELECT score FROM scraped_jobs WHERE score IS NOT NULL"
+        ).fetchall()
+        score_bins = [0] * 10
+        confidence_bins = [0] * 10
+        for r in score_rows:
+            s = r["score"]
+            score_bins[min(int(s * 10), 9)] += 1
+            conf = min(abs(s - score_threshold) / 0.4, 1.0)
+            confidence_bins[min(int(conf * 10), 9)] += 1
+
+        # Agreement: rules vs user labels
+        agreement_rows = self.conn.execute(
+            "SELECT classification, user_label FROM scraped_jobs"
+            " WHERE classification IN ('worth_checking', 'skip')"
+            " AND user_label IN ('worth_checking', 'skip')"
+        ).fetchall()
+        tp = fp = fn = tn = 0
+        for r in agreement_rows:
+            rule, user = r["classification"], r["user_label"]
+            if rule == "worth_checking" and user == "worth_checking":
+                tp += 1
+            elif rule == "worth_checking" and user == "skip":
+                fp += 1
+            elif rule == "skip" and user == "worth_checking":
+                fn += 1
+            else:
+                tn += 1
+        total_compared = tp + fp + fn + tn
+        agreed = tp + tn
+        agreement = {
+            "total": total_compared,
+            "agreed": agreed,
+            "percentage": round(agreed / total_compared * 100, 1) if total_compared else 0,
+            "matrix": {"tp": tp, "fp": fp, "fn": fn, "tn": tn},
+        }
+
+        # Jobs per day (last 30 days)
+        trend_rows = self.conn.execute(
+            "SELECT DATE(scraped_at) as day, COUNT(*) as cnt FROM scraped_jobs"
+            " WHERE scraped_at >= date('now', '-30 days')"
+            " GROUP BY DATE(scraped_at) ORDER BY day"
+        ).fetchall()
+
+        # Top locations
+        location_rows = self.conn.execute(
+            "SELECT location, COUNT(*) as cnt FROM scraped_jobs"
+            " WHERE location IS NOT NULL AND location != ''"
+            " GROUP BY location ORDER BY cnt DESC LIMIT 10"
+        ).fetchall()
+
+        return {
+            "total_emails": total_emails,
+            "total_jobs": total_jobs,
+            "last_sync": last_sync.isoformat() if last_sync else None,
+            "expired_count": expired_count,
+            "expired_total": total_jobs,
+            "labels_given": email_label_count + scraped_label_count,
+            "jobs_by_source": {r["source"]: r["cnt"] for r in source_rows},
+            "jobs_by_classification": {
+                r["classification"]: r["cnt"] for r in class_rows
+            },
+            "user_labels": user_labels,
+            "noise_label_count": noise_label_count,
+            "scoring_label_count": scoring_label_count,
+            "active_model": active_model,
+            "score_bins": score_bins,
+            "score_threshold": score_threshold,
+            "confidence_bins": confidence_bins,
+            "agreement": agreement,
+            "jobs_per_day": [
+                {"date": r["day"], "count": r["cnt"]} for r in trend_rows
+            ],
+            "top_locations": [
+                {"location": r["location"], "count": r["cnt"]}
+                for r in location_rows
+            ],
+        }
