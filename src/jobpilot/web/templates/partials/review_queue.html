@@ -59,7 +59,7 @@
     {% if job.description %}
     <details class="description-preview">
         <summary>Show fetched description</summary>
-        <div class="description-text">{{ job.description[:1500] }}{% if job.description|length > 1500 %}…{% endif %}</div>
+        <div class="description-text">{{ job.description }}</div>
     </details>
     {% endif %}
 
