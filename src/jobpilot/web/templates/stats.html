@@ -142,27 +142,28 @@
             <span class="dash-big-label">agreement</span>
             <span class="dash-big-sub">{{ data.agreement.agreed }} of {{ data.agreement.total }} compared</span>
         </div>
-        <table class="dash-matrix">
-            <thead>
-                <tr>
-                    <th></th>
-                    <th>User: Worth</th>
-                    <th>User: Skip</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td class="dash-matrix-header">Rule: Worth</td>
-                    <td class="dash-matrix-agree">{{ data.agreement.matrix.tp }}</td>
-                    <td class="dash-matrix-disagree">{{ data.agreement.matrix.fp }}</td>
-                </tr>
-                <tr>
-                    <td class="dash-matrix-header">Rule: Skip</td>
-                    <td class="dash-matrix-disagree">{{ data.agreement.matrix.fn }}</td>
-                    <td class="dash-matrix-agree">{{ data.agreement.matrix.tn }}</td>
-                </tr>
-            </tbody>
-        </table>
+        <div class="dash-matrix-grid">
+            <div class="dash-matrix-cell dash-matrix-agree">
+                <span class="dash-matrix-value">{{ data.agreement.matrix.tp }}</span>
+                <span class="dash-matrix-label">Rule & You agree</span>
+                <span class="dash-matrix-sub">worth checking</span>
+            </div>
+            <div class="dash-matrix-cell dash-matrix-disagree">
+                <span class="dash-matrix-value">{{ data.agreement.matrix.fp }}</span>
+                <span class="dash-matrix-label">Rule says worth</span>
+                <span class="dash-matrix-sub">you say skip</span>
+            </div>
+            <div class="dash-matrix-cell dash-matrix-disagree">
+                <span class="dash-matrix-value">{{ data.agreement.matrix.fn }}</span>
+                <span class="dash-matrix-label">Rule says skip</span>
+                <span class="dash-matrix-sub">you say worth</span>
+            </div>
+            <div class="dash-matrix-cell dash-matrix-agree">
+                <span class="dash-matrix-value">{{ data.agreement.matrix.tn }}</span>
+                <span class="dash-matrix-label">Rule & You agree</span>
+                <span class="dash-matrix-sub">skip</span>
+            </div>
+        </div>
     </div>
     {% else %}
     <p class="dash-empty">No comparable labels yet — label some jobs to see how rules match your preferences</p>
@@ -171,9 +172,13 @@
 
 <!-- Trend + Top Locations -->
 <div class="dash-row">
-    <section class="dash-card">
+    <section class="dash-card dash-trend-card">
         <h3>Jobs per Day (30d)</h3>
         {% if data.jobs_per_day %}
+        <div class="dash-trend-header">
+            <div class="dash-trend-total" id="trend-total"></div>
+            <div class="dash-trend-delta" id="trend-delta"></div>
+        </div>
         <canvas id="chart-trend"></canvas>
         {% else %}
         <p class="dash-empty">No scraped jobs yet</p>
@@ -311,6 +316,45 @@
 
     var charts = {};
 
+    var roundedArcPlugin = {
+        id: 'roundedArcs',
+        afterDatasetDraw: function(chart) {
+            var meta = chart.getDatasetMeta(0);
+            if (!meta || !meta.data || !meta.data.length) return;
+            var area = chart.chartArea;
+            var ctx = chart.ctx;
+            ctx.save();
+            ctx.clearRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+            /* Pass 1: draw flat arcs (no rounded caps) */
+            meta.data.forEach(function(arc) {
+                var sa = arc.startAngle;
+                var ea = arc.endAngle;
+                ctx.beginPath();
+                ctx.arc(arc.x, arc.y, arc.outerRadius, sa, ea);
+                ctx.arc(arc.x, arc.y, arc.innerRadius, ea, sa, true);
+                ctx.closePath();
+                ctx.fillStyle = arc.options.backgroundColor;
+                ctx.fill();
+            });
+            /* Pass 2: draw only the rounded end caps on top */
+            meta.data.forEach(function(arc) {
+                var innerR = arc.innerRadius;
+                var outerR = arc.outerRadius;
+                var midR = (innerR + outerR) / 2;
+                var halfW = (outerR - innerR) / 2;
+                var ea = arc.endAngle;
+                var cx = arc.x + Math.cos(ea) * midR;
+                var cy = arc.y + Math.sin(ea) * midR;
+                ctx.beginPath();
+                ctx.arc(cx, cy, halfW, ea, ea + Math.PI);
+                ctx.closePath();
+                ctx.fillStyle = arc.options.backgroundColor;
+                ctx.fill();
+            });
+            ctx.restore();
+        }
+    };
+
     function donut(canvas, labels, values, colors, opts) {
         return new Chart(canvas, {
             type: 'doughnut',
@@ -319,35 +363,27 @@
                 datasets: [{
                     data: values,
                     backgroundColor: colors,
-                    borderWidth: 2,
-                    borderColor: css('--white'),
-                    hoverOffset: 4,
-                    spacing: 1,
-                    borderRadius: 12,
+                    borderWidth: 0,
+                    hoverOffset: 0,
+                    spacing: 0,
+                    borderRadius: 0,
                 }]
             },
             options: Object.assign({
                 responsive: true,
                 maintainAspectRatio: true,
                 aspectRatio: 1,
-                cutout: '58%',
+                cutout: '55%',
                 plugins: {
                     legend: {
                         position: 'bottom',
                         labels: { padding: 12, boxWidth: 8, boxHeight: 8 }
                     },
-                    tooltip: {
-                        callbacks: {
-                            label: function(ctx) {
-                                var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
-                                var pct = total ? Math.round(ctx.raw / total * 100) : 0;
-                                return ctx.label + ': ' + ctx.raw + ' (' + pct + '%)';
-                            }
-                        }
-                    }
+                    tooltip: { enabled: false }
                 },
                 layout: { padding: 8 },
             }, opts || {}),
+            plugins: [roundedArcPlugin],
         });
     }
 
@@ -560,7 +596,6 @@
     /* ── Trend line ───────────────────────────────────── */
     var trendCanvas = document.getElementById('chart-trend');
     if (trendCanvas) {
-        var p = palette();
         var dayMap = {};
         DATA.jobs_per_day.forEach(function(d) { dayMap[d.date] = d.count; });
         var trendLabels = [];
@@ -573,6 +608,22 @@
             trendLabels.push(key.slice(5));
             trendValues.push(dayMap[key] || 0);
         }
+        /* Compute total + week-over-week delta */
+        var total30 = trendValues.reduce(function(a, b) { return a + b; }, 0);
+        var thisWeek = trendValues.slice(-7).reduce(function(a, b) { return a + b; }, 0);
+        var lastWeek = trendValues.slice(-14, -7).reduce(function(a, b) { return a + b; }, 0);
+        var deltaEl = document.getElementById('trend-delta');
+        var totalEl = document.getElementById('trend-total');
+        if (totalEl) totalEl.textContent = total30;
+        if (deltaEl && lastWeek > 0) {
+            var pct = Math.round((thisWeek - lastWeek) / lastWeek * 100);
+            var arrow = pct >= 0 ? '\u2197' : '\u2198';
+            deltaEl.textContent = arrow + ' ' + Math.abs(pct) + '% from last week';
+            deltaEl.classList.add(pct >= 0 ? 'dash-trend-up' : 'dash-trend-down');
+        } else if (deltaEl) {
+            deltaEl.textContent = thisWeek + ' this week';
+        }
+
         charts.trend = new Chart(trendCanvas, {
             type: 'line',
             data: {
@@ -580,34 +631,23 @@
                 datasets: [{
                     label: 'Jobs',
                     data: trendValues,
-                    borderColor: alpha('#5CC09C', 0.6),
+                    borderColor: '#5CC09C',
                     backgroundColor: alpha('#5CC09C', 0.08),
                     fill: true,
-                    tension: 0.35,
+                    tension: 0.4,
                     pointRadius: 0,
-                    pointHoverRadius: 5,
-                    pointHoverBackgroundColor: alpha('#5CC09C', 0.8),
-                    pointHoverBorderColor: '#5CC09C',
-                    pointHoverBorderWidth: 2,
+                    pointHoverRadius: 4,
+                    pointHoverBackgroundColor: '#5CC09C',
                     borderWidth: 2,
                 }]
             },
             options: {
                 responsive: true,
-                aspectRatio: 2.2,
+                aspectRatio: 2.5,
                 plugins: { legend: { display: false } },
                 scales: {
-                    x: {
-                        grid: { display: false },
-                        border: { display: false },
-                        ticks: { maxTicksLimit: 8, font: { size: 10 } },
-                    },
-                    y: {
-                        beginAtZero: true,
-                        grid: gridOpts(),
-                        border: { display: false },
-                        ticks: { precision: 0, font: { size: 10 } },
-                    }
+                    x: { display: false },
+                    y: { display: false, beginAtZero: true },
                 },
                 interaction: { intersect: false, mode: 'index' },
             }
