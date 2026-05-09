@@ -27,12 +27,14 @@
         <label>{{ label }}</label>
         {% if helper %}<small>{{ helper }}</small>{% endif %}
         <div class="tag-input-container" data-category="{{ category }}">
+            {% if prefs.get(category, []) %}
             <div class="tag-list">
                 {% for p in prefs.get(category, []) %}
                     {% set value = p.value %}
                     {% include "partials/preference_tag.html" with context %}
                 {% endfor %}
             </div>
+            {% endif %}
             <input type="text" class="tag-input" placeholder="{{ placeholder }}"
                    data-category="{{ category }}">
         </div>
@@ -61,9 +63,9 @@
                 <option value="{{ c }}" {{ 'selected' if salary_currency == c }}>{{ c }}</option>
                 {% endfor %}
             </select>
-            <input type="number" name="min" id="salary-min" placeholder="Min annual"
+            <input type="number" name="min" id="salary-min" placeholder="Min"
                    value="{{ salary_min }}" min="0" step="1000">
-            <span class="salary-sep">–</span>
+            <span class="salary-sep">to</span>
             <input type="number" name="max" id="salary-max" placeholder="Max (optional)"
                    value="{{ salary_max }}" min="0" step="1000">
             <button type="submit" class="btn-save">Save</button>
@@ -79,17 +81,8 @@
 
     <div class="tag-input-group" style="margin-top: 0.5rem;">
         <div class="tag-input-container" data-category="monitored_domain">
-            <div class="tag-list" id="domain-tag-list">
-                {% for item in domain_list %}
-                    {% if item.active %}
-                    {% set category = 'monitored_domain' %}
-                    {% set value = item.domain %}
-                    {% include "partials/preference_tag.html" with context %}
-                    {% endif %}
-                {% endfor %}
-            </div>
             <input type="text" class="tag-input" id="domain-tag-input"
-                   placeholder="Add a domain…" data-category="monitored_domain">
+                   placeholder="Add a custom domain…" data-category="monitored_domain">
         </div>
     </div>
 
@@ -115,8 +108,9 @@
     <form id="score-threshold-form" hx-post="/api/settings/score_threshold" hx-swap="none">
         <label for="score-threshold-input">Score threshold</label>
         <div class="setting-row">
-            <input type="number" id="score-threshold-input" name="value"
-                   value="{{ score_threshold }}" min="0" max="1" step="0.05">
+            <input type="text" inputmode="decimal" pattern="[0-9]*\.?[0-9]*" id="score-threshold-input" name="value"
+                   value="{{ score_threshold }}" placeholder="0.6"
+                   onkeypress="return /[0-9.]/.test(event.key) || event.key==='Backspace'">
             <button type="submit" class="btn-save">Save</button>
             <span id="score-threshold-result" class="setting-result"></span>
         </div>
@@ -126,8 +120,9 @@
     <form id="scrape-threshold-form" hx-post="/api/settings/scrape_confidence_threshold" hx-swap="none" style="margin-top: 1rem;">
         <label for="scrape-threshold-input">Scrape confidence threshold</label>
         <div class="setting-row">
-            <input type="number" id="scrape-threshold-input" name="value"
-                   value="{{ scrape_threshold }}" min="0" max="1" step="0.1">
+            <input type="text" inputmode="decimal" pattern="[0-9]*\.?[0-9]*" id="scrape-threshold-input" name="value"
+                   value="{{ scrape_threshold }}" placeholder="0.5"
+                   onkeypress="return /[0-9.]/.test(event.key) || event.key==='Backspace'">
             <button type="submit" class="btn-save">Save</button>
             <span id="scrape-threshold-result" class="setting-result"></span>
         </div>
@@ -193,14 +188,17 @@ document.querySelectorAll('.tag-input').forEach(input => {
             if (!value) return;
             const category = this.dataset.category;
 
-            /* Check if tag already exists in DOM */
-            const tagList = this.closest('.tag-input-container').querySelector('.tag-list');
+            /* Get or create tag list */
+            const container = this.closest('.tag-input-container');
+            let tagList = container.querySelector('.tag-list');
             const normalised = value.toLowerCase();
-            const exists = Array.from(tagList.querySelectorAll('.pref-tag'))
-                .some(t => t.dataset.value === normalised);
-            if (exists) {
-                this.value = '';
-                return;
+            if (tagList) {
+                const exists = Array.from(tagList.querySelectorAll('.pref-tag'))
+                    .some(t => t.dataset.value === normalised);
+                if (exists) {
+                    this.value = '';
+                    return;
+                }
             }
 
             /* Domains use the toggle endpoint, everything else uses preferences */
@@ -216,6 +214,11 @@ document.querySelectorAll('.tag-input').forEach(input => {
                 body: new URLSearchParams(params).toString(),
             }).then(resp => {
                 if (!resp.ok) throw new Error('failed');
+                if (!tagList) {
+                    tagList = document.createElement('div');
+                    tagList.className = 'tag-list';
+                    container.insertBefore(tagList, this);
+                }
                 if (isDomain) {
                     /* Domain toggle returns JSON, render tag manually */
                     const tag = document.createElement('span');

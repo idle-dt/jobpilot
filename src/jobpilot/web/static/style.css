@@ -1212,6 +1212,7 @@ button.sync-btn:focus-visible {
     padding: 6px 20px;
     cursor: pointer;
     transition: all 0.15s;
+    width: auto !important;
 }
 
 .btn-save:hover {
@@ -1237,6 +1238,7 @@ button.sync-btn:focus-visible {
 
 /* ── Settings Inputs — pill radius to match top field ───── */
 .settings-section input[type="number"],
+.settings-section input[type="text"],
 .settings-section select {
     border-radius: var(--radius-btn) !important;
 }
@@ -1257,10 +1259,9 @@ button.sync-btn:focus-visible {
 
 .tag-input-container {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-    padding: 8px 12px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 18px;
     margin-top: 2px;
     border: 1.5px solid var(--dust);
     border-radius: var(--radius-card);
@@ -1272,6 +1273,14 @@ button.sync-btn:focus-visible {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+}
+
+.tag-list:empty {
+    display: none;
+}
+
+.tag-list + .tag-input {
+    margin-top: 4px !important;
 }
 
 .pref-tag {
@@ -1313,11 +1322,11 @@ button.sync-btn:focus-visible {
     background: transparent !important;
     outline: none !important;
     box-shadow: none !important;
-    flex: 1;
-    min-width: 140px;
+    width: 100%;
     font-size: 0.8rem;
-    padding: 4px 0 !important;
+    padding: 0 !important;
     margin: 0 !important;
+    height: auto !important;
 }
 
 .tag-input::placeholder {
@@ -1369,17 +1378,34 @@ button.sync-btn:focus-visible {
     display: flex;
     gap: 0.5rem;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
 
-.salary-row select,
+.salary-row select {
+    width: 120px;
+    flex-shrink: 0;
+}
+
 .salary-row input[type="number"] {
-    max-width: 130px;
+    width: 175px;
+    flex-shrink: 0;
+    -moz-appearance: textfield;
+}
+
+.salary-row input[type="number"]::-webkit-inner-spin-button,
+.salary-row input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.salary-row .btn-save {
+    flex-shrink: 0;
 }
 
 .salary-sep {
     color: var(--slate);
-    font-size: 0.9rem;
+    font-size: 0.82rem;
+    flex-shrink: 0;
 }
 
 /* ── Dark Theme Overrides for Preferences ───────────────── */
