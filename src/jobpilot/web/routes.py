@@ -30,8 +30,11 @@ def _sort_signals(signals: list) -> list:
 
 
 def _get_param(name: str, default: str = "") -> str:
-    """Get a parameter from form data or JSON body, safely."""
+    """Get a parameter from form data, JSON body, or query string, safely."""
     val = request.form.get(name)
+    if val:
+        return val
+    val = request.args.get(name)
     if val:
         return val
     try:
