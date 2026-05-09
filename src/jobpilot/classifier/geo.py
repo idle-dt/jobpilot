@@ -1,7 +1,10 @@
-"""Country-to-city mapping for location scoring.
+"""Country-to-city and remote synonym expansion for location scoring.
 
 When a country is configured as a location preference, its major tech-hub
 cities are automatically included in scoring with the same weight.
+
+When any remote-related term is configured, all remote synonyms are
+included so the user only needs one tag.
 """
 
 # Major tech-hub cities per country. Only cities commonly seen in job listings.
@@ -250,13 +253,35 @@ COUNTRY_CITIES: dict[str, list[str]] = {
 }
 
 
+# All terms that mean "remote work". Any one of these in the user's
+# preferences triggers inclusion of every other synonym.
+REMOTE_SYNONYMS = [
+    "remote",
+    "fully remote",
+    "100% remote",
+    "remote-first",
+    "remote first",
+    "work from anywhere",
+    "work from home",
+    "wfh",
+    "distributed",
+    "location independent",
+    "work remotely",
+    "anywhere",
+    "hybrid",
+    "home office",
+]
+
+
 def expand_locations(locations: dict[str, dict]) -> dict[str, dict]:
-    """Expand country entries with their related cities.
+    """Expand country entries with their related cities and remote synonyms.
 
     Cities inherit the same weight and target flag as the parent country.
     Existing entries are not overwritten (explicit city config takes priority).
     """
     expanded = dict(locations)
+
+    # Country → cities
     for name, info in locations.items():
         cities = COUNTRY_CITIES.get(name)
         if not cities:
@@ -264,4 +289,16 @@ def expand_locations(locations: dict[str, dict]) -> dict[str, dict]:
         for city in cities:
             if city not in expanded:
                 expanded[city] = dict(info)
+
+    # Remote synonym expansion — if any remote term is present, add all others
+    remote_match = None
+    for name, info in locations.items():
+        if name in REMOTE_SYNONYMS:
+            remote_match = info
+            break
+    if remote_match:
+        for synonym in REMOTE_SYNONYMS:
+            if synonym not in expanded:
+                expanded[synonym] = dict(remote_match)
+
     return expanded
