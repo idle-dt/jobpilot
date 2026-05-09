@@ -7,7 +7,6 @@ from jobpilot.classifier.job_detector import JobDetector
 from jobpilot.gmail.client import GmailClient
 from jobpilot.gmail.digest import extract_single_job_url, parse_digest
 from jobpilot.gmail.parser import parse_message
-from jobpilot.storage.models import Email
 from jobpilot.storage.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -106,7 +105,7 @@ def fetch_new_emails(
                 repo.update_email_origin_url(msg_id, origin_url)
 
         new_count += 1
-        log.debug("Stored email %s: %s (%d jobs extracted)", msg_id, email.subject, len(extracted_jobs))
+        log.debug("Stored email %s: %s (%d jobs)", msg_id, email.subject, len(extracted_jobs))
 
-    log.info("Fetched %d new emails (%d skipped as duplicates)", new_count, len(message_stubs) - new_count)
+    log.info("Fetched %d new emails (%d dupes skipped)", new_count, len(message_stubs) - new_count)
     return new_count

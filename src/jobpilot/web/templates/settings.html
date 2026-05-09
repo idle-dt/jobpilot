@@ -28,6 +28,7 @@
         <div class="tag-input-container" data-category="{{ category }}">
             <div class="tag-list">
                 {% for p in prefs.get(category, []) %}
+                    {% set value = p.value %}
                     {% include "partials/preference_tag.html" with context %}
                 {% endfor %}
             </div>
