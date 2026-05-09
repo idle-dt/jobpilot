@@ -38,9 +38,12 @@ MONITORED_DOMAINS = [
 ]
 
 
-def build_gmail_query(since: datetime | None = None) -> str:
+def build_gmail_query(
+    since: datetime | None = None, domains: list[str] | None = None,
+) -> str:
     """Build a Gmail search query for job platform emails."""
-    domain_parts = [f"from:{d}" for d in MONITORED_DOMAINS]
+    active_domains = domains or MONITORED_DOMAINS
+    domain_parts = [f"from:{d}" for d in active_domains]
     query = f"({' OR '.join(domain_parts)})"
     if since:
         query += f" after:{since.strftime('%Y/%m/%d')}"
@@ -57,7 +60,8 @@ def fetch_new_emails(
     if since is None:
         since = datetime.now() - timedelta(days=7)
 
-    query = build_gmail_query(since)
+    active_domains = repo.get_active_domains() or None
+    query = build_gmail_query(since, domains=active_domains)
     log.info("Fetching emails with query: %s", query)
 
     message_stubs = client.list_messages(query, max_results=max_results)

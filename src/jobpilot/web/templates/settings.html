@@ -18,9 +18,121 @@
     </form>
 </section>
 
+{# ── Search Preferences ── #}
+<section class="settings-section settings-section-wide">
+    <h3>Search Preferences</h3>
+
+    {% macro tag_input(category, label, placeholder, helper='') %}
+    <div class="tag-input-group">
+        <label>{{ label }}</label>
+        <div class="tag-input-container" data-category="{{ category }}">
+            <div class="tag-list">
+                {% for p in prefs.get(category, []) %}
+                    {% include "partials/preference_tag.html" with context %}
+                {% endfor %}
+            </div>
+            <input type="text" class="tag-input" placeholder="{{ placeholder }}"
+                   data-category="{{ category }}">
+        </div>
+        {% if helper %}<small>{{ helper }}</small>{% endif %}
+    </div>
+    {% endmacro %}
+
+    {{ tag_input('tech_keyword_primary', 'Tech Keywords — Primary', 'Core skills (must-match)…',
+       'Must-have skills — jobs are filtered to match at least one') }}
+    {{ tag_input('tech_keyword_secondary', 'Tech Keywords — Secondary', 'Nice-to-have skills…',
+       'Nice-to-have — boosts score but not required') }}
+    {{ tag_input('job_title', 'Job Titles', 'Type a job title and press Enter…') }}
+    {{ tag_input('seniority_wanted', 'Seniority — Wanted', 'e.g., senior, lead…') }}
+    {{ tag_input('seniority_unwanted', 'Seniority — Unwanted', 'e.g., junior, intern…') }}
+    {{ tag_input('location_primary', 'Locations — Primary', 'Top-priority countries/cities…',
+       'Top-priority — actively seeking jobs here') }}
+    {{ tag_input('location_secondary', 'Locations — Secondary', 'Acceptable but less preferred…',
+       'Open to these — boosts score but lower priority') }}
+    {{ tag_input('location_negative', 'Locations — Negative', 'e.g., us only, on-site only…') }}
+    {{ tag_input('negative_signal', 'Negative Signals', 'e.g., no visa sponsorship…') }}
+
+    <div class="tag-input-group">
+        <label>Salary Expectation</label>
+        <form id="salary-form" hx-post="/api/settings/salary" hx-swap="none" class="salary-row">
+            <select name="currency" id="salary-currency">
+                {% for c in ['EUR', 'USD', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK'] %}
+                <option value="{{ c }}" {{ 'selected' if salary_currency == c }}>{{ c }}</option>
+                {% endfor %}
+            </select>
+            <input type="number" name="min" id="salary-min" placeholder="Min annual"
+                   value="{{ salary_min }}" min="0" step="1000">
+            <span class="salary-sep">–</span>
+            <input type="number" name="max" id="salary-max" placeholder="Max (optional)"
+                   value="{{ salary_max }}" min="0" step="1000">
+            <button type="submit" class="btn-save">Save</button>
+            <span id="salary-result" class="setting-result"></span>
+        </form>
+    </div>
+</section>
+
+{# ── Monitored Platforms ── #}
+<section class="settings-section settings-section-wide">
+    <h3>Monitored Platforms</h3>
+    <small>Select which email sender domains to include when syncing Gmail.</small>
+
+    <div class="domain-list">
+        <label class="domain-toggle">
+            <input type="checkbox" id="toggle-all-domains"
+                   onchange="toggleAllDomains(this.checked)">
+            <strong>Toggle All</strong>
+        </label>
+        {% for item in domain_list %}
+        <label class="domain-toggle">
+            <input type="checkbox" class="domain-checkbox"
+                   data-domain="{{ item.domain }}"
+                   {{ 'checked' if item.active }}
+                   onchange="toggleDomain('{{ item.domain }}', this.checked)">
+            {{ item.domain }}
+        </label>
+        {% endfor %}
+    </div>
+
+    <div class="tag-input-group" style="margin-top: 0.75rem;">
+        <label>Add Custom Domain</label>
+        <div class="setting-row">
+            <input type="text" id="custom-domain-input" placeholder="e.g., jobs.example.com">
+            <button class="btn-save" onclick="addCustomDomain()">Add</button>
+        </div>
+    </div>
+
+    <div class="tag-input-group" style="margin-top: 1rem;">
+        <label>ArbeitNow API</label>
+        <label class="domain-toggle">
+            <input type="checkbox" id="arbeitnow-enabled"
+                   {{ 'checked' if arbeitnow_enabled }}
+                   onchange="updateArbeitnow()">
+            Fetch remote jobs automatically
+        </label>
+        <label class="domain-toggle" style="margin-left: 1.5rem;">
+            <input type="checkbox" id="arbeitnow-visa-only"
+                   {{ 'checked' if arbeitnow_visa_only }}
+                   onchange="updateArbeitnow()">
+            Include visa sponsorship jobs only
+        </label>
+    </div>
+</section>
+
+{# ── Scoring ── #}
 <section class="settings-section">
-    <h3>Job Description Scraping</h3>
-    <form id="scrape-threshold-form" hx-post="/api/settings/scrape_confidence_threshold" hx-swap="none">
+    <h3>Scoring</h3>
+    <form id="score-threshold-form" hx-post="/api/settings/score_threshold" hx-swap="none">
+        <label for="score-threshold-input">Score threshold</label>
+        <div class="setting-row">
+            <input type="number" id="score-threshold-input" name="value"
+                   value="{{ score_threshold }}" min="0" max="1" step="0.05">
+            <button type="submit" class="btn-save">Save</button>
+            <span id="score-threshold-result" class="setting-result"></span>
+        </div>
+        <small>Jobs scoring above this are classified "worth checking" (0.0–1.0).</small>
+    </form>
+
+    <form id="scrape-threshold-form" hx-post="/api/settings/scrape_confidence_threshold" hx-swap="none" style="margin-top: 1rem;">
         <label for="scrape-threshold-input">Scrape confidence threshold</label>
         <div class="setting-row">
             <input type="number" id="scrape-threshold-input" name="value"
@@ -31,6 +143,8 @@
         <small>Jobs with scoring confidence below this threshold will have their full descriptions scraped. Lower = scrape more jobs (0.0–1.0).</small>
     </form>
 </section>
+
+{# ── Appearance ── #}
 <section class="settings-section">
     <h3>Appearance</h3>
     <label>Theme</label>
@@ -46,6 +160,7 @@
 
 {% block scripts %}
 <script>
+/* Theme */
 document.getElementById('theme-select').value =
     document.documentElement.getAttribute('data-theme') || 'light';
 function setTheme(t) {
@@ -53,11 +168,13 @@ function setTheme(t) {
     localStorage.setItem('theme', t);
     updateThemeIcon();
 }
-</script>
-<script>
+
+/* Settings save feedback */
 const settingsMap = {
     '/api/settings/sync_days': 'sync-days-result',
     '/api/settings/scrape_confidence_threshold': 'scrape-threshold-result',
+    '/api/settings/score_threshold': 'score-threshold-result',
+    '/api/settings/salary': 'salary-result',
 };
 document.body.addEventListener('htmx:afterRequest', (e) => {
     const resultId = settingsMap[e.detail.pathInfo.requestPath];
@@ -67,11 +184,118 @@ document.body.addEventListener('htmx:afterRequest', (e) => {
         result.textContent = 'Saved!';
         result.className = 'setting-result setting-success';
     } else {
-        const data = JSON.parse(e.detail.xhr.responseText);
-        result.textContent = data.message || 'Error';
+        try {
+            const data = JSON.parse(e.detail.xhr.responseText);
+            result.textContent = data.message || 'Error';
+        } catch { result.textContent = 'Error'; }
         result.className = 'setting-result setting-error';
     }
     setTimeout(() => { result.textContent = ''; }, 3000);
 });
+
+/* Tag input */
+document.querySelectorAll('.tag-input').forEach(input => {
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            const value = this.value.trim().replace(/,$/, '').trim();
+            if (!value) return;
+            const category = this.dataset.category;
+            const body = new URLSearchParams({category, value});
+
+            fetch('/api/preferences', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: body.toString(),
+            }).then(resp => {
+                if (resp.ok) return resp.text();
+                throw new Error('duplicate');
+            }).then(html => {
+                const tagList = this.closest('.tag-input-container').querySelector('.tag-list');
+                const wrapper = document.createElement('div');
+                wrapper.textContent = '';
+                /* Server returns a safe, Jinja-rendered partial — parse it */
+                const template = document.createElement('template');
+                template.innerHTML = html;
+                const node = template.content.firstElementChild;
+                tagList.appendChild(node);
+                htmx.process(node);
+                this.value = '';
+            }).catch(() => {
+                this.classList.add('input-error');
+                setTimeout(() => this.classList.remove('input-error'), 800);
+            });
+        }
+    });
+});
+
+/* Domain toggles */
+function toggleDomain(domain, active) {
+    fetch('/api/preferences/domain/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({domain, active: active ? 'true' : 'false'}).toString(),
+    });
+}
+
+function toggleAllDomains(checked) {
+    document.querySelectorAll('.domain-checkbox').forEach(cb => {
+        if (cb.checked !== checked) {
+            cb.checked = checked;
+            toggleDomain(cb.dataset.domain, checked);
+        }
+    });
+}
+
+function addCustomDomain() {
+    const input = document.getElementById('custom-domain-input');
+    const domain = input.value.trim().toLowerCase();
+    if (!domain || !domain.includes('.')) return;
+
+    fetch('/api/preferences/domain/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({domain, active: 'true'}).toString(),
+    }).then(resp => {
+        if (resp.ok) {
+            const list = document.querySelector('.domain-list');
+            const label = document.createElement('label');
+            label.className = 'domain-toggle';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'domain-checkbox';
+            cb.dataset.domain = domain;
+            cb.checked = true;
+            cb.addEventListener('change', function() { toggleDomain(domain, this.checked); });
+            label.appendChild(cb);
+            label.appendChild(document.createTextNode(' ' + domain));
+            list.appendChild(label);
+            input.value = '';
+        }
+    });
+}
+
+/* ArbeitNow */
+function updateArbeitnow() {
+    const enabled = document.getElementById('arbeitnow-enabled').checked;
+    const visaOnly = document.getElementById('arbeitnow-visa-only').checked;
+    fetch('/api/settings/arbeitnow', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+            enabled: enabled ? 'true' : 'false',
+            visa_only: visaOnly ? 'true' : 'false',
+        }).toString(),
+    });
+}
+
+/* Toggle All checkbox state */
+(function() {
+    const boxes = document.querySelectorAll('.domain-checkbox');
+    const all = document.getElementById('toggle-all-domains');
+    if (all && boxes.length) {
+        all.checked = Array.from(boxes).every(cb => cb.checked);
+    }
+})();
 </script>
 {% endblock %}

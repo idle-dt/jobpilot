@@ -202,7 +202,10 @@ def toggle_expired(job_id: int):
 def stats():
     """Dashboard statistics with charts."""
     repo = _repo()
-    data = repo.get_dashboard_stats(score_threshold=settings.score_threshold)
+    score_threshold = float(
+        repo.get_setting("score_threshold", str(settings.score_threshold))
+    )
+    data = repo.get_dashboard_stats(score_threshold=score_threshold)
     data["min_training_samples"] = settings.min_training_samples
     return render_template("stats.html", data=data)
 
@@ -210,13 +213,40 @@ def stats():
 @bp.route("/settings")
 def settings_page():
     """Settings page."""
+    from jobpilot.gmail.fetcher import MONITORED_DOMAINS
+
     repo = _repo()
     sync_days = repo.get_setting("sync_days", "7")
     scrape_threshold = repo.get_setting(
         "scrape_confidence_threshold", str(settings.scrape_confidence_threshold)
     )
+    score_threshold = repo.get_setting("score_threshold", str(settings.score_threshold))
+    prefs = repo.get_all_preferences()
+
+    salary_currency = repo.get_setting("salary_currency", "EUR")
+    salary_min = repo.get_setting("salary_min", "")
+    salary_max = repo.get_setting("salary_max", "")
+
+    arbeitnow_enabled = repo.get_setting("arbeitnow_enabled", "false") == "true"
+    arbeitnow_visa_only = repo.get_setting("arbeitnow_visa_only", "false") == "true"
+
+    # Build domain checklist — merge known domains with DB preferences
+    active_domains = {p.value for p in prefs.get("monitored_domain", [])}
+    all_domains = list(dict.fromkeys(list(MONITORED_DOMAINS) + sorted(active_domains)))
+    domain_list = [{"domain": d, "active": d in active_domains} for d in all_domains]
+
     return render_template(
-        "settings.html", sync_days=sync_days, scrape_threshold=scrape_threshold
+        "settings.html",
+        sync_days=sync_days,
+        scrape_threshold=scrape_threshold,
+        score_threshold=score_threshold,
+        prefs=prefs,
+        salary_currency=salary_currency,
+        salary_min=salary_min,
+        salary_max=salary_max,
+        arbeitnow_enabled=arbeitnow_enabled,
+        arbeitnow_visa_only=arbeitnow_visa_only,
+        domain_list=domain_list,
     )
 
 
@@ -252,6 +282,131 @@ def update_scrape_threshold():
     return jsonify({"status": "ok", "value": threshold})
 
 
+ALLOWED_CATEGORIES = {
+    "tech_keyword_primary", "tech_keyword_secondary", "job_title",
+    "seniority_wanted", "seniority_unwanted",
+    "location_primary", "location_secondary", "location_negative",
+    "negative_signal", "monitored_domain",
+}
+SCORING_CATEGORIES = ALLOWED_CATEGORIES - {"monitored_domain"}
+
+
+def _invalidate_if_scoring(repo, category: str) -> None:
+    """Invalidate ML models if the preference category affects scoring."""
+    if category in SCORING_CATEGORIES:
+        repo.invalidate_active_models()
+
+
+@bp.route("/api/preferences", methods=["POST"])
+def add_preference():
+    """Add a user preference tag."""
+    repo = _repo()
+    category = _get_param("category")
+    value = _get_param("value", "").strip().lower()
+    if not category or not value:
+        return jsonify({"status": "error", "message": "Missing category or value"}), 400
+    if category not in ALLOWED_CATEGORIES:
+        return jsonify({"status": "error", "message": "Invalid category"}), 400
+    if len(value) > 100:
+        return jsonify({"status": "error", "message": "Value too long (max 100)"}), 400
+    if category == "monitored_domain" and ("." not in value or " " in value):
+        return jsonify({"status": "error", "message": "Invalid domain format"}), 400
+
+    pref_id = repo.insert_preference(category, value)
+    if pref_id is None:
+        return jsonify({"status": "error", "message": "Already exists"}), 409
+
+    _invalidate_if_scoring(repo, category)
+    return render_template(
+        "partials/preference_tag.html", category=category, value=value,
+    )
+
+
+@bp.route("/api/preferences", methods=["DELETE"])
+def remove_preference():
+    """Remove a user preference tag."""
+    repo = _repo()
+    category = _get_param("category")
+    value = _get_param("value")
+    if not category or not value:
+        return jsonify({"status": "error", "message": "Missing category or value"}), 400
+
+    repo.delete_preference(category, value)
+    _invalidate_if_scoring(repo, category)
+    return "", 200
+
+
+@bp.route("/api/preferences/domain/toggle", methods=["POST"])
+def toggle_domain():
+    """Add or remove a monitored domain."""
+    repo = _repo()
+    domain = _get_param("domain", "").strip().lower()
+    active = _get_param("active", "true")
+    if not domain:
+        return jsonify({"status": "error", "message": "Missing domain"}), 400
+
+    if active == "true":
+        repo.insert_preference("monitored_domain", domain)
+    else:
+        repo.delete_preference("monitored_domain", domain)
+    return jsonify({"status": "ok"})
+
+
+@bp.route("/api/settings/score_threshold", methods=["POST"])
+def update_score_threshold():
+    """Update the score classification threshold."""
+    repo = _repo()
+    value = _get_param("value", "0.6")
+    try:
+        threshold = float(value)
+        if not 0.0 <= threshold <= 1.0:
+            return jsonify({"status": "error", "message": "Must be between 0.0 and 1.0"}), 400
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid number"}), 400
+
+    repo.set_setting("score_threshold", str(threshold))
+    return jsonify({"status": "ok", "value": threshold})
+
+
+@bp.route("/api/settings/salary", methods=["POST"])
+def update_salary():
+    """Update salary preferences."""
+    repo = _repo()
+    currency = _get_param("currency", "EUR").upper()
+    min_val = _get_param("min", "").strip()
+    max_val = _get_param("max", "").strip()
+
+    if min_val:
+        try:
+            min_int = int(min_val)
+            if min_int < 0:
+                return jsonify({"status": "error", "message": "Min must be positive"}), 400
+        except ValueError:
+            return jsonify({"status": "error", "message": "Invalid min salary"}), 400
+    if max_val and min_val:
+        try:
+            if int(max_val) < int(min_val):
+                return jsonify({"status": "error", "message": "Max must be >= min"}), 400
+        except ValueError:
+            return jsonify({"status": "error", "message": "Invalid max salary"}), 400
+
+    repo.set_setting("salary_currency", currency)
+    repo.set_setting("salary_min", min_val)
+    repo.set_setting("salary_max", max_val)
+    return jsonify({"status": "ok"})
+
+
+@bp.route("/api/settings/arbeitnow", methods=["POST"])
+def update_arbeitnow():
+    """Update ArbeitNow API settings."""
+    repo = _repo()
+    enabled = _get_param("enabled", "false")
+    visa_only = _get_param("visa_only", "false")
+    repo.set_setting("arbeitnow_enabled", enabled)
+    repo.set_setting("arbeitnow_visa_only", visa_only)
+    return jsonify({"status": "ok"})
+
+
 @bp.route("/api/sync", methods=["POST"])
 def sync_emails():
     """Fetch new emails from Gmail and run classification."""
@@ -282,9 +437,22 @@ def sync_emails():
         new_emails = fetch_new_emails(client, repo, since=since)
         _classify_unprocessed(repo)
         _parse_existing_digests(repo)
+
+        # Fetch from ArbeitNow API (rate-limited, adds pending jobs)
+        arbeitnow_count = 0
+        try:
+            from jobpilot.scraper.arbeitnow import ArbeitNowClient
+            arbeitnow = ArbeitNowClient(repo)
+            arbeitnow_count = arbeitnow.fetch_and_store()
+        except Exception:
+            logger.exception("ArbeitNow fetch failed")
+
         _score_pending_jobs(repo)
         _scrape_low_confidence_jobs(repo)
-        return jsonify({"status": "ok", "new_emails": new_emails})
+        return jsonify({
+            "status": "ok", "new_emails": new_emails,
+            "arbeitnow_jobs": arbeitnow_count,
+        })
     except Exception:
         logger.exception("Sync failed")
         return jsonify({"status": "error", "message": "Sync failed, check server logs"}), 500
@@ -305,18 +473,22 @@ def _maybe_auto_retrain(repo) -> None:
 
 def _scrape_low_confidence_jobs(repo) -> None:
     """Scrape full descriptions for jobs with low scoring confidence."""
-    from jobpilot.classifier.rules import RuleBasedScorer
+    from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
     from jobpilot.scraper.job_page import JobPageScraper
 
     scrape_threshold = float(
         repo.get_setting("scrape_confidence_threshold", str(settings.scrape_confidence_threshold))
     )
-    jobs = repo.get_jobs_needing_scrape(settings.score_threshold, scrape_threshold)
+    score_threshold = float(
+        repo.get_setting("score_threshold", str(settings.score_threshold))
+    )
+    jobs = repo.get_jobs_needing_scrape(score_threshold, scrape_threshold)
     if not jobs:
         return
 
+    config = load_signal_config(repo)
     scraper = JobPageScraper()
-    scorer = RuleBasedScorer()
+    scorer = RuleBasedScorer(config=config, score_threshold=score_threshold)
     logger.info("Scraping %d low-confidence jobs", len(jobs))
 
     for job in jobs:
