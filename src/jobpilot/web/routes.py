@@ -30,11 +30,8 @@ def _sort_signals(signals: list) -> list:
 
 
 def _get_param(name: str, default: str = "") -> str:
-    """Get a parameter from form data, JSON body, or query string, safely."""
-    val = request.form.get(name)
-    if val:
-        return val
-    val = request.args.get(name)
+    """Get a parameter from any request source: form, query string, or JSON body."""
+    val = request.values.get(name)
     if val:
         return val
     try:
@@ -316,10 +313,10 @@ def add_preference():
         return jsonify({"status": "error", "message": "Invalid domain format"}), 400
 
     pref_id = repo.insert_preference(category, value)
-    if pref_id is None:
-        return jsonify({"status": "error", "message": "Already exists"}), 409
+    if pref_id is not None:
+        _invalidate_if_scoring(repo, category)
 
-    _invalidate_if_scoring(repo, category)
+    # Return the tag HTML even if it already existed (idempotent)
     return render_template(
         "partials/preference_tag.html", category=category, value=value,
     )
@@ -330,7 +327,7 @@ def remove_preference():
     """Remove a user preference tag."""
     repo = _repo()
     category = _get_param("category")
-    value = _get_param("value")
+    value = _get_param("value", "").strip().lower()
     if not category or not value:
         return jsonify({"status": "error", "message": "Missing category or value"}), 400
 
