@@ -12,6 +12,7 @@ from jobpilot.classifier.features import (
     score_seniority,
     score_tech_stack,
 )
+from jobpilot.classifier.geo import expand_locations
 from jobpilot.config import settings
 
 FEATURE_NAMES = [
@@ -52,6 +53,7 @@ def load_signal_config(repo) -> SignalConfig:
         locations[p.value] = {"weight": 0.6, "target": False}
     for p in prefs.get("location_negative", []):
         locations[p.value] = {"weight": -0.5, "target": False}
+    locations = expand_locations(locations)
 
     seniority: dict[str, dict] = {}
     for p in prefs.get("seniority_wanted", []):
