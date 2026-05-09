@@ -399,15 +399,14 @@ class Repository:
 
     def insert_preference(self, category: str, value: str, extra: str | None = None) -> int | None:
         """Insert a preference. Returns id if inserted, None if duplicate."""
-        try:
-            cursor = self.conn.execute(
-                "INSERT INTO user_preferences (category, value, extra) VALUES (?, ?, ?)",
-                (category, value, extra),
-            )
-            self.conn.commit()
-            return cursor.lastrowid
-        except sqlite3.IntegrityError:
+        cursor = self.conn.execute(
+            "INSERT OR IGNORE INTO user_preferences (category, value, extra) VALUES (?, ?, ?)",
+            (category, value, extra),
+        )
+        self.conn.commit()
+        if cursor.rowcount == 0:
             return None
+        return cursor.lastrowid
 
     def delete_preference(self, category: str, value: str) -> bool:
         """Delete a preference. Returns True if deleted."""

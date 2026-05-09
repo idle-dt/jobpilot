@@ -313,10 +313,10 @@ def add_preference():
         return jsonify({"status": "error", "message": "Invalid domain format"}), 400
 
     pref_id = repo.insert_preference(category, value)
-    if pref_id is not None:
-        _invalidate_if_scoring(repo, category)
+    if pref_id is None:
+        return jsonify({"status": "error", "message": "Already exists"}), 409
 
-    # Return the tag HTML even if it already existed (idempotent)
+    _invalidate_if_scoring(repo, category)
     return render_template(
         "partials/preference_tag.html", category=category, value=value,
     )
