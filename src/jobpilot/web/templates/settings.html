@@ -24,7 +24,6 @@
 
     {% macro tag_input(category, label, placeholder, helper='') %}
     <div class="tag-input-group">
-        <label>{{ label }}</label>
         <div class="tag-input-container" data-category="{{ category }}">
             <div class="tag-list">
                 {% for p in prefs.get(category, []) %}
@@ -35,6 +34,7 @@
             <input type="text" class="tag-input" placeholder="{{ placeholder }}"
                    data-category="{{ category }}">
         </div>
+        <label>{{ label }}</label>
         {% if helper %}<small>{{ helper }}</small>{% endif %}
     </div>
     {% endmacro %}
@@ -54,7 +54,6 @@
     {{ tag_input('negative_signal', 'Negative Signals', 'e.g., no visa sponsorship…') }}
 
     <div class="tag-input-group">
-        <label>Salary Expectation</label>
         <form id="salary-form" hx-post="/api/settings/salary" hx-swap="none" class="salary-row">
             <select name="currency" id="salary-currency">
                 {% for c in ['EUR', 'USD', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK'] %}
@@ -69,52 +68,43 @@
             <button type="submit" class="btn-save">Save</button>
             <span id="salary-result" class="setting-result"></span>
         </form>
+        <label>Salary Expectation</label>
     </div>
 </section>
 
 {# ── Monitored Platforms ── #}
 <section class="settings-section settings-section-wide">
     <h3>Monitored Platforms</h3>
-    <small>Select which email sender domains to include when syncing Gmail.</small>
+    <small>Email sender domains included when syncing Gmail. Add or remove as tags.</small>
 
-    <div class="domain-list">
-        <label class="domain-toggle">
-            <input type="checkbox" id="toggle-all-domains"
-                   onchange="toggleAllDomains(this.checked)">
-            <strong>Toggle All</strong>
-        </label>
-        {% for item in domain_list %}
-        <label class="domain-toggle">
-            <input type="checkbox" class="domain-checkbox"
-                   data-domain="{{ item.domain }}"
-                   {{ 'checked' if item.active }}
-                   onchange="toggleDomain('{{ item.domain }}', this.checked)">
-            {{ item.domain }}
-        </label>
-        {% endfor %}
-    </div>
-
-    <div class="tag-input-group" style="margin-top: 0.75rem;">
-        <label>Add Custom Domain</label>
-        <div class="setting-row">
-            <input type="text" id="custom-domain-input" placeholder="e.g., jobs.example.com">
-            <button class="btn-save" onclick="addCustomDomain()">Add</button>
+    <div class="tag-input-group" style="margin-top: 0.5rem;">
+        <div class="tag-input-container" data-category="monitored_domain">
+            <div class="tag-list" id="domain-tag-list">
+                {% for item in domain_list %}
+                    {% if item.active %}
+                    {% set category = 'monitored_domain' %}
+                    {% set value = item.domain %}
+                    {% include "partials/preference_tag.html" with context %}
+                    {% endif %}
+                {% endfor %}
+            </div>
+            <input type="text" class="tag-input" id="domain-tag-input"
+                   placeholder="Add a domain…" data-category="monitored_domain">
         </div>
     </div>
 
-    <div class="tag-input-group" style="margin-top: 1rem;">
-        <label>ArbeitNow API</label>
-        <label class="domain-toggle">
-            <input type="checkbox" id="arbeitnow-enabled"
+    <div class="arbeitnow-row">
+        <label class="toggle-label">
+            <input type="checkbox" class="toggle-check" id="arbeitnow-enabled"
                    {{ 'checked' if arbeitnow_enabled }}
                    onchange="updateArbeitnow()">
-            Fetch remote jobs automatically
+            <span class="toggle-text">ArbeitNow API — Fetch remote jobs automatically</span>
         </label>
-        <label class="domain-toggle" style="margin-left: 1.5rem;">
-            <input type="checkbox" id="arbeitnow-visa-only"
+        <label class="toggle-label">
+            <input type="checkbox" class="toggle-check" id="arbeitnow-visa-only"
                    {{ 'checked' if arbeitnow_visa_only }}
                    onchange="updateArbeitnow()">
-            Include visa sponsorship jobs only
+            <span class="toggle-text">Visa sponsorship only</span>
         </label>
     </div>
 </section>
@@ -194,7 +184,7 @@ document.body.addEventListener('htmx:afterRequest', (e) => {
     setTimeout(() => { result.textContent = ''; }, 3000);
 });
 
-/* Tag input */
+/* Tag input — works for both preference tags and domain tags */
 document.querySelectorAll('.tag-input').forEach(input => {
     input.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' || e.key === ',') {
@@ -202,7 +192,6 @@ document.querySelectorAll('.tag-input').forEach(input => {
             const value = this.value.trim().replace(/,$/, '').trim();
             if (!value) return;
             const category = this.dataset.category;
-            const body = new URLSearchParams({category, value});
 
             /* Check if tag already exists in DOM */
             const tagList = this.closest('.tag-input-container').querySelector('.tag-list');
@@ -214,19 +203,46 @@ document.querySelectorAll('.tag-input').forEach(input => {
                 return;
             }
 
-            fetch('/api/preferences', {
+            /* Domains use the toggle endpoint, everything else uses preferences */
+            const isDomain = category === 'monitored_domain';
+            const url = isDomain ? '/api/preferences/domain/toggle' : '/api/preferences';
+            const params = isDomain
+                ? {domain: value, active: 'true'}
+                : {category, value};
+
+            fetch(url, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: body.toString(),
+                body: new URLSearchParams(params).toString(),
             }).then(resp => {
-                if (resp.ok) return resp.text();
-                throw new Error('failed');
-            }).then(html => {
-                const template = document.createElement('template');
-                template.innerHTML = html;
-                const node = template.content.firstElementChild;
-                tagList.appendChild(node);
-                htmx.process(node);
+                if (!resp.ok) throw new Error('failed');
+                if (isDomain) {
+                    /* Domain toggle returns JSON, render tag manually */
+                    const tag = document.createElement('span');
+                    tag.className = 'pref-tag';
+                    tag.dataset.category = 'monitored_domain';
+                    tag.dataset.value = normalised;
+                    tag.appendChild(document.createTextNode(normalised + ' '));
+                    const btn = document.createElement('button');
+                    btn.className = 'pref-tag-remove';
+                    btn.setAttribute('hx-delete', '/api/preferences');
+                    btn.setAttribute('hx-vals', JSON.stringify({category: 'monitored_domain', value: normalised}));
+                    btn.setAttribute('hx-target', 'closest .pref-tag');
+                    btn.setAttribute('hx-swap', 'outerHTML');
+                    btn.setAttribute('aria-label', 'Remove ' + normalised);
+                    btn.textContent = '\u00d7';
+                    tag.appendChild(btn);
+                    tagList.appendChild(tag);
+                    htmx.process(tag);
+                } else {
+                    return resp.text().then(html => {
+                        const tpl = document.createElement('template');
+                        tpl.innerHTML = html;
+                        const node = tpl.content.firstElementChild;
+                        tagList.appendChild(node);
+                        htmx.process(node);
+                    });
+                }
                 this.value = '';
             }).catch(() => {
                 this.classList.add('input-error');
@@ -235,52 +251,6 @@ document.querySelectorAll('.tag-input').forEach(input => {
         }
     });
 });
-
-/* Domain toggles */
-function toggleDomain(domain, active) {
-    fetch('/api/preferences/domain/toggle', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({domain, active: active ? 'true' : 'false'}).toString(),
-    });
-}
-
-function toggleAllDomains(checked) {
-    document.querySelectorAll('.domain-checkbox').forEach(cb => {
-        if (cb.checked !== checked) {
-            cb.checked = checked;
-            toggleDomain(cb.dataset.domain, checked);
-        }
-    });
-}
-
-function addCustomDomain() {
-    const input = document.getElementById('custom-domain-input');
-    const domain = input.value.trim().toLowerCase();
-    if (!domain || !domain.includes('.')) return;
-
-    fetch('/api/preferences/domain/toggle', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({domain, active: 'true'}).toString(),
-    }).then(resp => {
-        if (resp.ok) {
-            const list = document.querySelector('.domain-list');
-            const label = document.createElement('label');
-            label.className = 'domain-toggle';
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.className = 'domain-checkbox';
-            cb.dataset.domain = domain;
-            cb.checked = true;
-            cb.addEventListener('change', function() { toggleDomain(domain, this.checked); });
-            label.appendChild(cb);
-            label.appendChild(document.createTextNode(' ' + domain));
-            list.appendChild(label);
-            input.value = '';
-        }
-    });
-}
 
 /* ArbeitNow */
 function updateArbeitnow() {
@@ -295,14 +265,5 @@ function updateArbeitnow() {
         }).toString(),
     });
 }
-
-/* Toggle All checkbox state */
-(function() {
-    const boxes = document.querySelectorAll('.domain-checkbox');
-    const all = document.getElementById('toggle-all-domains');
-    if (all && boxes.length) {
-        all.checked = Array.from(boxes).every(cb => cb.checked);
-    }
-})();
 </script>
 {% endblock %}

@@ -1236,15 +1236,23 @@ button.sync-btn:focus-visible {
     max-width: 640px;
 }
 
+/* ── Settings Inputs — pill radius to match top field ───── */
+.settings-section input[type="number"],
+.settings-section select {
+    border-radius: var(--radius-btn) !important;
+}
+
 /* ── Tag Input ──────────────────────────────────────────── */
 .tag-input-group {
     margin-bottom: 1rem;
 }
 
-.tag-input-group label {
-    font-size: 0.85rem;
+.tag-input-group > label {
+    font-size: 0.82rem;
     font-weight: 500;
-    margin-bottom: 0.25rem;
+    color: var(--slate);
+    margin-top: 0.3rem;
+    margin-bottom: 0;
     display: block;
 }
 
@@ -1327,28 +1335,33 @@ button.sync-btn:focus-visible {
     75% { transform: translateX(4px); }
 }
 
-/* ── Domain Checklist ───────────────────────────────────── */
-.domain-list {
+/* ── ArbeitNow Row ──────────────────────────────────────── */
+.arbeitnow-row {
     display: flex;
+    gap: 1.5rem;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 0.25rem 1.5rem;
-    margin-top: 0.5rem;
+    margin-top: 0.75rem;
 }
 
-.domain-toggle {
+.toggle-label {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 0.82rem;
     cursor: pointer;
-    padding: 2px 0;
     margin: 0;
 }
 
-.domain-toggle input[type="checkbox"] {
+.toggle-check {
     margin: 0;
     width: 16px;
     height: 16px;
+    accent-color: var(--ink);
+}
+
+.toggle-text {
+    user-select: none;
 }
 
 /* ── Salary Row ─────────────────────────────────────────── */
