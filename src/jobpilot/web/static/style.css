@@ -1193,8 +1193,7 @@ button.sync-btn:focus-visible {
 }
 
 .settings-section h3::before {
-    content: "\2022 ";
-    color: var(--light-orange);
+    content: none;
 }
 
 .setting-row {
@@ -1262,6 +1261,7 @@ button.sync-btn:focus-visible {
     gap: 6px;
     align-items: center;
     padding: 8px 12px;
+    margin-top: 2px;
     border: 1.5px solid var(--dust);
     border-radius: var(--radius-card);
     background: var(--lifted);

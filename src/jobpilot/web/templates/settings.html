@@ -24,6 +24,8 @@
 
     {% macro tag_input(category, label, placeholder, helper='') %}
     <div class="tag-input-group">
+        <label>{{ label }}</label>
+        {% if helper %}<small>{{ helper }}</small>{% endif %}
         <div class="tag-input-container" data-category="{{ category }}">
             <div class="tag-list">
                 {% for p in prefs.get(category, []) %}
@@ -34,8 +36,6 @@
             <input type="text" class="tag-input" placeholder="{{ placeholder }}"
                    data-category="{{ category }}">
         </div>
-        <label>{{ label }}</label>
-        {% if helper %}<small>{{ helper }}</small>{% endif %}
     </div>
     {% endmacro %}
 
@@ -54,6 +54,7 @@
     {{ tag_input('negative_signal', 'Negative Signals', 'e.g., no visa sponsorship…') }}
 
     <div class="tag-input-group">
+        <label>Salary Expectation</label>
         <form id="salary-form" hx-post="/api/settings/salary" hx-swap="none" class="salary-row">
             <select name="currency" id="salary-currency">
                 {% for c in ['EUR', 'USD', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK'] %}
@@ -68,7 +69,6 @@
             <button type="submit" class="btn-save">Save</button>
             <span id="salary-result" class="setting-result"></span>
         </form>
-        <label>Salary Expectation</label>
     </div>
 </section>
 
