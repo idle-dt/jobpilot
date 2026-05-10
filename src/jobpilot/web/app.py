@@ -66,9 +66,12 @@ def create_app() -> Flask:
 
 def _classify_unprocessed(repo: Repository) -> None:
     """Score and classify any emails that haven't been processed yet."""
-    from jobpilot.classifier.rules import RuleBasedScorer
+    from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
 
-    scorer = RuleBasedScorer()
+    config = load_signal_config(repo)
+    threshold_str = repo.get_setting("score_threshold")
+    threshold = float(threshold_str) if threshold_str else None
+    scorer = RuleBasedScorer(config=config, score_threshold=threshold)
     rows = repo.conn.execute(
         "SELECT id, subject, body_text FROM emails WHERE processed = FALSE"
     ).fetchall()
@@ -151,9 +154,12 @@ def _parse_existing_digests(repo: Repository) -> None:
 
 def _score_pending_jobs(repo: Repository) -> None:
     """Score scraped jobs that are still pending classification."""
-    from jobpilot.classifier.rules import RuleBasedScorer
+    from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
 
-    scorer = RuleBasedScorer()
+    config = load_signal_config(repo)
+    threshold_str = repo.get_setting("score_threshold")
+    threshold = float(threshold_str) if threshold_str else None
+    scorer = RuleBasedScorer(config=config, score_threshold=threshold)
     rows = repo.conn.execute(
         "SELECT id, title, company, location, description"
         " FROM scraped_jobs WHERE classification = 'pending'"

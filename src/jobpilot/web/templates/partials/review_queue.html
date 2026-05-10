@@ -12,9 +12,9 @@
                 {% endif %}
                 {% if item.predictions %}
                 <span class="badge badge-pred">Rules: {{ "%.0f"|format((email.raw_score or 0) * 100) }}%</span>
-                {% for pred in item.predictions %}
+                {% for pred in item.predictions %}{% if pred.model_type != 'noise' %}
                 <span class="badge badge-ml{% if pred.prediction == 'job' or pred.prediction == 'worth_checking' %} badge-ml-pos{% else %} badge-ml-neg{% endif %}{% if pred.is_active %} badge-ml-active{% endif %}">{{ pred.algorithm }}: {{ "%.0f"|format((pred.probability or 0) * 100) }}%</span>
-                {% endfor %}
+                {% endif %}{% endfor %}
                 {% else %}
                 <span class="badge">
                     {{ "%.0f"|format((email.raw_score or 0) * 100) }}%

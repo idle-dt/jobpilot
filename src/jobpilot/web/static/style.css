@@ -1193,8 +1193,7 @@ button.sync-btn:focus-visible {
 }
 
 .settings-section h3::before {
-    content: "\2022 ";
-    color: var(--light-orange);
+    content: none;
 }
 
 .setting-row {
@@ -1213,6 +1212,7 @@ button.sync-btn:focus-visible {
     padding: 6px 20px;
     cursor: pointer;
     transition: all 0.15s;
+    width: auto !important;
 }
 
 .btn-save:hover {
@@ -1230,6 +1230,197 @@ button.sync-btn:focus-visible {
 
 .setting-error {
     color: var(--danger);
+}
+
+.settings-section-wide {
+    max-width: 640px;
+}
+
+/* ── Settings Inputs — pill radius to match top field ───── */
+.settings-section input[type="number"],
+.settings-section input[type="text"],
+.settings-section select {
+    border-radius: var(--radius-btn) !important;
+}
+
+/* ── Tag Input ──────────────────────────────────────────── */
+.tag-input-group {
+    margin-bottom: 1rem;
+}
+
+.tag-input-group > label {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--slate);
+    margin-top: 0.3rem;
+    margin-bottom: 0;
+    display: block;
+}
+
+.tag-input-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 18px;
+    margin-top: 2px;
+    border: 1.5px solid var(--dust);
+    border-radius: var(--radius-card);
+    background: var(--lifted);
+    min-height: 44px;
+}
+
+.tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tag-list:empty {
+    display: none;
+}
+
+.tag-list + .tag-input {
+    margin-top: 4px !important;
+}
+
+.pref-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.8rem;
+    font-weight: 450;
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--ink);
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.pref-tag-primary {
+    background: rgba(0, 0, 0, 0.10);
+    border-color: var(--dust);
+}
+
+.pref-tag-remove {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--slate);
+    font-size: 0.85rem;
+    padding: 0 2px;
+    line-height: 1;
+    margin: 0;
+}
+
+.pref-tag-remove:hover {
+    color: var(--danger);
+}
+
+.tag-input {
+    border: none !important;
+    background: transparent !important;
+    outline: none !important;
+    box-shadow: none !important;
+    width: 100%;
+    font-size: 0.8rem;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+}
+
+.tag-input::placeholder {
+    color: var(--slate);
+    opacity: 0.6;
+}
+
+.input-error {
+    animation: shake 0.3s ease;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+}
+
+/* ── ArbeitNow Row ──────────────────────────────────────── */
+.arbeitnow-row {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+}
+
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    margin: 0;
+}
+
+.toggle-check {
+    margin: 0;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--ink);
+}
+
+.toggle-text {
+    user-select: none;
+}
+
+/* ── Salary Row ─────────────────────────────────────────── */
+.salary-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
+.salary-row select {
+    width: 120px;
+    flex-shrink: 0;
+}
+
+.salary-row input[type="number"] {
+    width: 175px;
+    flex-shrink: 0;
+    -moz-appearance: textfield;
+}
+
+.salary-row input[type="number"]::-webkit-inner-spin-button,
+.salary-row input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.salary-row .btn-save {
+    flex-shrink: 0;
+}
+
+.salary-sep {
+    color: var(--slate);
+    font-size: 0.82rem;
+    flex-shrink: 0;
+}
+
+/* ── Dark Theme Overrides for Preferences ───────────────── */
+[data-theme="dark"] .pref-tag {
+    background: rgba(255, 255, 255, 0.10);
+    color: var(--ink);
+}
+
+[data-theme="dark"] .pref-tag-primary {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .tag-input-container {
+    border-color: rgba(255, 255, 255, 0.12);
 }
 
 /* ── Description preview ─────────────────────────────────── */

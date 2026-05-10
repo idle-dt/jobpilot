@@ -7,7 +7,6 @@ from jobpilot.classifier.job_detector import JobDetector
 from jobpilot.gmail.client import GmailClient
 from jobpilot.gmail.digest import extract_single_job_url, parse_digest
 from jobpilot.gmail.parser import parse_message
-from jobpilot.storage.models import Email
 from jobpilot.storage.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -38,9 +37,12 @@ MONITORED_DOMAINS = [
 ]
 
 
-def build_gmail_query(since: datetime | None = None) -> str:
+def build_gmail_query(
+    since: datetime | None = None, domains: list[str] | None = None,
+) -> str:
     """Build a Gmail search query for job platform emails."""
-    domain_parts = [f"from:{d}" for d in MONITORED_DOMAINS]
+    active_domains = domains or MONITORED_DOMAINS
+    domain_parts = [f"from:{d}" for d in active_domains]
     query = f"({' OR '.join(domain_parts)})"
     if since:
         query += f" after:{since.strftime('%Y/%m/%d')}"
@@ -57,7 +59,8 @@ def fetch_new_emails(
     if since is None:
         since = datetime.now() - timedelta(days=7)
 
-    query = build_gmail_query(since)
+    active_domains = repo.get_active_domains() or None
+    query = build_gmail_query(since, domains=active_domains)
     log.info("Fetching emails with query: %s", query)
 
     message_stubs = client.list_messages(query, max_results=max_results)
@@ -102,7 +105,7 @@ def fetch_new_emails(
                 repo.update_email_origin_url(msg_id, origin_url)
 
         new_count += 1
-        log.debug("Stored email %s: %s (%d jobs extracted)", msg_id, email.subject, len(extracted_jobs))
+        log.debug("Stored email %s: %s (%d jobs)", msg_id, email.subject, len(extracted_jobs))
 
-    log.info("Fetched %d new emails (%d skipped as duplicates)", new_count, len(message_stubs) - new_count)
+    log.info("Fetched %d new emails (%d dupes skipped)", new_count, len(message_stubs) - new_count)
     return new_count

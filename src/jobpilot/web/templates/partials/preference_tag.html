@@ -1,0 +1,10 @@
+<span class="pref-tag{% if category == 'tech_keyword_primary' %} pref-tag-primary{% endif %}"
+      data-category="{{ category }}" data-value="{{ value }}">
+    {{ value }}
+    <button class="pref-tag-remove"
+            hx-delete="/api/preferences"
+            hx-vals='{"category": "{{ category }}", "value": "{{ value }}"}'
+            hx-target="closest .pref-tag"
+            hx-swap="outerHTML"
+            aria-label="Remove {{ value }}">&times;</button>
+</span>

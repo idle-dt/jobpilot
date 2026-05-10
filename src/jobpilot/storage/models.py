@@ -136,6 +136,15 @@ class Application:
 
 
 @dataclass
+class UserPreference:
+    id: int | None
+    category: str
+    value: str
+    extra: str | None = None
+    created_at: str | None = None
+
+
+@dataclass
 class ApplicationStatusHistory:
     id: int | None
     application_id: int

@@ -133,6 +133,15 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    value TEXT NOT NULL,
+    extra TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(category, value)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_emails_received ON emails(received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_emails_platform ON emails(platform);
@@ -148,6 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_applications_email ON applications(email_id);
 CREATE INDEX IF NOT EXISTS idx_applications_scraped ON applications(scraped_job_id);
 CREATE INDEX IF NOT EXISTS idx_scraped_email ON scraped_jobs(email_id);
 CREATE INDEX IF NOT EXISTS idx_status_history_app ON application_status_history(application_id);
+CREATE INDEX IF NOT EXISTS idx_prefs_category ON user_preferences(category);
 """
 
 MIGRATION_SQL = """
@@ -166,6 +176,19 @@ CREATE INDEX IF NOT EXISTS idx_ml_pred_model ON ml_predictions(model_version_id)
 """
 
 
+MIGRATION_PREFS_SQL = """
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    value TEXT NOT NULL,
+    extra TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(category, value)
+);
+CREATE INDEX IF NOT EXISTS idx_prefs_category ON user_preferences(category);
+"""
+
+
 def _run_migrations(conn: sqlite3.Connection) -> None:
     """Apply incremental schema changes idempotently."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(model_versions)").fetchall()}
@@ -174,6 +197,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if "algorithm" not in existing:
         conn.execute("ALTER TABLE model_versions ADD COLUMN algorithm TEXT DEFAULT 'LR'")
     conn.executescript(MIGRATION_SQL)
+    conn.executescript(MIGRATION_PREFS_SQL)
 
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
@@ -187,10 +211,87 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _seed_default_preferences(conn: sqlite3.Connection) -> None:
+    """Seed user_preferences with hardcoded defaults on first run."""
+    count = conn.execute("SELECT COUNT(*) as cnt FROM user_preferences").fetchone()[0]
+    if count > 0:
+        return
+
+    from jobpilot.classifier.signals import (
+        LOCATION_PATTERNS,
+        NEGATIVE_SIGNALS,
+        SENIORITY_PATTERNS,
+        TARGET_JOB_TITLES,
+        TECH_STACK_KEYWORDS,
+    )
+    from jobpilot.gmail.fetcher import MONITORED_DOMAINS
+
+    rows = []
+
+    # Tech keywords
+    for keyword, info in TECH_STACK_KEYWORDS.items():
+        cat = info.get("category", "secondary")
+        if cat == "primary":
+            rows.append(("tech_keyword_primary", keyword, None))
+        else:
+            rows.append(("tech_keyword_secondary", keyword, None))
+
+    # Job titles
+    for title in TARGET_JOB_TITLES:
+        rows.append(("job_title", title, None))
+
+    # Seniority
+    for pattern, info in SENIORITY_PATTERNS.items():
+        if info["weight"] > 0:
+            rows.append(("seniority_wanted", pattern, None))
+        else:
+            rows.append(("seniority_unwanted", pattern, None))
+
+    # Locations
+    for location, info in LOCATION_PATTERNS.items():
+        if info["weight"] < 0:
+            rows.append(("location_negative", location, None))
+        elif info.get("target"):
+            rows.append(("location_primary", location, None))
+        else:
+            rows.append(("location_secondary", location, None))
+
+    # Negative signals
+    for signal in NEGATIVE_SIGNALS:
+        rows.append(("negative_signal", signal, None))
+
+    # Monitored domains
+    for domain in MONITORED_DOMAINS:
+        rows.append(("monitored_domain", domain, None))
+
+    conn.executemany(
+        "INSERT OR IGNORE INTO user_preferences (category, value, extra) VALUES (?, ?, ?)",
+        rows,
+    )
+
+    # Seed default settings
+    defaults = [
+        ("salary_currency", "EUR"),
+        ("salary_min", "60000"),
+        ("salary_max", ""),
+        ("score_threshold", "0.6"),
+        ("arbeitnow_enabled", "true"),
+        ("arbeitnow_visa_only", "false"),
+    ]
+    for key, value in defaults:
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+
+    conn.commit()
+
+
 def init_db(db_path: Path) -> sqlite3.Connection:
     """Initialize the database with schema, return connection."""
     conn = get_connection(db_path)
     conn.executescript(SCHEMA_SQL)
     _run_migrations(conn)
+    _seed_default_preferences(conn)
     conn.commit()
     return conn
