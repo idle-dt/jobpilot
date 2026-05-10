@@ -58,6 +58,7 @@ When the user says `/ship`, execute this flow in order. Stop and report if any s
 4. **Commit** — Stage and commit all changes. Use conventional commits (`feat:`, `fix:`, `refactor:`, etc.). Never mention Claude/AI in commit messages.
 5. **Push** — Push the branch to origin with `-u` flag.
 6. **PR** — Create a pull request targeting `master` using `gh pr create`.
+7. **Update tracker** — In `docs/prompts/PROMPTS.md`, move the prompt entry from "Not Yet Implemented" to "Implemented" (change `- [ ]` to `- [x]`). If the prompt is already marked done or doesn't have a tracker entry, skip this step.
 
 ## Code Quality
 
