@@ -21,6 +21,7 @@ _HEADERS = {
 }
 
 _TIMEOUT = 15
+_MIN_DESCRIPTION_LENGTH = 100
 
 
 def _is_safe_url(url: str) -> bool:
@@ -116,7 +117,7 @@ class JobPageScraper:
             container = soup.find("div", **selector)
             if container:
                 text = self._clean_text(container.get_text(separator="\n"))
-                if len(text) > 100:
+                if len(text) > _MIN_DESCRIPTION_LENGTH:
                     return text
 
         # Fallback: main or article content

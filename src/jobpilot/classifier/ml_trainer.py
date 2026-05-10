@@ -33,6 +33,10 @@ ALGORITHMS = {
 
 # Progressive feature tiers for the noise model only.
 # Each tier adds structural features on top of the base 6.
+NOISE_TIER1_MIN_LABELS = 30
+NOISE_TIER2_MIN_LABELS = 60
+MIN_NEGATIVE_LABELS = 5
+
 NOISE_FEATURE_TIERS: dict[int, list[str]] = {
     0: [],
     1: STRUCTURAL_FEATURE_NAMES_TIER1,
@@ -42,9 +46,9 @@ NOISE_FEATURE_TIERS: dict[int, list[str]] = {
 
 def get_noise_feature_tier(label_count: int) -> int:
     """Determine the feature tier based on noise label count."""
-    if label_count >= 60:
+    if label_count >= NOISE_TIER2_MIN_LABELS:
         return 2
-    if label_count >= 30:
+    if label_count >= NOISE_TIER1_MIN_LABELS:
         return 1
     return 0
 
@@ -76,8 +80,11 @@ class MLTrainer:
 
         if model_type == "noise":
             neg_count = sum(1 for d in data if d["label"] == 0)
-            if neg_count < 5:
-                logger.info("Noise model needs 5+ not_a_job labels, has %d", neg_count)
+            if neg_count < MIN_NEGATIVE_LABELS:
+                logger.info(
+                    "Noise model needs %d+ not_a_job labels, has %d",
+                    MIN_NEGATIVE_LABELS, neg_count,
+                )
                 return []
 
             tier = get_noise_feature_tier(len(data))
@@ -379,7 +386,7 @@ class MLTrainer:
             if len(data) < settings.min_training_samples:
                 return False
             neg_count = sum(1 for d in data if d["label"] == 0)
-            if neg_count < 5:
+            if neg_count < MIN_NEGATIVE_LABELS:
                 return False
 
             # Detect tier transition — force retrain if features should expand

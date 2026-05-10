@@ -15,6 +15,10 @@ from jobpilot.storage.models import (
     UserPreference,
 )
 
+HISTOGRAM_BINS = 10
+TREND_LOOKBACK_DAYS = 30
+TOP_LOCATIONS_LIMIT = 10
+
 
 class Repository:
     """Data access layer for JobPilot."""
@@ -242,7 +246,7 @@ class Repository:
             """SELECT * FROM scraped_jobs
             WHERE score IS NOT NULL
             AND scrape_attempted = FALSE
-            AND ABS(score - ?) / 0.4 < ?
+            AND ABS(score - ?) / 0.4 < ?  -- 0.4 = CONFIDENCE_DIVISOR from rules.py
             ORDER BY ABS(score - ?) ASC""",
             (score_threshold, confidence_threshold, score_threshold),
         ).fetchall()
@@ -904,13 +908,13 @@ class Repository:
         score_rows = self.conn.execute(
             "SELECT score FROM scraped_jobs WHERE score IS NOT NULL"
         ).fetchall()
-        score_bins = [0] * 10
-        confidence_bins = [0] * 10
+        score_bins = [0] * HISTOGRAM_BINS
+        confidence_bins = [0] * HISTOGRAM_BINS
         for r in score_rows:
             s = r["score"]
-            score_bins[min(int(s * 10), 9)] += 1
-            conf = min(abs(s - score_threshold) / 0.4, 1.0)
-            confidence_bins[min(int(conf * 10), 9)] += 1
+            score_bins[min(int(s * HISTOGRAM_BINS), HISTOGRAM_BINS - 1)] += 1
+            conf = min(abs(s - score_threshold) / 0.4, 1.0)  # 0.4 = CONFIDENCE_DIVISOR
+            confidence_bins[min(int(conf * HISTOGRAM_BINS), HISTOGRAM_BINS - 1)] += 1
 
         # Agreement: rules vs user labels
         agreement_rows = self.conn.execute(
@@ -941,7 +945,7 @@ class Repository:
         # Jobs per day (last 30 days)
         trend_rows = self.conn.execute(
             "SELECT DATE(scraped_at) as day, COUNT(*) as cnt FROM scraped_jobs"
-            " WHERE scraped_at >= date('now', '-30 days')"
+            f" WHERE scraped_at >= date('now', '-{TREND_LOOKBACK_DAYS} days')"
             " GROUP BY DATE(scraped_at) ORDER BY day"
         ).fetchall()
 
@@ -949,7 +953,7 @@ class Repository:
         location_rows = self.conn.execute(
             "SELECT location, COUNT(*) as cnt FROM scraped_jobs"
             " WHERE location IS NOT NULL AND location != ''"
-            " GROUP BY location ORDER BY cnt DESC LIMIT 10"
+            f" GROUP BY location ORDER BY cnt DESC LIMIT {TOP_LOCATIONS_LIMIT}"
         ).fetchall()
 
         # All model versions for experiment lab
@@ -1006,6 +1010,8 @@ class Repository:
                 {"location": r["location"], "count": r["cnt"]}
                 for r in location_rows
             ],
+            "noise_tier1_min": 30,  # from ml_trainer.NOISE_TIER1_MIN_LABELS
+            "noise_tier2_min": 60,  # from ml_trainer.NOISE_TIER2_MIN_LABELS
             "all_models": all_models,
             "recent_predictions": recent_predictions,
         }

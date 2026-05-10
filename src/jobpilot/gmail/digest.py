@@ -50,15 +50,25 @@ _BOILERPLATE_PATTERNS = re.compile(
 # Words that indicate a line is a sentence, not a job title
 _SENTENCE_WORDS = re.compile(r"\b(you|your|when|that|will|we'll|you'll)\b", re.IGNORECASE)
 
+# Digest parsing thresholds
+MAX_BOILERPLATE_LINE_LENGTH = 80
+MIN_SENTENCE_LINE_LENGTH = 40
+MIN_DIGEST_JOBS_FOR_GENERIC = 2
+GLASSDOOR_MAX_PARENT_DEPTH = 12
+GLASSDOOR_MIN_CONTEXT_LENGTH = 30
+GLASSDOOR_MAX_CONTEXT_LENGTH = 500
+GLASSDOOR_MIN_TEXT_LENGTH = 10
+GLASSDOOR_MIN_CONTENT_PARTS = 3
+GENERIC_URL_CONTEXT_LINES = 5
+
 
 def _is_boilerplate_line(line: str) -> bool:
     """Check if a line is boilerplate intro text rather than a job title."""
     if _BOILERPLATE_PATTERNS.search(line):
         return True
-    if len(line) > 80:
+    if len(line) > MAX_BOILERPLATE_LINE_LENGTH:
         return True
-    # Short lines that look like sentences (contain pronouns/conjunctions)
-    if len(line) > 40 and _SENTENCE_WORDS.search(line):
+    if len(line) > MIN_SENTENCE_LINE_LENGTH and _SENTENCE_WORDS.search(line):
         return True
     return False
 
@@ -90,7 +100,8 @@ def parse_digest(email: Email) -> list[ScrapedJob]:
         jobs = _parse_generic_digest(body)
 
     # Only return if we found multiple jobs (digest), or platform-specific parser found any
-    if len(jobs) < 2 and platform not in ("linkedin", "indeed", "glassdoor", "relocate_me", "google_alerts"):
+    major_platforms = ("linkedin", "indeed", "glassdoor", "relocate_me", "google_alerts")
+    if len(jobs) < MIN_DIGEST_JOBS_FOR_GENERIC and platform not in major_platforms:
         return []
 
     return [
@@ -303,16 +314,15 @@ def _parse_glassdoor_digest(html: str, body_text: str) -> list[dict]:
         # Walk up to find the containing card element with job context
         parent = link
         text = ""
-        for _ in range(12):
+        for _ in range(GLASSDOOR_MAX_PARENT_DEPTH):
             parent = parent.parent
             if parent is None:
                 break
             text = parent.get_text(separator="|", strip=True)
-            # We want a block big enough to have job info but not the whole email
-            if 30 < len(text) < 500:
+            if GLASSDOOR_MIN_CONTEXT_LENGTH < len(text) < GLASSDOOR_MAX_CONTEXT_LENGTH:
                 break
 
-        if len(text) < 10:
+        if len(text) < GLASSDOOR_MIN_TEXT_LENGTH:
             continue
 
         parts = [p.strip() for p in text.split("|") if p.strip()]
@@ -336,7 +346,7 @@ def _parse_glassdoor_digest(html: str, body_text: str) -> list[dict]:
             content_parts.append(part)
 
         # After filtering: typically [company, title, location]
-        if len(content_parts) >= 3:
+        if len(content_parts) >= GLASSDOOR_MIN_CONTENT_PARTS:
             company = content_parts[0]
             title = content_parts[1]
             location = content_parts[2]
@@ -392,7 +402,7 @@ def _parse_generic_digest(body: str) -> list[dict]:
 
         # Look at lines before the URL for title/company/location
         context_lines = []
-        for i in range(max(0, url_line_idx - 5), url_line_idx):
+        for i in range(max(0, url_line_idx - GENERIC_URL_CONTEXT_LINES), url_line_idx):
             line = lines[i].strip()
             if line and len(line) > 2 and not line.startswith("http"):
                 context_lines.append(line)

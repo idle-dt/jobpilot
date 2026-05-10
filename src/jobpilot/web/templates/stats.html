@@ -235,10 +235,12 @@
         <!-- Noise model tier indicator -->
         {% if model_type == 'noise' %}
         {% set noise_labels = data.noise_label_count | default(0) %}
-        {% set tier = 2 if noise_labels >= 60 else (1 if noise_labels >= 30 else 0) %}
+        {% set t1_min = data.noise_tier1_min | default(30) %}
+        {% set t2_min = data.noise_tier2_min | default(60) %}
+        {% set tier = 2 if noise_labels >= t2_min else (1 if noise_labels >= t1_min else 0) %}
         {% set tier_features = 13 if tier == 2 else (9 if tier == 1 else 6) %}
         {% set next_tier = tier + 1 if tier < 2 else none %}
-        {% set next_threshold = 30 if tier == 0 else (60 if tier == 1 else 0) %}
+        {% set next_threshold = t1_min if tier == 0 else (t2_min if tier == 1 else 0) %}
         {% set labels_to_next = next_threshold - noise_labels if next_tier else 0 %}
         <div class="tier-indicator">
             <div class="tier-badge">Tier {{ tier }} <span class="tier-feat-count">({{ tier_features }} features)</span></div>
@@ -252,12 +254,12 @@
                 {% if tier >= 1 %}
                 <span class="tier-feat-unlocked">&#10003; digest_job_count, url_count, body_length</span>
                 {% else %}
-                <span class="tier-feat-locked">&#9675; digest_job_count, url_count, body_length — unlocks at 30 labels</span>
+                <span class="tier-feat-locked">&#9675; digest_job_count, url_count, body_length — unlocks at {{ t1_min }} labels</span>
                 {% endif %}
                 {% if tier >= 2 %}
                 <span class="tier-feat-unlocked">&#10003; subject_length, paragraph_count, company_name_count, has_salary_mention</span>
                 {% else %}
-                <span class="tier-feat-locked">&#9675; subject_length, paragraph_count, company_name_count, has_salary_mention — unlocks at 60 labels</span>
+                <span class="tier-feat-locked">&#9675; subject_length, paragraph_count, company_name_count, has_salary_mention — unlocks at {{ t2_min }} labels</span>
                 {% endif %}
             </div>
         </div>

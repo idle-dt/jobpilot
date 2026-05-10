@@ -92,6 +92,9 @@ def compute_features(
     ]
 
 
+CONFIDENCE_DIVISOR = 0.4
+
+
 @dataclass
 class ScoringResult:
     score: float
@@ -136,7 +139,7 @@ class RuleBasedScorer:
             "worth_checking" if final_score >= self.threshold else "skip"
         )
 
-        confidence = min(abs(final_score - self.threshold) / 0.4, 1.0)
+        confidence = min(abs(final_score - self.threshold) / CONFIDENCE_DIVISOR, 1.0)
 
         return ScoringResult(
             score=round(final_score, 3),
