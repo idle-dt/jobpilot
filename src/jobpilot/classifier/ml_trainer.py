@@ -211,7 +211,7 @@ class MLTrainer:
             )
             return model_id
 
-        except Exception:
+        except (ValueError, np.linalg.LinAlgError, RuntimeError):
             logger.exception("Failed to train %s/%s", model_type, algo_name)
             return None
 

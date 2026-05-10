@@ -221,7 +221,6 @@ NEGATIVE_SIGNALS = [
 def detect_platform(sender: str, sender_domain: str, subject: str) -> str | None:
     """Detect which job platform sent this email."""
     sender_lower = sender.lower()
-    subject_lower = subject.lower()
 
     for platform, patterns in PLATFORM_PATTERNS.items():
         # Check sender domain

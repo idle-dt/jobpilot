@@ -45,7 +45,7 @@ def _get_param(name: str, default: str = "") -> str:
         return val
     try:
         return (request.json or {}).get(name, default)
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         return default
 
 
@@ -155,10 +155,9 @@ def submit_feedback(email_id: str):
     repo.insert_feedback(feedback)
 
     _maybe_auto_retrain(repo)
-    return (
-        f'<div class="feedback-done">Labeled!'
-        f' <button class="btn-undo" hx-post="/api/feedback/{email_id}/undo"'
-        f' hx-target="closest .feedback-done" hx-swap="outerHTML">Undo</button></div>'
+    return render_template(
+        "partials/feedback_done.html",
+        undo_url=f"/api/feedback/{email_id}/undo",
     )
 
 
@@ -167,7 +166,7 @@ def undo_feedback(email_id: str):
     """Revert user feedback on an email."""
     repo = _repo()
     repo.delete_feedback(email_id)
-    return '<div class="feedback-undone">Undone — refresh to see the card again</div>'
+    return render_template("partials/feedback_undone.html")
 
 
 @bp.route("/api/feedback/scraped/<int:job_id>", methods=["POST"])
@@ -182,10 +181,9 @@ def submit_scraped_feedback(job_id: int):
     repo.update_scraped_job_label(job_id, label)
 
     _maybe_auto_retrain(repo)
-    return (
-        f'<div class="feedback-done">Labeled!'
-        f' <button class="btn-undo" hx-post="/api/feedback/scraped/{job_id}/undo"'
-        f' hx-target="closest .feedback-done" hx-swap="outerHTML">Undo</button></div>'
+    return render_template(
+        "partials/feedback_done.html",
+        undo_url=f"/api/feedback/scraped/{job_id}/undo",
     )
 
 
@@ -194,7 +192,7 @@ def undo_scraped_feedback(job_id: int):
     """Revert user feedback on a scraped job."""
     repo = _repo()
     repo.update_scraped_job_label(job_id, None)
-    return '<div class="feedback-undone">Undone — refresh to see the card again</div>'
+    return render_template("partials/feedback_undone.html")
 
 
 @bp.route("/api/scraped/<int:job_id>/expired", methods=["POST"])
@@ -442,7 +440,7 @@ def sync_emails():
     try:
         auth = GmailAuth(settings.gmail_credentials_path, settings.gmail_token_path)
         creds = auth.get_credentials()
-    except Exception:
+    except (ValueError, FileNotFoundError, OSError):
         logger.exception("Auth failed during sync")
         return jsonify({"status": "auth_required"}), 401
 

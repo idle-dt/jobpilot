@@ -1,7 +1,7 @@
 """CRUD operations for all database tables."""
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from jobpilot.storage.models import (
     Application,
@@ -204,12 +204,16 @@ class Repository:
         return [self._row_to_scraped_job(r) for r in rows]
 
     def update_scraped_job_label(self, job_id: int, label: str | None) -> None:
-        labeled_at = "datetime('now')" if label else "NULL"
-        self.conn.execute(
-            f"UPDATE scraped_jobs SET user_label = ?, labeled_at = {labeled_at}"
-            " WHERE id = ?",
-            (label, job_id),
-        )
+        if label:
+            self.conn.execute(
+                "UPDATE scraped_jobs SET user_label = ?, labeled_at = ? WHERE id = ?",
+                (label, datetime.now().isoformat(), job_id),
+            )
+        else:
+            self.conn.execute(
+                "UPDATE scraped_jobs SET user_label = NULL, labeled_at = NULL WHERE id = ?",
+                (job_id,),
+            )
         self.conn.commit()
 
     def update_scraped_job_scores(
@@ -942,18 +946,21 @@ class Repository:
             "matrix": {"tp": tp, "fp": fp, "fn": fn, "tn": tn},
         }
 
-        # Jobs per day (last 30 days)
+        # Jobs per day (last N days)
+        trend_cutoff = (datetime.now() - timedelta(days=TREND_LOOKBACK_DAYS)).isoformat()
         trend_rows = self.conn.execute(
             "SELECT DATE(scraped_at) as day, COUNT(*) as cnt FROM scraped_jobs"
-            f" WHERE scraped_at >= date('now', '-{TREND_LOOKBACK_DAYS} days')"
-            " GROUP BY DATE(scraped_at) ORDER BY day"
+            " WHERE scraped_at >= ?"
+            " GROUP BY DATE(scraped_at) ORDER BY day",
+            (trend_cutoff,),
         ).fetchall()
 
         # Top locations
         location_rows = self.conn.execute(
             "SELECT location, COUNT(*) as cnt FROM scraped_jobs"
             " WHERE location IS NOT NULL AND location != ''"
-            f" GROUP BY location ORDER BY cnt DESC LIMIT {TOP_LOCATIONS_LIMIT}"
+            " GROUP BY location ORDER BY cnt DESC LIMIT ?",
+            (TOP_LOCATIONS_LIMIT,),
         ).fetchall()
 
         # All model versions for experiment lab
