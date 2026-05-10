@@ -79,26 +79,28 @@
     <h3>Monitored Platforms</h3>
     <small>Email sender domains included when syncing Gmail. Add or remove as tags.</small>
 
+    <div class="arbeitnow-row" style="margin-top: 0.5rem;">
+        <label class="toggle">
+            <input type="checkbox" id="arbeitnow-visa-only"
+                   {{ 'checked' if arbeitnow_visa_only }}
+                   onchange="updateArbeitnow()">
+            <span class="toggle-track"><span class="toggle-circle"></span></span>
+            <span class="toggle-label">Visa sponsorship only</span>
+        </label>
+        <label class="toggle">
+            <input type="checkbox" id="arbeitnow-enabled"
+                   {{ 'checked' if arbeitnow_enabled }}
+                   onchange="updateArbeitnow()">
+            <span class="toggle-track"><span class="toggle-circle"></span></span>
+            <span class="toggle-label">ArbeitNow API — Fetch remote jobs automatically</span>
+        </label>
+    </div>
+
     <div class="tag-input-group" style="margin-top: 0.5rem;">
         <div class="tag-input-container" data-category="monitored_domain">
             <input type="text" class="tag-input" id="domain-tag-input"
                    placeholder="Add a custom domain…" data-category="monitored_domain">
         </div>
-    </div>
-
-    <div class="arbeitnow-row">
-        <label class="toggle-label">
-            <input type="checkbox" class="toggle-check" id="arbeitnow-enabled"
-                   {{ 'checked' if arbeitnow_enabled }}
-                   onchange="updateArbeitnow()">
-            <span class="toggle-text">ArbeitNow API — Fetch remote jobs automatically</span>
-        </label>
-        <label class="toggle-label">
-            <input type="checkbox" class="toggle-check" id="arbeitnow-visa-only"
-                   {{ 'checked' if arbeitnow_visa_only }}
-                   onchange="updateArbeitnow()">
-            <span class="toggle-text">Visa sponsorship only</span>
-        </label>
     </div>
 </section>
 
