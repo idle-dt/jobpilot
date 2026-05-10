@@ -124,7 +124,7 @@ class JobPageScraper:
         main = soup.find("main") or soup.find("article")
         if main:
             text = self._clean_text(main.get_text(separator="\n"))
-            if len(text) > 100:
+            if len(text) > _MIN_DESCRIPTION_LENGTH:
                 return text
 
         return None

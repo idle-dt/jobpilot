@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     server_host: str = "127.0.0.1"
     server_port: int = 5050
     secret_key: str = _get_or_create_secret_key()
-    debug: bool = True
+    debug: bool = False
 
     # Logging
     log_level: str = "INFO"

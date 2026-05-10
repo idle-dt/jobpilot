@@ -1,11 +1,8 @@
 """OAuth2 web flow endpoints for Google/Gmail authentication."""
 
 import json
+import logging
 import os
-
-# Allow OAuth over HTTP for local development (localhost only)
-os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-
 from pathlib import Path
 
 from flask import (
@@ -21,6 +18,12 @@ from google_auth_oauthlib.flow import Flow
 
 from jobpilot.config import settings
 from jobpilot.gmail.auth import SCOPES
+
+# Allow OAuth over HTTP only in debug mode (local development)
+if settings.debug:
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
+logger = logging.getLogger(__name__)
 
 bp_auth = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -92,8 +95,9 @@ def callback():
 
     try:
         flow.fetch_token(authorization_response=request.url)
-    except Exception as e:
-        flash(f"Authentication failed: {e}")
+    except (ValueError, OSError) as e:
+        logger.exception("Authentication failed: %s", e)
+        flash("Authentication failed. Please try again.")
         return redirect(url_for("auth.login"))
 
     creds = flow.credentials

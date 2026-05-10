@@ -22,7 +22,10 @@ def serve():
 
 
 @cli.command()
-@click.option("--days", default=None, type=int, help="Fetch emails from the last N days (default: from DB setting).")
+@click.option(
+    "--days", default=None, type=int,
+    help="Fetch emails from the last N days (default: from DB setting).",
+)
 @click.option("--max-results", default=200, help="Maximum number of emails to fetch.")
 def fetch(days: int | None, max_results: int):
     """Fetch new emails from Gmail."""

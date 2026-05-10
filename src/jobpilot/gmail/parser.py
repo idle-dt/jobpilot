@@ -7,7 +7,7 @@ from email.utils import parsedate_to_datetime
 
 from bs4 import BeautifulSoup
 
-from jobpilot.classifier.signals import PLATFORM_PATTERNS, detect_platform, extract_signals
+from jobpilot.classifier.signals import detect_platform, extract_signals
 from jobpilot.storage.models import Email, ExtractedSignal
 
 

@@ -1,7 +1,7 @@
 """Parse digest emails into individual job listings."""
 
 import re
-from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
@@ -260,12 +260,12 @@ def _parse_indeed_digest(body: str) -> list[dict]:
         if not urls:
             continue
 
-        lines = [l.strip() for l in block.splitlines() if l.strip()]
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
         # Filter out noise
         content_lines = [
-            l for l in lines
-            if not l.startswith("http") and "indeed.com" not in l.lower()
-            and len(l) > 2
+            line for line in lines
+            if not line.startswith("http") and "indeed.com" not in line.lower()
+            and len(line) > 2
         ]
 
         title = content_lines[0] if content_lines else None
