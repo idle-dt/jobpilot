@@ -2,13 +2,13 @@
 
 import json as json_module
 import logging
-import time
 from datetime import datetime
 
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from jobpilot.config import settings
-from jobpilot.storage.models import UserFeedback
+from jobpilot.storage.models import ExtractedSignal, UserFeedback
+from jobpilot.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,8 @@ SIGNAL_PRIORITY = {
 }
 
 
-def _sort_signals(signals: list) -> list:
+def _sort_signals(signals: list[ExtractedSignal]) -> list[ExtractedSignal]:
+    """Sort signals by priority (tech_stack first, platform last)."""
     return sorted(signals, key=lambda s: SIGNAL_PRIORITY.get(s.signal_type, 99))
 
 
@@ -43,13 +44,14 @@ def _get_param(name: str, default: str = "") -> str:
     val = request.values.get(name)
     if val:
         return val
-    try:
-        return (request.json or {}).get(name, default)
-    except (ValueError, TypeError, AttributeError):
-        return default
+    json_body = request.get_json(silent=True)
+    if json_body:
+        return json_body.get(name, default)
+    return default
 
 
-def _repo():
+def _repo() -> Repository:
+    """Get the repository from the current Flask app config."""
     return current_app.config["repo"]
 
 
@@ -424,49 +426,19 @@ def update_arbeitnow():
 @bp.route("/api/sync", methods=["POST"])
 def sync_emails():
     """Fetch new emails from Gmail and run classification."""
-    from datetime import datetime, timedelta
-
-    from jobpilot.gmail.auth import GmailAuth
-    from jobpilot.gmail.client import GmailClient
-    from jobpilot.gmail.fetcher import fetch_new_emails
-    from jobpilot.web.app import (
-        _classify_unprocessed,
-        _parse_existing_digests,
-        _score_pending_jobs,
-    )
+    from jobpilot.services.sync_service import SyncService
 
     repo = _repo()
 
     try:
-        auth = GmailAuth(settings.gmail_credentials_path, settings.gmail_token_path)
-        creds = auth.get_credentials()
+        result = SyncService(repo).run()
+        return jsonify({
+            "status": "ok", "new_emails": result.new_emails,
+            "arbeitnow_jobs": result.arbeitnow_jobs,
+        })
     except (ValueError, FileNotFoundError, OSError):
         logger.exception("Auth failed during sync")
         return jsonify({"status": "auth_required"}), 401
-
-    try:
-        sync_days = int(repo.get_setting("sync_days", "7"))
-        since = datetime.now() - timedelta(days=sync_days)
-        client = GmailClient(creds)
-        new_emails = fetch_new_emails(client, repo, since=since)
-        _classify_unprocessed(repo)
-        _parse_existing_digests(repo)
-
-        # Fetch from ArbeitNow API (rate-limited, adds pending jobs)
-        arbeitnow_count = 0
-        try:
-            from jobpilot.scraper.arbeitnow import ArbeitNowClient
-            arbeitnow = ArbeitNowClient(repo)
-            arbeitnow_count = arbeitnow.fetch_and_store()
-        except Exception:
-            logger.exception("ArbeitNow fetch failed")
-
-        _score_pending_jobs(repo)
-        _scrape_low_confidence_jobs(repo)
-        return jsonify({
-            "status": "ok", "new_emails": new_emails,
-            "arbeitnow_jobs": arbeitnow_count,
-        })
     except Exception:
         logger.exception("Sync failed")
         return jsonify({"status": "error", "message": "Sync failed, check server logs"}), 500
@@ -474,46 +446,8 @@ def sync_emails():
 
 def _maybe_auto_retrain(repo) -> None:
     """Check if conditions are met for automatic retraining after feedback."""
-    try:
-        from jobpilot.classifier.ml_trainer import MLTrainer
-        trainer = MLTrainer(repo)
-        for model_type in ("noise", "scoring"):
-            if trainer.should_retrain(model_type):
-                logger.info("Auto-retraining %s model", model_type)
-                trainer.train_all(model_type)
-    except Exception:
-        logger.exception("Auto-retrain check failed")
-
-
-def _scrape_low_confidence_jobs(repo) -> None:
-    """Scrape full descriptions for jobs with low scoring confidence."""
-    from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
-    from jobpilot.scraper.job_page import JobPageScraper
-
-    scrape_threshold = float(
-        repo.get_setting("scrape_confidence_threshold", str(settings.scrape_confidence_threshold))
-    )
-    score_threshold = float(
-        repo.get_setting("score_threshold", str(settings.score_threshold))
-    )
-    jobs = repo.get_jobs_needing_scrape(score_threshold, scrape_threshold)
-    if not jobs:
-        return
-
-    config = load_signal_config(repo)
-    scraper = JobPageScraper()
-    scorer = RuleBasedScorer(config=config, score_threshold=score_threshold)
-    logger.info("Scraping %d low-confidence jobs", len(jobs))
-
-    for job in jobs:
-        description = scraper.scrape(job.url)
-        if description:
-            repo.update_scraped_job_description(job.id, description)
-            text = f"{job.title} {job.company or ''} {job.location or ''} {description}"
-            result = scorer.score(job.title, text)
-            repo.update_scraped_job_scores(job.id, result.score, None, result.classification)
-        repo.mark_scrape_attempted(job.id)
-        time.sleep(SCRAPE_DELAY_SECONDS)
+    from jobpilot.services.ml_service import MLService
+    MLService(repo).maybe_auto_retrain()
 
 
 # --- ML API Routes ---

@@ -1,0 +1,113 @@
+"""Application data access."""
+
+import sqlite3
+
+from jobpilot.storage.models import Application, ApplicationStatusHistory
+
+
+class ApplicationRepository:
+    """CRUD operations for job applications and status history."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    def insert_application(self, app: Application) -> int:
+        """Insert a new application. Returns the new ID."""
+        cursor = self.conn.execute(
+            """INSERT INTO applications
+            (email_id, scraped_job_id, company, role_title, location, salary_range,
+             job_url, platform, track, status, contact_name, contact_email, notes,
+             cover_letter_track, cv_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                app.email_id, app.scraped_job_id, app.company, app.role_title,
+                app.location, app.salary_range, app.job_url, app.platform,
+                app.track, app.status, app.contact_name, app.contact_email,
+                app.notes, app.cover_letter_track, app.cv_version,
+            ),
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_application(self, app_id: int) -> Application | None:
+        """Get a single application by ID."""
+        row = self.conn.execute(
+            "SELECT * FROM applications WHERE id = ?", (app_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_application(row)
+
+    def get_applications_by_status(self, status: str | None = None) -> list[Application]:
+        """Get applications, optionally filtered by status."""
+        if status:
+            rows = self.conn.execute(
+                "SELECT * FROM applications WHERE status = ? ORDER BY last_status_change DESC",
+                (status,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM applications ORDER BY last_status_change DESC"
+            ).fetchall()
+        return [self._row_to_application(r) for r in rows]
+
+    def update_application_status(
+        self, app_id: int, new_status: str, notes: str | None = None,
+    ) -> None:
+        """Update application status and record history."""
+        current = self.get_application(app_id)
+        if not current:
+            return
+        self.conn.execute(
+            """UPDATE applications SET status = ?, last_status_change = datetime('now'),
+            updated_at = datetime('now') WHERE id = ?""",
+            (new_status, app_id),
+        )
+        self.conn.execute(
+            """INSERT INTO application_status_history
+            (application_id, from_status, to_status, notes)
+            VALUES (?, ?, ?, ?)""",
+            (app_id, current.status, new_status, notes),
+        )
+        self.conn.commit()
+
+    def get_application_history(self, app_id: int) -> list[ApplicationStatusHistory]:
+        """Get status change history for an application."""
+        rows = self.conn.execute(
+            "SELECT * FROM application_status_history WHERE application_id = ? ORDER BY changed_at",
+            (app_id,),
+        ).fetchall()
+        return [
+            ApplicationStatusHistory(
+                id=r["id"], application_id=r["application_id"],
+                from_status=r["from_status"], to_status=r["to_status"],
+                changed_at=r["changed_at"], notes=r["notes"],
+            )
+            for r in rows
+        ]
+
+    def count_applications_by_status(self) -> dict[str, int]:
+        """Count applications grouped by status."""
+        rows = self.conn.execute(
+            "SELECT status, COUNT(*) as cnt FROM applications GROUP BY status"
+        ).fetchall()
+        return {r["status"]: r["cnt"] for r in rows}
+
+    def _row_to_application(self, row: sqlite3.Row) -> Application:
+        """Convert a database row to an Application model."""
+        return Application(
+            id=row["id"], company=row["company"], role_title=row["role_title"],
+            status=row["status"], email_id=row["email_id"],
+            scraped_job_id=row["scraped_job_id"], location=row["location"],
+            salary_range=row["salary_range"], job_url=row["job_url"],
+            platform=row["platform"], track=row["track"],
+            saved_at=row["saved_at"], applied_at=row["applied_at"],
+            last_status_change=row["last_status_change"],
+            contact_name=row["contact_name"], contact_email=row["contact_email"],
+            notes=row["notes"], cover_letter_track=row["cover_letter_track"],
+            cv_version=row["cv_version"], offer_salary=row["offer_salary"],
+            offer_currency=row["offer_currency"], offer_equity=row["offer_equity"],
+            offer_relocation_package=row["offer_relocation_package"],
+            offer_notes=row["offer_notes"], created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )

@@ -11,8 +11,8 @@ from jobpilot.classifier.signals import detect_platform, extract_signals
 from jobpilot.storage.models import Email, ExtractedSignal
 
 
-def parse_message(raw: dict) -> Email:
-    """Parse a raw Gmail API message into an Email model with extracted signals."""
+def parse_message(raw: dict) -> tuple[Email, list[ExtractedSignal]]:
+    """Parse a raw Gmail API message into an Email model and extracted signals."""
     msg_id = raw["id"]
     thread_id = raw["threadId"]
     headers = {h["name"].lower(): h["value"] for h in raw["payload"]["headers"]}
@@ -44,12 +44,11 @@ def parse_message(raw: dict) -> Email:
         received_at=received_at,
         platform=platform,
     )
-    # Attach signals for the fetcher to store separately
-    email._signals = [
+    extracted = [
         ExtractedSignal(id=None, email_id=msg_id, signal_type=s["type"], signal_value=s["value"])
         for s in signals
     ]
-    return email
+    return email, extracted
 
 
 def _extract_domain(sender: str) -> str:
