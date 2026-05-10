@@ -219,33 +219,25 @@ document.querySelectorAll('.tag-input').forEach(input => {
                     tagList.className = 'tag-list';
                     container.insertBefore(tagList, this);
                 }
-                if (isDomain) {
-                    /* Domain toggle returns JSON, render tag manually */
-                    const tag = document.createElement('span');
-                    tag.className = 'pref-tag';
-                    tag.dataset.category = 'monitored_domain';
-                    tag.dataset.value = normalised;
-                    tag.appendChild(document.createTextNode(normalised + ' '));
-                    const btn = document.createElement('button');
-                    btn.className = 'pref-tag-remove';
-                    btn.setAttribute('hx-delete', '/api/preferences');
-                    btn.setAttribute('hx-vals', JSON.stringify({category: 'monitored_domain', value: normalised}));
-                    btn.setAttribute('hx-target', 'closest .pref-tag');
-                    btn.setAttribute('hx-swap', 'outerHTML');
-                    btn.setAttribute('aria-label', 'Remove ' + normalised);
-                    btn.textContent = '\u00d7';
-                    tag.appendChild(btn);
-                    tagList.appendChild(tag);
-                    htmx.process(tag);
-                } else {
-                    return resp.text().then(html => {
-                        const tpl = document.createElement('template');
-                        tpl.innerHTML = html;
-                        const node = tpl.content.firstElementChild;
-                        tagList.appendChild(node);
-                        htmx.process(node);
-                    });
-                }
+                /* Build tag with safe DOM methods */
+                const tagCat = isDomain ? 'monitored_domain' : category;
+                const tag = document.createElement('span');
+                tag.className = 'pref-tag';
+                if (tagCat === 'tech_keyword_primary') tag.classList.add('pref-tag-primary');
+                tag.dataset.category = tagCat;
+                tag.dataset.value = normalised;
+                tag.appendChild(document.createTextNode(normalised + ' '));
+                const btn = document.createElement('button');
+                btn.className = 'pref-tag-remove';
+                btn.setAttribute('hx-delete', '/api/preferences');
+                btn.setAttribute('hx-vals', JSON.stringify({category: tagCat, value: normalised}));
+                btn.setAttribute('hx-target', 'closest .pref-tag');
+                btn.setAttribute('hx-swap', 'outerHTML');
+                btn.setAttribute('aria-label', 'Remove ' + normalised);
+                btn.textContent = '\u00d7';
+                tag.appendChild(btn);
+                tagList.appendChild(tag);
+                htmx.process(tag);
                 this.value = '';
             }).catch(() => {
                 this.classList.add('input-error');

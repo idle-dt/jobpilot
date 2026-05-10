@@ -4,10 +4,10 @@ import html
 import logging
 import re
 from datetime import datetime
-from urllib.parse import urlparse
 
 import requests
 
+from jobpilot.scraper.job_page import _is_safe_url
 from jobpilot.storage.models import ScrapedJob
 from jobpilot.storage.repository import Repository
 
@@ -120,10 +120,3 @@ def _strip_html(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _is_safe_url(url: str) -> bool:
-    """Validate URL has safe scheme and host."""
-    try:
-        parsed = urlparse(url)
-        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-    except ValueError:
-        return False

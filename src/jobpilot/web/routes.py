@@ -289,6 +289,7 @@ ALLOWED_CATEGORIES = {
     "negative_signal", "monitored_domain",
 }
 SCORING_CATEGORIES = ALLOWED_CATEGORIES - {"monitored_domain"}
+ALLOWED_CURRENCIES = {"EUR", "USD", "GBP", "CHF", "SEK", "NOK", "DKK"}
 
 
 def _invalidate_if_scoring(repo, category: str) -> None:
@@ -317,9 +318,7 @@ def add_preference():
         return jsonify({"status": "error", "message": "Already exists"}), 409
 
     _invalidate_if_scoring(repo, category)
-    return render_template(
-        "partials/preference_tag.html", category=category, value=value,
-    )
+    return jsonify({"status": "ok", "id": pref_id})
 
 
 @bp.route("/api/preferences", methods=["DELETE"])
@@ -373,6 +372,8 @@ def update_salary():
     """Update salary preferences."""
     repo = _repo()
     currency = _get_param("currency", "EUR").upper()
+    if currency not in ALLOWED_CURRENCIES:
+        return jsonify({"status": "error", "message": "Invalid currency"}), 400
     min_val = _get_param("min", "").strip()
     max_val = _get_param("max", "").strip()
 
@@ -402,6 +403,8 @@ def update_arbeitnow():
     repo = _repo()
     enabled = _get_param("enabled", "false")
     visa_only = _get_param("visa_only", "false")
+    if enabled not in ("true", "false") or visa_only not in ("true", "false"):
+        return jsonify({"status": "error", "message": "Invalid boolean value"}), 400
     repo.set_setting("arbeitnow_enabled", enabled)
     repo.set_setting("arbeitnow_visa_only", visa_only)
     return jsonify({"status": "ok"})
