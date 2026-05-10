@@ -141,6 +141,15 @@ MarkForMC is proprietary and licensed. When rebuilding a matching aesthetic with
 - Size: 40px diameter minimum for carousel controls; 80px for hero video play
 - Use for: carousel pagination/play-pause, hero video play, search toggle
 
+### Toggle Switch (Pill)
+- Track: 44×24px, full pill radius (`999px`), Ink Black when on, `rgba(0,0,0,0.12)` when off
+- Circle: 18px diameter, Canvas Cream when on, White when off, 3px inset from track edge
+- Animation: 0.2s ease slide + color transition
+- Label: Sofia Sans 15px / weight 450, 12px gap from toggle
+- Built on native `<input type="checkbox">` for accessibility
+- Use for: all boolean on/off settings (platform monitoring toggles, feature switches)
+- Do NOT use for: multi-select tag lists, radio choices, or non-binary settings
+
 ### Cards & Containers
 
 **Hero Media Frame (Stadium)**

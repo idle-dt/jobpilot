@@ -1182,6 +1182,7 @@ button.sync-btn:focus-visible {
 /* ── Settings ────────────────────────────────────────────── */
 .settings-section {
     max-width: 480px;
+    margin-bottom: 2rem;
 }
 
 .settings-section h3 {
@@ -1347,9 +1348,9 @@ button.sync-btn:focus-visible {
 /* ── ArbeitNow Row ──────────────────────────────────────── */
 .arbeitnow-row {
     display: flex;
-    gap: 1.5rem;
-    align-items: center;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-start;
     margin-top: 0.75rem;
 }
 
@@ -1371,6 +1372,98 @@ button.sync-btn:focus-visible {
 
 .toggle-text {
     user-select: none;
+}
+
+/* --- Pill Toggle Switch --- */
+.toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 450;
+    color: var(--ink);
+}
+
+.toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-track {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    min-width: 44px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.12);
+    transition: background 0.2s ease;
+}
+
+.toggle-circle {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    transition: all 0.2s ease;
+}
+
+/* Checked state */
+.toggle input:checked + .toggle-track {
+    background: var(--ink);
+}
+
+.toggle input:checked + .toggle-track .toggle-circle {
+    left: 23px;
+    background: var(--canvas);
+}
+
+/* Hover */
+.toggle:hover .toggle-track {
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.toggle:hover input:checked + .toggle-track {
+    opacity: 0.9;
+    background: var(--ink);
+}
+
+/* Focus visible (keyboard) */
+.toggle input:focus-visible + .toggle-track {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+}
+
+/* Disabled */
+.toggle.disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* Dark theme */
+[data-theme="dark"] .toggle-track {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .toggle-circle {
+    background: rgba(255, 255, 255, 0.7);
+}
+
+[data-theme="dark"] .toggle input:checked + .toggle-track {
+    background: var(--ink);
+}
+
+[data-theme="dark"] .toggle input:checked + .toggle-track .toggle-circle {
+    background: var(--canvas);
+}
+
+[data-theme="dark"] .toggle:hover .toggle-track {
+    background: rgba(255, 255, 255, 0.22);
 }
 
 /* ── Salary Row ─────────────────────────────────────────── */
