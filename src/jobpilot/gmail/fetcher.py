@@ -76,7 +76,7 @@ def fetch_new_emails(
             continue
 
         raw = client.get_message(msg_id)
-        email = parse_message(raw)
+        email, signals = parse_message(raw)
 
         # Parse digest emails into individual jobs (before insert so we have count)
         extracted_jobs = parse_digest(email)
@@ -92,7 +92,7 @@ def fetch_new_emails(
         repo.insert_email(email)
 
         # Store extracted signals
-        for signal in email._signals:
+        for signal in signals:
             repo.insert_signal(signal)
 
         for job in extracted_jobs:

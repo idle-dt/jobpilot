@@ -6,6 +6,11 @@ from datetime import datetime
 
 @dataclass
 class Email:
+    """A fetched email from a job platform.
+
+    Classification values: 'worth_checking', 'skip', or None (unclassified).
+    Platform values: 'linkedin', 'wellfound', 'glassdoor', etc.
+    """
     id: str
     thread_id: str
     sender: str
@@ -27,6 +32,11 @@ class Email:
 
 @dataclass
 class ExtractedSignal:
+    """A signal extracted from an email (tech stack, location, salary, etc).
+
+    Signal types: 'tech_stack', 'location', 'salary', 'job_title',
+    'seniority', 'negative', 'platform'.
+    """
     id: int | None
     email_id: str
     signal_type: str
@@ -37,6 +47,10 @@ class ExtractedSignal:
 
 @dataclass
 class UserFeedback:
+    """User-provided label for an email classification.
+
+    Label values: 'worth_checking', 'skip', 'not_a_job'.
+    """
     id: int | None
     email_id: str
     label: str
@@ -46,6 +60,11 @@ class UserFeedback:
 
 @dataclass
 class ModelVersion:
+    """A trained ML model version with metrics and serialized weights.
+
+    Model types: 'noise' (job vs non-job), 'scoring' (worth_checking vs skip).
+    Algorithm values: 'LR', 'RF', 'GBC', 'SVM'.
+    """
     id: int | None
     version: int
     training_samples: int
@@ -64,6 +83,10 @@ class ModelVersion:
 
 @dataclass
 class MLPrediction:
+    """A model's prediction for a specific item.
+
+    Item types: 'email', 'scraped_job'.
+    """
     id: int | None
     model_version_id: int
     item_type: str
@@ -75,6 +98,7 @@ class MLPrediction:
 
 @dataclass
 class PlatformPattern:
+    """Pattern matching rule for detecting email platforms."""
     id: int | None
     platform_name: str
     sender_pattern: str | None = None
@@ -85,6 +109,11 @@ class PlatformPattern:
 
 @dataclass
 class ScrapedJob:
+    """A job posting extracted from a digest email or job board.
+
+    Classification values: 'pending', 'worth_checking', 'skip'.
+    User label values: 'worth_checking', 'skip', 'not_a_job', or None.
+    """
     id: int | None
     source: str
     title: str
@@ -108,6 +137,11 @@ class ScrapedJob:
 
 @dataclass
 class Application:
+    """A tracked job application with status history.
+
+    Status values: 'applied', 'screening', 'interview', 'offer',
+    'accepted', 'rejected', 'withdrawn'.
+    """
     id: int | None
     company: str
     role_title: str
@@ -138,6 +172,13 @@ class Application:
 
 @dataclass
 class UserPreference:
+    """A user preference tag in a specific category.
+
+    Categories: 'tech_keyword_primary', 'tech_keyword_secondary', 'job_title',
+    'seniority_wanted', 'seniority_unwanted', 'location_primary',
+    'location_secondary', 'location_negative', 'negative_signal',
+    'monitored_domain'.
+    """
     id: int | None
     category: str
     value: str
@@ -147,6 +188,7 @@ class UserPreference:
 
 @dataclass
 class ApplicationStatusHistory:
+    """Audit trail entry for application status changes."""
     id: int | None
     application_id: int
     to_status: str

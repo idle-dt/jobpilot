@@ -24,6 +24,10 @@ from jobpilot.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
 
+# Conservative defaults for small datasets (<200 samples):
+# - n_estimators=100: enough trees without overfitting on small data
+# - max_iter=1000/2000: ensure convergence on small datasets
+# - random_state=42: reproducible results across runs
 ALGORITHMS = {
     "LR": lambda: LogisticRegression(max_iter=1000, random_state=42),
     "RF": lambda: RandomForestClassifier(n_estimators=100, random_state=42),
@@ -42,6 +46,9 @@ NOISE_FEATURE_TIERS: dict[int, list[str]] = {
     1: STRUCTURAL_FEATURE_NAMES_TIER1,
     2: STRUCTURAL_FEATURE_NAMES_TIER1 + STRUCTURAL_FEATURE_NAMES_TIER2,
 }
+
+MAX_CV_SPLITS = 5
+MIN_CV_SPLITS = 2
 
 
 def get_noise_feature_tier(label_count: int) -> int:
@@ -163,8 +170,8 @@ class MLTrainer:
             clf = algo_factory()
 
             min_class = int(np.min(np.bincount(y)))
-            n_splits = min(5, min_class)
-            n_splits = max(2, n_splits)
+            n_splits = min(MAX_CV_SPLITS, min_class)
+            n_splits = max(MIN_CV_SPLITS, n_splits)
             cv = StratifiedKFold(
                 n_splits=n_splits, shuffle=True, random_state=42,
             )
@@ -229,7 +236,7 @@ class MLTrainer:
                 base = clf.calibrated_classifiers_[0].estimator
                 if hasattr(base, "coef_"):
                     return np.abs(base.coef_[0]).tolist()
-        except Exception:
+        except (AttributeError, IndexError, ValueError):
             logger.debug("Could not extract importances for %s", algo_name)
         return [0.0] * n
 
@@ -257,6 +264,25 @@ class MLTrainer:
             features.extend(structural[name] for name in extra_features)
         return features
 
+    def _predict_items(
+        self, clf, model_id: int, items: list[dict],
+        feature_fn, positive_label: str, negative_label: str,
+        item_type: str,
+    ) -> list[MLPrediction]:
+        """Run a model against items and return predictions."""
+        predictions: list[MLPrediction] = []
+        for row in items:
+            features = feature_fn(row)
+            x_item = np.array([features])
+            prob = self._get_positive_prob(clf, x_item)
+            pred_label = positive_label if prob >= 0.5 else negative_label
+            predictions.append(MLPrediction(
+                id=None, model_version_id=model_id,
+                item_type=item_type, item_id=str(row["id"]),
+                prediction=pred_label, probability=prob,
+            ))
+        return predictions
+
     def _predict_all(self, model_type: str, model_ids: list[int]) -> None:
         """Run predictions for all trained models on relevant items."""
         for model_id in model_ids:
@@ -270,54 +296,42 @@ class MLTrainer:
             predictions: list[MLPrediction] = []
 
             if model_type == "noise":
-                rows = self.repo.conn.execute(
-                    "SELECT id, subject, body_text FROM emails WHERE processed = TRUE"
-                ).fetchall()
-                for row in rows:
-                    features = self._compute_noise_features(
+                rows = self.repo.get_all_processed_emails()
+
+                def noise_feature_fn(row: dict) -> list[float]:
+                    return self._compute_noise_features(
                         row["subject"], row["body_text"] or "",
                         extra_features, email_id=row["id"],
                     )
-                    x_item = np.array([features])
-                    prob = self._get_positive_prob(clf, x_item)
-                    pred_label = "job" if prob >= 0.5 else "not_a_job"
-                    predictions.append(MLPrediction(
-                        id=None, model_version_id=model_id,
-                        item_type="email", item_id=row["id"],
-                        prediction=pred_label, probability=prob,
-                    ))
-            else:
-                email_rows = self.repo.conn.execute(
-                    "SELECT id, subject, body_text FROM emails WHERE processed = TRUE"
-                ).fetchall()
-                for row in email_rows:
-                    features = compute_features(row["subject"], row["body_text"] or "")
-                    x_item = np.array([features])
-                    prob = self._get_positive_prob(clf, x_item)
-                    pred_label = "worth_checking" if prob >= 0.5 else "skip"
-                    predictions.append(MLPrediction(
-                        id=None, model_version_id=model_id,
-                        item_type="email", item_id=row["id"],
-                        prediction=pred_label, probability=prob,
-                    ))
 
-                job_rows = self.repo.conn.execute(
-                    "SELECT id, title, company, location, description FROM scraped_jobs"
-                ).fetchall()
-                for row in job_rows:
+                predictions = self._predict_items(
+                    clf, model_id, rows, noise_feature_fn,
+                    "job", "not_a_job", "email",
+                )
+            else:
+                email_rows = self.repo.get_all_processed_emails()
+
+                def scoring_email_fn(row: dict) -> list[float]:
+                    return compute_features(row["subject"], row["body_text"] or "")
+
+                predictions = self._predict_items(
+                    clf, model_id, email_rows, scoring_email_fn,
+                    "worth_checking", "skip", "email",
+                )
+
+                job_rows = self.repo.get_all_scraped_jobs()
+
+                def scoring_job_fn(row: dict) -> list[float]:
                     body = (
                         f"{row['title']} {row['company'] or ''}"
                         f" {row['location'] or ''} {row['description'] or ''}"
                     )
-                    features = compute_features(row["title"], body)
-                    x_item = np.array([features])
-                    prob = self._get_positive_prob(clf, x_item)
-                    pred_label = "worth_checking" if prob >= 0.5 else "skip"
-                    predictions.append(MLPrediction(
-                        id=None, model_version_id=model_id,
-                        item_type="scraped_job", item_id=str(row["id"]),
-                        prediction=pred_label, probability=prob,
-                    ))
+                    return compute_features(row["title"], body)
+
+                predictions.extend(self._predict_items(
+                    clf, model_id, job_rows, scoring_job_fn,
+                    "worth_checking", "skip", "scraped_job",
+                ))
 
             if predictions:
                 self.repo.insert_predictions(predictions)

@@ -141,16 +141,16 @@ def test_parse_plain_text_message():
         body_text="Senior Flutter position in Amsterdam, Netherlands. "
                   "Tech stack: Flutter, Dart, Kotlin. Salary: €80,000 - €110,000.",
     )
-    email = parse_message(raw)
+    email, signals = parse_message(raw)
 
     assert email.id == "msg_test"
     assert email.sender_domain == "linkedin.com"
     assert email.platform == "linkedin"
     assert "Flutter" in email.subject
     assert email.body_text is not None
-    assert len(email._signals) > 0
+    assert len(signals) > 0
 
-    signal_types = {s.signal_type for s in email._signals}
+    signal_types = {s.signal_type for s in signals}
     assert "tech_stack" in signal_types
     assert "location" in signal_types
     assert "platform" in signal_types
@@ -161,7 +161,7 @@ def test_parse_html_only_message():
         body_text=None,
         body_html="<html><body><h1>Flutter Developer</h1><p>Great role in Oslo</p></body></html>",
     )
-    email = parse_message(raw)
+    email, signals = parse_message(raw)
 
     assert email.body_text is not None
     assert "Flutter Developer" in email.body_text
