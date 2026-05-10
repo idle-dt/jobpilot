@@ -57,6 +57,10 @@ WHITELIST = {
 INDEED_REGEX = re.compile(r"jobs?\s+(?:for|matching|based on)", re.IGNORECASE)
 
 
+WHITELIST_CONFIDENCE = 1.0
+DIGEST_MATCH_CONFIDENCE = 0.9
+
+
 class JobDetector:
     """Determines if an email is a job opportunity or platform noise."""
 
@@ -75,10 +79,10 @@ class JobDetector:
         confidence 0.0 = unknown, show for review
         """
         if self._matches_whitelist(subject, sender, platform):
-            return True, 1.0
+            return True, WHITELIST_CONFIDENCE
 
         if num_extracted_jobs > 0:
-            return True, 0.9
+            return True, DIGEST_MATCH_CONFIDENCE
 
         # Unknown — show for review, let user decide
         return True, 0.0

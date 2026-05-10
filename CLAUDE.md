@@ -35,6 +35,11 @@ Key implementation details:
 - Sync button overrides Pico CSS button defaults with `!important` — keep these when modifying
 - Use `visibility: hidden` (not `display: none`) to hide elements that must hold their layout space
 
+## Code Quality
+
+- No magic numbers — numeric literals with domain meaning must be named constants (e.g. `MAX_BODY_LENGTH = 5000`, not bare `5000`)
+- No magic strings — repeated string literals used as keys/identifiers must be constants
+
 ## Security Notes
 
 - Scraper validates URLs before fetching (rejects private IPs, non-HTTP schemes, unsafe redirects)

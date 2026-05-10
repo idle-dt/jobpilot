@@ -15,6 +15,10 @@ from jobpilot.storage.models import (
     UserPreference,
 )
 
+HISTOGRAM_BINS = 10
+TREND_LOOKBACK_DAYS = 30
+TOP_LOCATIONS_LIMIT = 10
+
 
 class Repository:
     """Data access layer for JobPilot."""
@@ -242,7 +246,7 @@ class Repository:
             """SELECT * FROM scraped_jobs
             WHERE score IS NOT NULL
             AND scrape_attempted = FALSE
-            AND ABS(score - ?) / 0.4 < ?
+            AND ABS(score - ?) / 0.4 < ?  -- 0.4 = CONFIDENCE_DIVISOR from rules.py
             ORDER BY ABS(score - ?) ASC""",
             (score_threshold, confidence_threshold, score_threshold),
         ).fetchall()
@@ -491,11 +495,12 @@ class Repository:
         cursor = self.conn.execute(
             """INSERT INTO model_versions
             (version, training_samples, accuracy, precision_score, recall_score,
-             f1_score, model_blob, feature_names, is_active, model_type, algorithm)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             f1_score, model_blob, feature_names, is_active, model_type, algorithm,
+             train_accuracy)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (mv.version, mv.training_samples, mv.accuracy, mv.precision_score,
              mv.recall_score, mv.f1_score, mv.model_blob, mv.feature_names,
-             mv.is_active, mv.model_type, mv.algorithm),
+             mv.is_active, mv.model_type, mv.algorithm, mv.train_accuracy),
         )
         self.conn.commit()
         return cursor.lastrowid
@@ -584,6 +589,7 @@ class Repository:
             recall_score=row["recall_score"], f1_score=row["f1_score"],
             feature_names=row["feature_names"], is_active=bool(row["is_active"]),
             model_type=row["model_type"], algorithm=row["algorithm"],
+            train_accuracy=row["train_accuracy"],
         )
 
     # --- ML Predictions ---
@@ -644,7 +650,8 @@ class Repository:
         data = []
         rows = self.conn.execute(
             """SELECT e.id as email_id, e.subject, e.body_text,
-                      CASE WHEN uf.label = 'not_a_job' THEN 0 ELSE 1 END as label
+                      CASE WHEN uf.label = 'not_a_job' THEN 0 ELSE 1 END as label,
+                      'email' as item_source
                FROM user_feedback uf
                JOIN emails e ON uf.email_id = e.id"""
         ).fetchall()
@@ -653,12 +660,20 @@ class Repository:
         # Scraped jobs are always job-related (positive class)
         rows = self.conn.execute(
             """SELECT id as email_id, title as subject, description as body_text,
-                      1 as label
+                      1 as label, 'scraped_job' as item_source
                FROM scraped_jobs WHERE user_label IS NOT NULL"""
         ).fetchall()
         for r in rows:
             data.append(dict(r))
         return data
+
+    def count_scraped_jobs_for_email(self, email_id) -> int:
+        """Count scraped jobs linked to an email (for digest_job_count feature)."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE email_id = ?",
+            (str(email_id),),
+        ).fetchone()
+        return row["cnt"] if row else 0
 
     def get_scoring_training_data(self) -> list[dict]:
         """Get training data for the scoring model.
@@ -893,13 +908,13 @@ class Repository:
         score_rows = self.conn.execute(
             "SELECT score FROM scraped_jobs WHERE score IS NOT NULL"
         ).fetchall()
-        score_bins = [0] * 10
-        confidence_bins = [0] * 10
+        score_bins = [0] * HISTOGRAM_BINS
+        confidence_bins = [0] * HISTOGRAM_BINS
         for r in score_rows:
             s = r["score"]
-            score_bins[min(int(s * 10), 9)] += 1
-            conf = min(abs(s - score_threshold) / 0.4, 1.0)
-            confidence_bins[min(int(conf * 10), 9)] += 1
+            score_bins[min(int(s * HISTOGRAM_BINS), HISTOGRAM_BINS - 1)] += 1
+            conf = min(abs(s - score_threshold) / 0.4, 1.0)  # 0.4 = CONFIDENCE_DIVISOR
+            confidence_bins[min(int(conf * HISTOGRAM_BINS), HISTOGRAM_BINS - 1)] += 1
 
         # Agreement: rules vs user labels
         agreement_rows = self.conn.execute(
@@ -930,7 +945,7 @@ class Repository:
         # Jobs per day (last 30 days)
         trend_rows = self.conn.execute(
             "SELECT DATE(scraped_at) as day, COUNT(*) as cnt FROM scraped_jobs"
-            " WHERE scraped_at >= date('now', '-30 days')"
+            f" WHERE scraped_at >= date('now', '-{TREND_LOOKBACK_DAYS} days')"
             " GROUP BY DATE(scraped_at) ORDER BY day"
         ).fetchall()
 
@@ -938,7 +953,7 @@ class Repository:
         location_rows = self.conn.execute(
             "SELECT location, COUNT(*) as cnt FROM scraped_jobs"
             " WHERE location IS NOT NULL AND location != ''"
-            " GROUP BY location ORDER BY cnt DESC LIMIT 10"
+            f" GROUP BY location ORDER BY cnt DESC LIMIT {TOP_LOCATIONS_LIMIT}"
         ).fetchall()
 
         # All model versions for experiment lab
@@ -961,6 +976,7 @@ class Repository:
                     "training_samples": r["training_samples"],
                     "is_active": bool(r["is_active"]),
                     "feature_names": r["feature_names"],
+                    "train_accuracy": r["train_accuracy"],
                 }
                 for r in rows
             ]
@@ -994,6 +1010,8 @@ class Repository:
                 {"location": r["location"], "count": r["cnt"]}
                 for r in location_rows
             ],
+            "noise_tier1_min": 30,  # from ml_trainer.NOISE_TIER1_MIN_LABELS
+            "noise_tier2_min": 60,  # from ml_trainer.NOISE_TIER2_MIN_LABELS
             "all_models": all_models,
             "recent_predictions": recent_predictions,
         }

@@ -196,6 +196,8 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE model_versions ADD COLUMN model_type TEXT DEFAULT 'scoring'")
     if "algorithm" not in existing:
         conn.execute("ALTER TABLE model_versions ADD COLUMN algorithm TEXT DEFAULT 'LR'")
+    if "train_accuracy" not in existing:
+        conn.execute("ALTER TABLE model_versions ADD COLUMN train_accuracy REAL")
     conn.executescript(MIGRATION_SQL)
     conn.executescript(MIGRATION_PREFS_SQL)
 

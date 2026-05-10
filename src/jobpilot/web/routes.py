@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint("main", __name__)
 
+# --- Route constants ---
+INBOX_REVIEW_LIMIT = 50
+EMAILS_PER_PAGE = 50
+NOISE_CONFIDENCE_THRESHOLD = 0.3
+MAX_SYNC_DAYS = 90
+MAX_PREFERENCE_LENGTH = 100
+SCRAPE_DELAY_SECONDS = 2
+EXPORT_PREDICTIONS_LIMIT = 50
+
 SIGNAL_PRIORITY = {
     "tech_stack": 0,
     "location": 1,
@@ -52,10 +61,10 @@ def inbox():
     sort = request.args.get("sort", "score_desc")
     if sort not in valid_sorts:
         sort = "score_desc"
-    emails = repo.get_emails_for_review(limit=50)
+    emails = repo.get_emails_for_review(limit=INBOX_REVIEW_LIMIT)
 
     # Also get scraped jobs for review
-    scraped = repo.get_scraped_jobs_for_review(limit=50)
+    scraped = repo.get_scraped_jobs_for_review(limit=INBOX_REVIEW_LIMIT)
 
     # Filter out emails whose jobs were extracted into scraped_jobs
     digested_ids = repo.get_email_ids_with_extracted_jobs()
@@ -101,7 +110,7 @@ def inbox():
             p.get("model_type") == "noise"
             and p.get("is_active")
             and p.get("prediction") == "not_a_job"
-            and (p.get("probability") or 1) < 0.3
+            and (p.get("probability") or 1) < NOISE_CONFIDENCE_THRESHOLD
             for p in item["predictions"]
         )
 
@@ -118,7 +127,7 @@ def emails_list():
         page = max(1, int(request.args.get("page", 1)))
     except (ValueError, TypeError):
         page = 1
-    per_page = 50
+    per_page = EMAILS_PER_PAGE
     offset = (page - 1) * per_page
 
     emails = repo.get_emails_classified(
@@ -257,8 +266,10 @@ def update_sync_days():
     value = _get_param("value", "7")
     try:
         days = int(value)
-        if not 1 <= days <= 90:
-            return jsonify({"status": "error", "message": "Must be between 1 and 90"}), 400
+        if not 1 <= days <= MAX_SYNC_DAYS:
+            return jsonify(
+                {"status": "error", "message": f"Must be between 1 and {MAX_SYNC_DAYS}"},
+            ), 400
     except ValueError:
         return jsonify({"status": "error", "message": "Invalid number"}), 400
 
@@ -308,8 +319,10 @@ def add_preference():
         return jsonify({"status": "error", "message": "Missing category or value"}), 400
     if category not in ALLOWED_CATEGORIES:
         return jsonify({"status": "error", "message": "Invalid category"}), 400
-    if len(value) > 100:
-        return jsonify({"status": "error", "message": "Value too long (max 100)"}), 400
+    if len(value) > MAX_PREFERENCE_LENGTH:
+        return jsonify(
+            {"status": "error", "message": f"Value too long (max {MAX_PREFERENCE_LENGTH})"},
+        ), 400
     if category == "monitored_domain" and ("." not in value or " " in value):
         return jsonify({"status": "error", "message": "Invalid domain format"}), 400
 
@@ -502,7 +515,7 @@ def _scrape_low_confidence_jobs(repo) -> None:
             result = scorer.score(job.title, text)
             repo.update_scraped_job_scores(job.id, result.score, None, result.classification)
         repo.mark_scrape_attempted(job.id)
-        time.sleep(2)
+        time.sleep(SCRAPE_DELAY_SECONDS)
 
 
 # --- ML API Routes ---
@@ -620,7 +633,7 @@ def ml_export():
         }
 
     # Predictions for labeled items
-    comparison = repo.get_recent_predictions_comparison(limit=50)
+    comparison = repo.get_recent_predictions_comparison(limit=EXPORT_PREDICTIONS_LIMIT)
     predictions = []
     disagreements = []
     for item in comparison:
