@@ -12,6 +12,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.svm import LinearSVC
 
+from jobpilot.classifier.features import (
+    STRUCTURAL_FEATURE_NAMES_TIER1,
+    STRUCTURAL_FEATURE_NAMES_TIER2,
+    compute_structural_features,
+)
 from jobpilot.classifier.rules import FEATURE_NAMES, compute_features
 from jobpilot.config import settings
 from jobpilot.storage.models import MLPrediction, ModelVersion
@@ -25,6 +30,28 @@ ALGORITHMS = {
     "GBC": lambda: GradientBoostingClassifier(n_estimators=100, random_state=42),
     "SVM": lambda: CalibratedClassifierCV(LinearSVC(max_iter=2000, random_state=42)),
 }
+
+# Progressive feature tiers for the noise model only.
+# Each tier adds structural features on top of the base 6.
+NOISE_FEATURE_TIERS: dict[int, list[str]] = {
+    0: [],
+    1: STRUCTURAL_FEATURE_NAMES_TIER1,
+    2: STRUCTURAL_FEATURE_NAMES_TIER1 + STRUCTURAL_FEATURE_NAMES_TIER2,
+}
+
+
+def get_noise_feature_tier(label_count: int) -> int:
+    """Determine the feature tier based on noise label count."""
+    if label_count >= 60:
+        return 2
+    if label_count >= 30:
+        return 1
+    return 0
+
+
+def get_noise_feature_names(tier: int) -> list[str]:
+    """Get the full ordered feature name list for a noise model at a given tier."""
+    return FEATURE_NAMES + NOISE_FEATURE_TIERS[tier]
 
 
 class MLTrainer:
@@ -53,10 +80,38 @@ class MLTrainer:
                 logger.info("Noise model needs 5+ not_a_job labels, has %d", neg_count)
                 return []
 
-        x_train = np.array([
-            compute_features(d.get("subject") or "", d.get("body") or d.get("body_text") or "")
-            for d in data
-        ])
+            tier = get_noise_feature_tier(len(data))
+            feature_names_for_model = get_noise_feature_names(tier)
+            extra_feature_names = NOISE_FEATURE_TIERS[tier]
+
+            x_rows = []
+            for d in data:
+                subject = d.get("subject") or ""
+                body = d.get("body") or d.get("body_text") or ""
+                base = compute_features(subject, body)
+
+                if extra_feature_names:
+                    digest_count = 0
+                    if d.get("item_source") == "email":
+                        digest_count = self.repo.count_scraped_jobs_for_email(
+                            d["email_id"]
+                        )
+                    structural = compute_structural_features(subject, body, digest_count)
+                    base.extend(structural[name] for name in extra_feature_names)
+
+                x_rows.append(base)
+
+            x_train = np.array(x_rows)
+        else:
+            feature_names_for_model = FEATURE_NAMES
+            x_train = np.array([
+                compute_features(
+                    d.get("subject") or "",
+                    d.get("body") or d.get("body_text") or "",
+                )
+                for d in data
+            ])
+
         y_train = np.array([d["label"] for d in data])
 
         # Clean up previous training run for this model type
@@ -69,7 +124,8 @@ class MLTrainer:
 
         for algo_name, algo_factory in ALGORITHMS.items():
             model_id = self._train_single(
-                algo_name, algo_factory, x_train, y_train, model_type, version,
+                algo_name, algo_factory, x_train, y_train,
+                model_type, version, feature_names_for_model,
             )
             if model_id:
                 model_ids.append(model_id)
@@ -93,6 +149,7 @@ class MLTrainer:
         self, algo_name: str, algo_factory,
         x: np.ndarray, y: np.ndarray,
         model_type: str, version: int,
+        feature_names_for_model: list[str] | None = None,
     ) -> int | None:
         """Train one algorithm, cross-validate, serialize, store."""
         try:
@@ -111,15 +168,17 @@ class MLTrainer:
             )
 
             clf.fit(x, y)
+            train_accuracy = float(clf.score(x, y))
 
-            importances = self._extract_importances(clf, algo_name)
+            names = feature_names_for_model or FEATURE_NAMES
+            importances = self._extract_importances(clf, algo_name, len(names))
 
             buf = io.BytesIO()
             joblib.dump(clf, buf)
             model_blob = buf.getvalue()
 
             feature_data = json.dumps({
-                "names": FEATURE_NAMES,
+                "names": names,
                 "importances": importances,
             })
 
@@ -136,6 +195,7 @@ class MLTrainer:
                 is_active=False,
                 model_type=model_type,
                 algorithm=algo_name,
+                train_accuracy=train_accuracy,
             )
             model_id = self.repo.insert_model_version(mv)
             logger.info(
@@ -148,8 +208,11 @@ class MLTrainer:
             logger.exception("Failed to train %s/%s", model_type, algo_name)
             return None
 
-    def _extract_importances(self, clf, algo_name: str) -> list[float]:
+    def _extract_importances(
+        self, clf, algo_name: str, n_features: int | None = None,
+    ) -> list[float]:
         """Extract feature importances from a trained classifier."""
+        n = n_features or len(FEATURE_NAMES)
         try:
             if hasattr(clf, "feature_importances_"):
                 return clf.feature_importances_.tolist()
@@ -161,7 +224,31 @@ class MLTrainer:
                     return np.abs(base.coef_[0]).tolist()
         except Exception:
             logger.debug("Could not extract importances for %s", algo_name)
-        return [0.0] * len(FEATURE_NAMES)
+        return [0.0] * n
+
+    def _get_model_extra_features(self, mv: ModelVersion) -> list[str]:
+        """Get the structural feature names a model was trained with (beyond base 6)."""
+        if not mv.feature_names:
+            return []
+        try:
+            stored_names = json.loads(mv.feature_names)["names"]
+            return [n for n in stored_names if n not in FEATURE_NAMES]
+        except (json.JSONDecodeError, KeyError):
+            return []
+
+    def _compute_noise_features(
+        self, subject: str, body: str, extra_features: list[str],
+        email_id=None,
+    ) -> list[float]:
+        """Compute full feature vector for noise model prediction."""
+        features = compute_features(subject, body)
+        if extra_features:
+            digest_count = 0
+            if email_id is not None:
+                digest_count = self.repo.count_scraped_jobs_for_email(email_id)
+            structural = compute_structural_features(subject, body, digest_count)
+            features.extend(structural[name] for name in extra_features)
+        return features
 
     def _predict_all(self, model_type: str, model_ids: list[int]) -> None:
         """Run predictions for all trained models on relevant items."""
@@ -171,6 +258,7 @@ class MLTrainer:
                 continue
 
             clf = joblib.load(io.BytesIO(mv.model_blob))
+            extra_features = self._get_model_extra_features(mv)
             self.repo.delete_predictions_for_model(model_id)
             predictions: list[MLPrediction] = []
 
@@ -179,7 +267,10 @@ class MLTrainer:
                     "SELECT id, subject, body_text FROM emails WHERE processed = TRUE"
                 ).fetchall()
                 for row in rows:
-                    features = compute_features(row["subject"], row["body_text"] or "")
+                    features = self._compute_noise_features(
+                        row["subject"], row["body_text"] or "",
+                        extra_features, email_id=row["id"],
+                    )
                     x_item = np.array([features])
                     prob = self._get_positive_prob(clf, x_item)
                     pred_label = "job" if prob >= 0.5 else "not_a_job"
@@ -231,6 +322,7 @@ class MLTrainer:
     def predict_single(
         self, model_type: str, item_type: str, item_id: str,
         subject: str, body: str,
+        digest_job_count: int = 0,
     ) -> dict[str, dict]:
         """Run all models of a type on a single item.
 
@@ -240,12 +332,22 @@ class MLTrainer:
         if not models:
             return {}
 
-        features = compute_features(subject, body)
-        x_item = np.array([features])
         results: dict[str, dict] = {}
         predictions_to_store: list[MLPrediction] = []
 
         for mv in models:
+            extra_features = self._get_model_extra_features(mv)
+
+            if model_type == "noise" and extra_features:
+                structural = compute_structural_features(
+                    subject, body, digest_job_count,
+                )
+                features = compute_features(subject, body)
+                features.extend(structural[name] for name in extra_features)
+            else:
+                features = compute_features(subject, body)
+
+            x_item = np.array([features])
             clf = joblib.load(io.BytesIO(mv.model_blob))
             prob = self._get_positive_prob(clf, x_item)
 
@@ -279,6 +381,22 @@ class MLTrainer:
             neg_count = sum(1 for d in data if d["label"] == 0)
             if neg_count < 5:
                 return False
+
+            # Detect tier transition — force retrain if features should expand
+            current_tier = get_noise_feature_tier(len(data))
+            active_model = self.repo.get_active_model("noise")
+            if active_model and active_model.feature_names:
+                try:
+                    stored_names = json.loads(active_model.feature_names)["names"]
+                    expected_names = get_noise_feature_names(current_tier)
+                    if len(stored_names) != len(expected_names):
+                        logger.info(
+                            "Noise tier transition: %d -> %d features",
+                            len(stored_names), len(expected_names),
+                        )
+                        return True
+                except (json.JSONDecodeError, KeyError):
+                    pass
         else:
             data = self.repo.get_scoring_training_data()
             if len(data) < settings.min_training_samples:

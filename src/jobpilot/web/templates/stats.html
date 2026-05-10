@@ -232,6 +232,49 @@
             </div>
         </div>
 
+        <!-- Noise model tier indicator -->
+        {% if model_type == 'noise' %}
+        {% set noise_labels = data.noise_label_count | default(0) %}
+        {% set tier = 2 if noise_labels >= 60 else (1 if noise_labels >= 30 else 0) %}
+        {% set tier_features = 13 if tier == 2 else (9 if tier == 1 else 6) %}
+        {% set next_tier = tier + 1 if tier < 2 else none %}
+        {% set next_threshold = 30 if tier == 0 else (60 if tier == 1 else 0) %}
+        {% set labels_to_next = next_threshold - noise_labels if next_tier else 0 %}
+        <div class="tier-indicator">
+            <div class="tier-badge">Tier {{ tier }} <span class="tier-feat-count">({{ tier_features }} features)</span></div>
+            {% if next_tier is not none %}
+            <div class="tier-progress">{{ labels_to_next }} more label{{ 's' if labels_to_next != 1 else '' }} to unlock Tier {{ next_tier }} ({{ 9 if next_tier == 1 else 13 }} features)</div>
+            {% else %}
+            <div class="tier-progress">All feature tiers unlocked</div>
+            {% endif %}
+            <div class="tier-features">
+                <span class="tier-feat-unlocked">&#10003; tech_match, job_title, location_match, seniority_match, salary_match, negative_signals</span>
+                {% if tier >= 1 %}
+                <span class="tier-feat-unlocked">&#10003; digest_job_count, url_count, body_length</span>
+                {% else %}
+                <span class="tier-feat-locked">&#9675; digest_job_count, url_count, body_length — unlocks at 30 labels</span>
+                {% endif %}
+                {% if tier >= 2 %}
+                <span class="tier-feat-unlocked">&#10003; subject_length, paragraph_count, company_name_count, has_salary_mention</span>
+                {% else %}
+                <span class="tier-feat-locked">&#9675; subject_length, paragraph_count, company_name_count, has_salary_mention — unlocks at 60 labels</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Overfit detection -->
+        {% for m in data.all_models[model_type] %}
+        {% if m.is_active and m.train_accuracy and m.accuracy %}
+        {% set gap = m.train_accuracy - m.accuracy %}
+        {% if gap > 0.15 %}
+        <div class="overfit-warning">
+            &#9888; Possible overfitting: train accuracy ({{ "%.0f"|format(m.train_accuracy * 100) }}%) is significantly higher than CV accuracy ({{ "%.0f"|format(m.accuracy * 100) }}%). Consider adding more labels.
+        </div>
+        {% endif %}
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+
         <!-- Algorithm comparison table -->
         <div class="exp-table-wrap">
             <table class="exp-table">
@@ -277,7 +320,10 @@
         {% set has_features = data.all_models[model_type] | selectattr('feature_names') | list %}
         {% if has_features %}
         <div class="exp-sub-section">
-            <span class="exp-title">Feature Importance</span>
+            <span class="exp-title">{% if model_type == 'noise' %}Noise Detection Features{% else %}Feature Importance{% endif %}</span>
+            {% if model_type == 'noise' %}
+            <div class="exp-feat-hint" style="margin-top: 4px">Features the model uses to distinguish real job emails from confirmation/notification noise</div>
+            {% endif %}
             {% for m in data.all_models[model_type] %}
             {% if m.feature_names %}
             {% set algo_names = {"LR": "Logistic Regression", "RF": "Random Forest", "GBC": "Gradient Boosting", "SVM": "Support Vector Machine"} %}

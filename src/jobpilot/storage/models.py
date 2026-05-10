@@ -59,6 +59,7 @@ class ModelVersion:
     is_active: bool = False
     model_type: str = "scoring"
     algorithm: str = "LR"
+    train_accuracy: float | None = None
 
 
 @dataclass

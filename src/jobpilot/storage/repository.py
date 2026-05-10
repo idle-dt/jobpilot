@@ -491,11 +491,12 @@ class Repository:
         cursor = self.conn.execute(
             """INSERT INTO model_versions
             (version, training_samples, accuracy, precision_score, recall_score,
-             f1_score, model_blob, feature_names, is_active, model_type, algorithm)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             f1_score, model_blob, feature_names, is_active, model_type, algorithm,
+             train_accuracy)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (mv.version, mv.training_samples, mv.accuracy, mv.precision_score,
              mv.recall_score, mv.f1_score, mv.model_blob, mv.feature_names,
-             mv.is_active, mv.model_type, mv.algorithm),
+             mv.is_active, mv.model_type, mv.algorithm, mv.train_accuracy),
         )
         self.conn.commit()
         return cursor.lastrowid
@@ -584,6 +585,7 @@ class Repository:
             recall_score=row["recall_score"], f1_score=row["f1_score"],
             feature_names=row["feature_names"], is_active=bool(row["is_active"]),
             model_type=row["model_type"], algorithm=row["algorithm"],
+            train_accuracy=row["train_accuracy"],
         )
 
     # --- ML Predictions ---
@@ -644,7 +646,8 @@ class Repository:
         data = []
         rows = self.conn.execute(
             """SELECT e.id as email_id, e.subject, e.body_text,
-                      CASE WHEN uf.label = 'not_a_job' THEN 0 ELSE 1 END as label
+                      CASE WHEN uf.label = 'not_a_job' THEN 0 ELSE 1 END as label,
+                      'email' as item_source
                FROM user_feedback uf
                JOIN emails e ON uf.email_id = e.id"""
         ).fetchall()
@@ -653,12 +656,20 @@ class Repository:
         # Scraped jobs are always job-related (positive class)
         rows = self.conn.execute(
             """SELECT id as email_id, title as subject, description as body_text,
-                      1 as label
+                      1 as label, 'scraped_job' as item_source
                FROM scraped_jobs WHERE user_label IS NOT NULL"""
         ).fetchall()
         for r in rows:
             data.append(dict(r))
         return data
+
+    def count_scraped_jobs_for_email(self, email_id) -> int:
+        """Count scraped jobs linked to an email (for digest_job_count feature)."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE email_id = ?",
+            (str(email_id),),
+        ).fetchone()
+        return row["cnt"] if row else 0
 
     def get_scoring_training_data(self) -> list[dict]:
         """Get training data for the scoring model.
@@ -961,6 +972,7 @@ class Repository:
                     "training_samples": r["training_samples"],
                     "is_active": bool(r["is_active"]),
                     "feature_names": r["feature_names"],
+                    "train_accuracy": r["train_accuracy"],
                 }
                 for r in rows
             ]

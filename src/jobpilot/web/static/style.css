@@ -1785,7 +1785,7 @@ td .badge-ml-active {
 
 .exp-details summary {
     font-size: 0.75rem;
-    color: var(--slate);
+    color: var(--slate) !important;
     cursor: pointer;
     user-select: none;
     list-style: none;
@@ -1794,6 +1794,13 @@ td .badge-ml-active {
     align-items: center;
     padding: 8px 0 4px !important;
     margin: 0 !important;
+    -webkit-tap-highlight-color: transparent;
+    text-decoration: none !important;
+}
+
+.exp-details[open] summary {
+    color: var(--ink) !important;
+    font-weight: 500;
 }
 
 .exp-details summary::-webkit-details-marker {
@@ -1921,6 +1928,59 @@ td .badge-ml-active {
     font-size: 0.65rem;
     color: var(--dust);
     margin: 0 0 4px;
+}
+
+/* ── Noise Model Tier Indicator ─────────────────────────── */
+.tier-indicator {
+    margin: 12px 0 16px;
+    padding: 12px 16px;
+    background: var(--canvas);
+    border-radius: 12px;
+    border: 1px solid var(--mist);
+}
+
+.tier-badge {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.tier-badge .tier-feat-count {
+    font-weight: 400;
+    color: var(--dust);
+}
+
+.tier-progress {
+    font-size: 0.7rem;
+    color: var(--dust);
+    margin-top: 4px;
+}
+
+.tier-features {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 10px;
+    font-size: 0.7rem;
+}
+
+.tier-feat-unlocked {
+    color: var(--ink);
+}
+
+.tier-feat-locked {
+    color: var(--dust);
+    font-style: italic;
+}
+
+.overfit-warning {
+    margin: 8px 0 12px;
+    padding: 10px 14px;
+    background: rgba(230, 160, 40, 0.08);
+    border: 1px solid rgba(230, 160, 40, 0.25);
+    border-radius: 10px;
+    font-size: 0.75rem;
+    color: var(--ink);
 }
 
 /* ── Responsive ──────────────────────────────────────────── */
