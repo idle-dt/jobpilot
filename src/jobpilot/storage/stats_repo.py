@@ -66,6 +66,7 @@ class StatsRepository:
             **self._location_stats(),
             **self._all_model_stats(),
             "recent_predictions": self._recent_predictions(),
+            "recent_noise_predictions": self._recent_noise_predictions(),
         }
 
     def _overview_stats(self) -> dict:
@@ -313,6 +314,57 @@ class StatsRepository:
                    FROM ml_predictions p
                    JOIN model_versions mv ON p.model_version_id = mv.id
                    WHERE p.item_type = ? AND p.item_id = ?""",
+                (item["item_type"], item["item_id"]),
+            ).fetchall()
+            item["predictions"] = {
+                r["algorithm"]: {
+                    "prediction": r["prediction"],
+                    "probability": r["probability"],
+                }
+                for r in preds
+            }
+        return items
+
+    def _recent_noise_predictions(self) -> list[dict]:
+        """Recent labeled items with noise model predictions for comparison."""
+        items = []
+        fb_rows = self.conn.execute(
+            """SELECT uf.email_id as item_id, 'email' as item_type,
+                      e.subject as title, uf.label as user_label,
+                      uf.feedback_at as labeled_at, e.origin_url as url
+               FROM user_feedback uf
+               JOIN emails e ON uf.email_id = e.id
+               ORDER BY uf.feedback_at DESC LIMIT 20""",
+        ).fetchall()
+        for r in fb_rows:
+            item = dict(r)
+            item["noise_label"] = (
+                "not_a_job" if item["user_label"] == "not_a_job" else "job"
+            )
+            items.append(item)
+        sj_rows = self.conn.execute(
+            """SELECT CAST(id AS TEXT) as item_id, 'scraped_job' as item_type,
+                      title, user_label, labeled_at, url
+               FROM scraped_jobs
+               WHERE user_label IS NOT NULL
+               ORDER BY labeled_at DESC LIMIT 20""",
+        ).fetchall()
+        for r in sj_rows:
+            item = dict(r)
+            item["noise_label"] = (
+                "not_a_job" if item["user_label"] == "not_a_job" else "job"
+            )
+            items.append(item)
+        items.sort(key=lambda x: x.get("labeled_at") or "", reverse=True)
+        items = items[:20]
+
+        for item in items:
+            preds = self.conn.execute(
+                """SELECT mv.algorithm, p.prediction, p.probability
+                   FROM ml_predictions p
+                   JOIN model_versions mv ON p.model_version_id = mv.id
+                   WHERE p.item_type = ? AND p.item_id = ?
+                     AND mv.model_type = 'noise'""",
                 (item["item_type"], item["item_id"]),
             ).fetchall()
             item["predictions"] = {

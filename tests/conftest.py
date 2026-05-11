@@ -7,7 +7,6 @@ from unittest.mock import patch
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
-
 from jobpilot.storage.database import init_db
 from jobpilot.storage.repository import Repository
 from jobpilot.web.app import create_app
