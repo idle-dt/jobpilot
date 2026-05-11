@@ -4,6 +4,9 @@ import logging
 import os
 
 from flask import Flask, g, redirect, request, url_for
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect
 
 from jobpilot.config import settings
 from jobpilot.gmail.auth import GmailAuth
@@ -14,6 +17,13 @@ from jobpilot.storage.repository import Repository
 logger = logging.getLogger(__name__)
 
 _PUBLIC_ENDPOINTS = ("/auth/", "/static/")
+
+csrf = CSRFProtect()
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri="memory://",
+    default_limits=["60 per minute"],
+)
 
 
 def create_app() -> Flask:
@@ -26,6 +36,9 @@ def create_app() -> Flask:
     )
     app.config["SECRET_KEY"] = settings.secret_key
     app.debug = settings.debug
+
+    csrf.init_app(app)
+    limiter.init_app(app)
 
     # Initialize database and repository
     conn = init_db(settings.db_path)
@@ -70,5 +83,10 @@ def create_app() -> Flask:
         authenticated = getattr(g, "authenticated", False)
         last_sync = repo.get_last_sync_time() if authenticated else None
         return {"authenticated": authenticated, "last_sync": last_sync}
+
+    @app.errorhandler(429)
+    def rate_limit_exceeded(e):
+        from flask import jsonify as _jsonify
+        return _jsonify({"status": "error", "message": "Too many requests, please wait"}), 429
 
     return app

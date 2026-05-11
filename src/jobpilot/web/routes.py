@@ -2,6 +2,7 @@
 
 import json as json_module
 import logging
+import re
 from datetime import datetime
 
 from flask import Blueprint, current_app, jsonify, render_template, request
@@ -9,6 +10,7 @@ from flask import Blueprint, current_app, jsonify, render_template, request
 from jobpilot.config import settings
 from jobpilot.storage.models import ExtractedSignal, UserFeedback
 from jobpilot.storage.repository import Repository
+from jobpilot.web.app import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,14 @@ def _get_param(name: str, default: str = "") -> str:
 def _repo() -> Repository:
     """Get the repository from the current Flask app config."""
     return current_app.config["repo"]
+
+
+EMAIL_ID_PATTERN = re.compile(r"^[a-f0-9]{10,20}$")
+
+
+def _validate_email_id(email_id: str) -> bool:
+    """Validate that email_id matches Gmail message ID format."""
+    return bool(EMAIL_ID_PATTERN.match(email_id))
 
 
 @bp.route("/")
@@ -146,6 +156,8 @@ def emails_list():
 @bp.route("/api/feedback/<email_id>", methods=["POST"])
 def submit_feedback(email_id: str):
     """Record user feedback on an email classification."""
+    if not _validate_email_id(email_id):
+        return "Invalid email ID", 400
     repo = _repo()
     label = _get_param("label")
     notes = _get_param("notes")
@@ -166,6 +178,8 @@ def submit_feedback(email_id: str):
 @bp.route("/api/feedback/<email_id>/undo", methods=["POST"])
 def undo_feedback(email_id: str):
     """Revert user feedback on an email."""
+    if not _validate_email_id(email_id):
+        return "Invalid email ID", 400
     repo = _repo()
     repo.delete_feedback(email_id)
     return render_template("partials/feedback_undone.html")
@@ -424,6 +438,7 @@ def update_arbeitnow():
 
 
 @bp.route("/api/sync", methods=["POST"])
+@limiter.limit("2 per minute")
 def sync_emails():
     """Fetch new emails from Gmail and run classification."""
     from jobpilot.services.sync_service import SyncService
@@ -454,6 +469,7 @@ def _maybe_auto_retrain(repo) -> None:
 
 
 @bp.route("/api/ml/train", methods=["POST"])
+@limiter.limit("2 per minute")
 def ml_train():
     """Train all ML algorithms for a model type."""
     from jobpilot.classifier.ml_trainer import MLTrainer
