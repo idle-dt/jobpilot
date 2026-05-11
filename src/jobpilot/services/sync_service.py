@@ -1,5 +1,6 @@
 """Sync orchestration — fetch emails, classify, parse, score, scrape."""
 
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -60,8 +61,9 @@ class SyncService:
 
     def _scrape_low_confidence_jobs(self) -> None:
         """Scrape full descriptions for jobs with low scoring confidence."""
+        from jobpilot.classifier.features import extract_matched_keywords
         from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
-        from jobpilot.scraper.job_page import JobPageScraper
+        from jobpilot.scraper.job_page import SCRAPE_EXPIRED, JobPageScraper
 
         scrape_threshold = float(
             self.repo.get_setting(
@@ -83,12 +85,21 @@ class SyncService:
 
         for job in jobs:
             description = scraper.scrape(job.url)
+            if description == SCRAPE_EXPIRED:
+                self.repo.toggle_scraped_job_expired(job.id)
+                self.repo.mark_scrape_attempted(job.id)
+                time.sleep(SCRAPE_DELAY_SECONDS)
+                continue
             if description:
                 self.repo.update_scraped_job_description(job.id, description)
                 text = f"{job.title} {job.company or ''} {job.location or ''} {description}"
                 result = scorer.score(job.title, text)
+                signals = extract_matched_keywords(text, config)
+                has_signals = signals["positive"] or signals["negative"]
+                signals_json = json.dumps(signals) if has_signals else None
                 self.repo.update_scraped_job_scores(
                     job.id, result.score, None, result.classification,
+                    matched_signals=signals_json,
                 )
             self.repo.mark_scrape_attempted(job.id)
             time.sleep(SCRAPE_DELAY_SECONDS)

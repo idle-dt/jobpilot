@@ -1299,8 +1299,8 @@ button.sync-btn:focus-visible {
 }
 
 .pref-tag-primary {
-    background: rgba(0, 0, 0, 0.10);
-    border-color: var(--dust);
+    background: rgba(0, 0, 0, 0.06);
+    border-color: transparent;
 }
 
 .pref-tag-remove {
@@ -1550,6 +1550,29 @@ button.sync-btn:focus-visible {
     max-height: 200px;
     overflow-y: auto;
     white-space: pre-line;
+}
+
+/* ── Signal highlights in descriptions ───────────────────── */
+.description-text mark.hl-positive {
+    background: rgba(34, 139, 34, 0.15);
+    color: inherit;
+    border-radius: 3px;
+    padding: 0 2px;
+}
+
+.description-text mark.hl-negative {
+    background: rgba(197, 48, 48, 0.15);
+    color: inherit;
+    border-radius: 3px;
+    padding: 0 2px;
+}
+
+[data-theme="dark"] .description-text mark.hl-positive {
+    background: rgba(74, 222, 128, 0.2);
+}
+
+[data-theme="dark"] .description-text mark.hl-negative {
+    background: rgba(248, 113, 113, 0.2);
 }
 
 /* ── ML Prediction Badges ──────────────────────────────────── */
