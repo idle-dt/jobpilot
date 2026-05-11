@@ -8,6 +8,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from jobpilot.classifier.rules import SignalConfig
 
+
+def _word_match(keyword: str, text: str) -> bool:
+    """Check if keyword appears as a whole word/phrase in text."""
+    escaped = re.escape(keyword)
+    if keyword.endswith('.'):
+        pattern = r'\b' + escaped
+    else:
+        pattern = r'\b' + escaped + r'\b'
+    return bool(re.search(pattern, text))
+
+
 # --- Scoring constants ---
 TOP_KEYWORD_MATCHES = 3
 NEUTRAL_SCORE = 0.5
@@ -27,7 +38,7 @@ def score_tech_stack(text: str, keywords: dict[str, dict] | None = None) -> floa
     text_lower = text.lower()
     matched_weights = []
     for keyword, info in keywords.items():
-        if keyword in text_lower:
+        if _word_match(keyword, text_lower):
             matched_weights.append(info["weight"])
 
     if not matched_weights:
@@ -48,7 +59,7 @@ def score_location(text: str, locations: dict[str, dict] | None = None) -> float
     has_negative = False
 
     for location, info in locations.items():
-        if location in text_lower:
+        if _word_match(location, text_lower):
             if info["weight"] < 0:
                 has_negative = True
             else:
@@ -69,7 +80,7 @@ def score_seniority(text: str, patterns: dict[str, dict] | None = None) -> float
     text_lower = text.lower()
 
     for pattern, info in patterns.items():
-        if pattern in text_lower:
+        if _word_match(pattern, text_lower):
             weight = info["weight"]
             if weight < 0:
                 return max(0.0, NEUTRAL_SCORE + weight)
@@ -104,7 +115,7 @@ def score_negatives(text: str, negatives: list[str] | None = None) -> float:
         negatives = NEGATIVE_SIGNALS
     text_lower = text.lower()
 
-    count = sum(1 for neg in negatives if neg in text_lower)
+    count = sum(1 for neg in negatives if _word_match(neg, text_lower))
     if count == 0:
         return 1.0
     if count == 1:
@@ -123,16 +134,19 @@ def score_job_title(text: str, titles: dict[str, dict] | None = None) -> float:
     best_weight = 0.0
 
     for title, info in titles.items():
-        if title in text_lower:
+        if _word_match(title, text_lower):
             best_weight = max(best_weight, info["weight"])
 
     return best_weight
 
 
-def extract_matched_keywords(text: str, config: SignalConfig) -> dict[str, list[str]]:
+def extract_matched_keywords(
+    text: str, config: SignalConfig, subject: str = "",
+) -> dict[str, list[str]]:
     """Return positive and negative keyword matches found in text.
 
     Uses the same keyword dictionaries as the score_* functions.
+    Seniority is matched against subject only (title-scoped).
     """
     positive: list[str] = []
     negative: list[str] = []
@@ -141,32 +155,33 @@ def extract_matched_keywords(text: str, config: SignalConfig) -> dict[str, list[
         return {"positive": positive, "negative": negative}
 
     text_lower = text.lower()
+    subject_lower = subject.lower()
 
     # Tech stack keywords
     if config.tech_keywords:
         for keyword in config.tech_keywords:
-            if keyword in text_lower:
+            if _word_match(keyword, text_lower):
                 positive.append(keyword)
 
     # Job titles
     if config.job_titles:
         for title in config.job_titles:
-            if title in text_lower:
+            if _word_match(title, text_lower):
                 positive.append(title)
 
     # Locations — split by weight sign
     if config.locations:
         for location, info in config.locations.items():
-            if location in text_lower:
+            if _word_match(location, text_lower):
                 if info["weight"] < 0:
                     negative.append(location)
                 else:
                     positive.append(location)
 
-    # Seniority — split by weight sign
-    if config.seniority_patterns:
+    # Seniority — match only in subject/title, not body
+    if config.seniority_patterns and subject_lower:
         for pattern, info in config.seniority_patterns.items():
-            if pattern in text_lower:
+            if _word_match(pattern, subject_lower):
                 if info["weight"] < 0:
                     negative.append(pattern)
                 else:
@@ -175,15 +190,14 @@ def extract_matched_keywords(text: str, config: SignalConfig) -> dict[str, list[
     # Salary matches
     if config.salary_patterns:
         for pat in config.salary_patterns:
-            if re.search(pat, text_lower):
-                match = re.search(pat, text_lower)
-                if match:
-                    positive.append(match.group(0))
+            match = re.search(pat, text_lower)
+            if match:
+                positive.append(match.group(0))
 
     # Negatives
     if config.negatives:
         for neg in config.negatives:
-            if neg in text_lower:
+            if _word_match(neg, text_lower):
                 negative.append(neg)
 
     return {"positive": sorted(set(positive)), "negative": sorted(set(negative))}

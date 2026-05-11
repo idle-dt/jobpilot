@@ -2,6 +2,8 @@
 
 import re
 
+from jobpilot.classifier.features import _word_match
+
 # --- Platform Detection ---
 
 PLATFORM_PATTERNS = {
@@ -97,47 +99,24 @@ PLATFORM_PATTERNS = {
 TECH_STACK_KEYWORDS = {
     "flutter": {"weight": 1.0, "category": "primary"},
     "dart": {"weight": 1.0, "category": "primary"},
-    "kotlin": {"weight": 0.8, "category": "primary"},
     "mobile developer": {"weight": 0.9, "category": "primary"},
     "mobile engineer": {"weight": 0.9, "category": "primary"},
     "cross-platform": {"weight": 0.8, "category": "primary"},
     "android": {"weight": 0.7, "category": "secondary"},
     "ios": {"weight": 0.7, "category": "secondary"},
+    "kotlin": {"weight": 0.8, "category": "secondary"},
     "swift": {"weight": 0.6, "category": "secondary"},
     "react native": {"weight": 0.5, "category": "secondary"},
-    "jetpack compose": {"weight": 0.7, "category": "secondary"},
     "swiftui": {"weight": 0.6, "category": "secondary"},
-    "firebase": {"weight": 0.5, "category": "secondary"},
-    "ci/cd": {"weight": 0.3, "category": "general"},
-    "agile": {"weight": 0.1, "category": "general"},
 }
 
 # --- Location Patterns ---
 
 LOCATION_PATTERNS = {
     "netherlands": {"weight": 1.0, "target": True},
-    "amsterdam": {"weight": 1.0, "target": True},
-    "rotterdam": {"weight": 1.0, "target": True},
-    "the hague": {"weight": 1.0, "target": True},
-    "eindhoven": {"weight": 1.0, "target": True},
-    "norway": {"weight": 1.0, "target": True},
-    "oslo": {"weight": 1.0, "target": True},
-    "bergen": {"weight": 1.0, "target": True},
-    "sweden": {"weight": 1.0, "target": True},
-    "stockholm": {"weight": 1.0, "target": True},
-    "gothenburg": {"weight": 1.0, "target": True},
-    "malmo": {"weight": 1.0, "target": True},
     "remote": {"weight": 0.9, "target": True},
-    "fully remote": {"weight": 1.0, "target": True},
-    "work from anywhere": {"weight": 1.0, "target": True},
-    "germany": {"weight": 0.6, "target": False},
-    "berlin": {"weight": 0.6, "target": False},
-    "denmark": {"weight": 0.7, "target": False},
-    "copenhagen": {"weight": 0.7, "target": False},
-    "finland": {"weight": 0.7, "target": False},
-    "helsinki": {"weight": 0.7, "target": False},
-    "eu": {"weight": 0.7, "target": False},
-    "europe": {"weight": 0.6, "target": False},
+    "norway": {"weight": 0.6, "target": False},
+    "sweden": {"weight": 0.6, "target": False},
     "us only": {"weight": -0.5, "target": False},
     "usa only": {"weight": -0.5, "target": False},
     "must be located in": {"weight": -0.2, "target": False},
@@ -159,13 +138,8 @@ TARGET_JOB_TITLES = {
     "head of mobile": {"weight": 0.8},
     "mobile developer": {"weight": 0.8},
     "mobile engineer": {"weight": 0.8},
-    "android developer": {"weight": 0.6},
-    "android engineer": {"weight": 0.6},
-    "ios developer": {"weight": 0.5},
-    "ios engineer": {"weight": 0.5},
     "cross-platform developer": {"weight": 0.7},
     "software engineer": {"weight": 0.3},
-    "full-stack developer": {"weight": 0.2},
 }
 
 # --- Seniority ---
@@ -239,25 +213,26 @@ def extract_signals(subject: str, body: str, platform: str | None) -> list[dict]
     """Extract all signals from email subject and body text."""
     signals = []
     text = f"{subject}\n{body}".lower()
+    subject_lower = subject.lower()
 
     # Tech stack
     for keyword, info in TECH_STACK_KEYWORDS.items():
-        if keyword in text:
+        if _word_match(keyword, text):
             signals.append({"type": "tech_stack", "value": keyword})
 
     # Locations
     for location, info in LOCATION_PATTERNS.items():
-        if location in text:
+        if _word_match(location, text):
             signals.append({"type": "location", "value": location})
 
     # Job titles
     for title, info in TARGET_JOB_TITLES.items():
-        if title in text:
+        if _word_match(title, text):
             signals.append({"type": "job_title", "value": title})
 
-    # Seniority
+    # Seniority — match only in subject/title, not body
     for pattern, info in SENIORITY_PATTERNS.items():
-        if pattern in text:
+        if _word_match(pattern, subject_lower):
             signals.append({"type": "seniority", "value": info["level"]})
             break  # Take the first match
 
@@ -270,7 +245,7 @@ def extract_signals(subject: str, body: str, platform: str | None) -> list[dict]
 
     # Negative signals
     for neg in NEGATIVE_SIGNALS:
-        if neg in text:
+        if _word_match(neg, text):
             signals.append({"type": "negative", "value": neg})
 
     # Platform

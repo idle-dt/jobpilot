@@ -94,7 +94,7 @@ class SyncService:
                 self.repo.update_scraped_job_description(job.id, description)
                 text = f"{job.title} {job.company or ''} {job.location or ''} {description}"
                 result = scorer.score(job.title, text)
-                signals = extract_matched_keywords(text, config)
+                signals = extract_matched_keywords(text, config, subject=job.title)
                 has_signals = signals["positive"] or signals["negative"]
                 signals_json = json.dumps(signals) if has_signals else None
                 self.repo.update_scraped_job_scores(

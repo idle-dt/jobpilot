@@ -124,7 +124,7 @@ class ClassificationService:
             except Exception:
                 logger.exception("ML scoring prediction failed for job %d", row["id"])
 
-            signals = extract_matched_keywords(body, config)
+            signals = extract_matched_keywords(body, config, subject=row["title"])
             has_signals = signals["positive"] or signals["negative"]
             signals_json = json.dumps(signals) if has_signals else None
 
