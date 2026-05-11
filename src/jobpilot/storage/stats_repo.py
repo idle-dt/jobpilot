@@ -3,6 +3,8 @@
 import sqlite3
 from datetime import datetime, timedelta
 
+from jobpilot.storage.predictions_repo import PredictionsRepository
+
 HISTOGRAM_BINS = 10
 TREND_LOOKBACK_DAYS = 30
 TOP_LOCATIONS_LIMIT = 10
@@ -65,7 +67,8 @@ class StatsRepository:
             **self._trend_stats(),
             **self._location_stats(),
             **self._all_model_stats(),
-            "recent_predictions": self._recent_predictions(),
+            "recent_predictions": PredictionsRepository(self.conn).recent_scoring(),
+            "recent_noise_predictions": PredictionsRepository(self.conn).recent_noise(),
         }
 
     def _overview_stats(self) -> dict:
@@ -279,47 +282,3 @@ class StatsRepository:
                 for r in rows
             ]
         return {"all_models": all_models}
-
-    def _recent_predictions(self) -> list[dict]:
-        """Recent labeled items with model predictions for comparison."""
-        items = []
-        fb_rows = self.conn.execute(
-            """SELECT uf.email_id as item_id, 'email' as item_type,
-                      e.subject as title, uf.label as user_label,
-                      uf.feedback_at as labeled_at, e.raw_score,
-                      e.origin_url as url
-               FROM user_feedback uf
-               JOIN emails e ON uf.email_id = e.id
-               WHERE uf.label IN ('worth_checking', 'skip')
-               ORDER BY uf.feedback_at DESC LIMIT 20""",
-        ).fetchall()
-        for r in fb_rows:
-            items.append(dict(r))
-        sj_rows = self.conn.execute(
-            """SELECT CAST(id AS TEXT) as item_id, 'scraped_job' as item_type,
-                      title, user_label, labeled_at, score as raw_score, url
-               FROM scraped_jobs
-               WHERE user_label IN ('worth_checking', 'skip')
-               ORDER BY labeled_at DESC LIMIT 20""",
-        ).fetchall()
-        for r in sj_rows:
-            items.append(dict(r))
-        items.sort(key=lambda x: x.get("labeled_at") or "", reverse=True)
-        items = items[:20]
-
-        for item in items:
-            preds = self.conn.execute(
-                """SELECT mv.algorithm, mv.model_type, p.prediction, p.probability
-                   FROM ml_predictions p
-                   JOIN model_versions mv ON p.model_version_id = mv.id
-                   WHERE p.item_type = ? AND p.item_id = ?""",
-                (item["item_type"], item["item_id"]),
-            ).fetchall()
-            item["predictions"] = {
-                r["algorithm"]: {
-                    "prediction": r["prediction"],
-                    "probability": r["probability"],
-                }
-                for r in preds
-            }
-        return items

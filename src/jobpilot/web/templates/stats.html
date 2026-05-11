@@ -364,7 +364,7 @@
                 <tbody>
                 {% for item in data.recent_predictions %}
                 <tr>
-                    {% set link = item.url if item.url and item.url.startswith(('http://', 'https://')) else ('https://mail.google.com/mail/u/0/#inbox/' + item.item_id if item.item_type == 'email' else '') %}
+                    {% set link = item.url if item.url and item.url.startswith(('http://', 'https://')) else ('https://mail.google.com/mail/u/0/#inbox/' + item.safe_email_id if item.item_type == 'email' and item.get('safe_email_id') else '') %}
                     <td class="exp-item-title">{% if link %}<a href="{{ link }}" target="_blank">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</a>{% else %}{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}{% endif %}</td>
                     <td>
                         {% set rule_pct = ((item.raw_score or 0) * 100) | round(0) | int %}
@@ -386,12 +386,63 @@
                     </td>
                     {% endfor %}
                     <td>
-                        {% set undo_url = '/api/feedback/scraped/' + item.item_id + '/undo' if item.item_type == 'scraped_job' else '/api/feedback/' + item.item_id + '/undo' %}
+                        {% set undo_url = url_for('main.undo_scraped_feedback', job_id=item.item_id) if item.item_type == 'scraped_job' else url_for('main.undo_feedback', email_id=item.item_id) %}
                         <button class="badge badge-label-undo {% if item.user_label == 'worth_checking' %}badge-ml-pos{% else %}badge-ml-neg{% endif %}"
                                 hx-post="{{ undo_url }}" hx-swap="none"
+                                hx-on::after-request="this.closest('tr').style.opacity='0.4'"
                                 title="Click to undo label">{{ item.user_label | replace('_', ' ') }} <span class="undo-x">&times;</span></button>
                     </td>
                     <td><strong>{{ ns.agree_count }}/5</strong></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Predictions comparison (noise only) -->
+        {% if model_type == 'noise' and data.recent_noise_predictions %}
+        <div class="exp-sub-section">
+            <span class="exp-title">Recent Predictions Comparison</span>
+        <div class="exp-table-wrap">
+            <table class="exp-table exp-table-compact">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
+                        <th>{{ algo }}</th>
+                        {% endfor %}
+                        <th style="min-width: 150px">Your Label</th>
+                        <th>Agreement</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for item in data.recent_noise_predictions %}
+                <tr>
+                    {% set link = item.url if item.url and item.url.startswith(('http://', 'https://')) else ('https://mail.google.com/mail/u/0/#inbox/' + item.safe_email_id if item.item_type == 'email' and item.get('safe_email_id') else '') %}
+                    <td class="exp-item-title">{% if link %}<a href="{{ link }}" target="_blank">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</a>{% else %}{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}{% endif %}</td>
+                    {% set ns = namespace(agree_count=0) %}
+                    {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
+                    <td>
+                        {% if item.predictions.get(algo) %}
+                        {% set pred = item.predictions[algo] %}
+                        {% set ml_agrees = pred.prediction == item.noise_label %}
+                        {% if ml_agrees %}{% set ns.agree_count = ns.agree_count + 1 %}{% endif %}
+                        <span class="badge {% if ml_agrees %}badge-ml-agree{% else %}badge-ml-disagree{% endif %}">{{ "%.0f"|format((pred.probability or 0) * 100) }}%</span>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td>
+                        {% set undo_url = url_for('main.undo_scraped_feedback', job_id=item.item_id) if item.item_type == 'scraped_job' else url_for('main.undo_feedback', email_id=item.item_id) %}
+                        <button class="badge badge-label-undo {% if item.noise_label == 'job' %}badge-ml-pos{% else %}badge-ml-neg{% endif %}"
+                                hx-post="{{ undo_url }}" hx-swap="none"
+                                hx-on::after-request="this.closest('tr').style.opacity='0.4'"
+                                title="Click to undo label">{{ item.noise_label | replace('_', ' ') }} <span class="undo-x">&times;</span></button>
+                    </td>
+                    <td><strong>{{ ns.agree_count }}/4</strong></td>
                 </tr>
                 {% endfor %}
                 </tbody>

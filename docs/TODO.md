@@ -14,17 +14,9 @@ This is the single source of truth for what needs to be done — check and updat
 
 Items with implementation prompts in `docs/prompts/` — see `PROMPTS.md` for status.
 
-## Security
-
-- **HIGH**: CSRF protection — install `Flask-WTF`, enable `CSRFProtect`, send token via HTMX header on all POST endpoints
-- **HIGH**: Add SRI hashes to CDN scripts (HTMX, Pico CSS) or vendor them into `/static/`
-- **MEDIUM**: Validate `email_id` parameter format in feedback route
-- **MEDIUM**: Rate limiting / debounce on `/api/sync` endpoint
-
 ## UI Improvements
 
 - Description block expand/collapse animation (smooth slide-in/slide-out)
-- Dashboard: Noise Predictions comparison table (same layout as scoring predictions table, but for noise model)
 
 ## Planned Features
 

@@ -22,10 +22,10 @@
 - [x] **Security & Critical Fixes** — [PROMPT_security_critical_fixes.md](PROMPT_security_critical_fixes.md) — SQL parameterization, inline HTML→partials, OAUTHLIB guard, narrow exception catches, ruff fixes, debug default
 - [x] **Architecture Refactor** — [PROMPT_architecture_refactor.md](PROMPT_architecture_refactor.md) — Split repository.py into focused repos, extract services from routes, remove direct conn.execute, fix email._signals hack, type hints, docstrings
 - [x] **README & License** — [PROMPT_readme.md](PROMPT_readme.md) — Portfolio-quality README with screenshots, badges, architecture overview, getting started guide, MIT license
+- [x] **Security Hardening** — [PROMPT_security_hardening.md](PROMPT_security_hardening.md) — CSRF protection (Flask-WTF), Chart.js SRI hash, email_id validation, sync rate limiting (Flask-Limiter)
+- [x] **Noise Predictions Table** — [PROMPT_noise_predictions_table.md](PROMPT_noise_predictions_table.md) — Predictions comparison table for noise model on stats dashboard
 
 ## Not Yet Implemented
-
-- [ ] **Security Hardening** — [PROMPT_security_hardening.md](PROMPT_security_hardening.md) — CSRF protection (Flask-WTF), Chart.js SRI hash, email_id validation, sync rate limiting (Flask-Limiter)
 
 ## Future / Ideas
 
