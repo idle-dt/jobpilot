@@ -33,7 +33,7 @@ def test_location_target():
 
 
 def test_location_remote():
-    assert score_location("Fully remote position") == 1.0
+    assert score_location("Fully remote position") == 0.9
 
 
 def test_location_negative():

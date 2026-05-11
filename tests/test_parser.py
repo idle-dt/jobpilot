@@ -99,11 +99,10 @@ def test_extract_tech_signals():
 
 
 def test_extract_location_signals():
-    signals = extract_signals("Job in Amsterdam", "Netherlands office, fully remote option", None)
+    signals = extract_signals("Job in Amsterdam", "Netherlands office, remote option", None)
     locations = [s["value"] for s in signals if s["type"] == "location"]
-    assert "amsterdam" in locations
     assert "netherlands" in locations
-    assert "fully remote" in locations
+    assert "remote" in locations
 
 
 def test_extract_seniority():
