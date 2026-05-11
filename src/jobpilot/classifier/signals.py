@@ -2,6 +2,8 @@
 
 import re
 
+from jobpilot.classifier.features import _word_match
+
 # --- Platform Detection ---
 
 PLATFORM_PATTERNS = {
@@ -211,25 +213,26 @@ def extract_signals(subject: str, body: str, platform: str | None) -> list[dict]
     """Extract all signals from email subject and body text."""
     signals = []
     text = f"{subject}\n{body}".lower()
+    subject_lower = subject.lower()
 
     # Tech stack
     for keyword, info in TECH_STACK_KEYWORDS.items():
-        if keyword in text:
+        if _word_match(keyword, text):
             signals.append({"type": "tech_stack", "value": keyword})
 
     # Locations
     for location, info in LOCATION_PATTERNS.items():
-        if location in text:
+        if _word_match(location, text):
             signals.append({"type": "location", "value": location})
 
     # Job titles
     for title, info in TARGET_JOB_TITLES.items():
-        if title in text:
+        if _word_match(title, text):
             signals.append({"type": "job_title", "value": title})
 
-    # Seniority
+    # Seniority — match only in subject/title, not body
     for pattern, info in SENIORITY_PATTERNS.items():
-        if pattern in text:
+        if _word_match(pattern, subject_lower):
             signals.append({"type": "seniority", "value": info["level"]})
             break  # Take the first match
 
@@ -242,7 +245,7 @@ def extract_signals(subject: str, body: str, platform: str | None) -> list[dict]
 
     # Negative signals
     for neg in NEGATIVE_SIGNALS:
-        if neg in text:
+        if _word_match(neg, text):
             signals.append({"type": "negative", "value": neg})
 
     # Platform

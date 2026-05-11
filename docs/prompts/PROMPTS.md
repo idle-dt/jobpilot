@@ -17,6 +17,7 @@
 - [x] **Configurable Signals & Preferences** — [PROMPT_configurable_signals.md](PROMPT_configurable_signals.md) — Settings UI for search preferences (tech keywords, job titles, seniority, locations, salary), monitored platforms checklist, score threshold slider; dedicated `user_preferences` table; ML model invalidation on preference change; ArbeitNow API integration
 - [x] **Noise Model Feature Expansion** — [PROMPT_noise_model_features.md](PROMPT_noise_model_features.md) — Progressive structural features for noise model (digest_job_count, url_count, body_length + 4 more at 60 labels); tier system, overfit detection, auto-retrain on tier transition
 - [x] **Description Improvements** — [PROMPT_description_improvements.md](PROMPT_description_improvements.md) — Preserve formatting, strip "show more" artifacts, highlight matched signals (green/red) in description text
+- [x] **Signal Matching Accuracy** — [PROMPT_signal_matching_accuracy.md](PROMPT_signal_matching_accuracy.md) — Word boundary matching to prevent substring false positives (intern/internet), title-scoped seniority to avoid context-blind negatives
 
 ## Not Yet Implemented
 

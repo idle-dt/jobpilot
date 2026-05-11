@@ -10,7 +10,6 @@ from jobpilot.classifier.features import (
 )
 from jobpilot.classifier.rules import RuleBasedScorer
 
-
 # --- Feature Scoring ---
 
 def test_tech_stack_flutter_dart():
@@ -89,6 +88,59 @@ def test_job_title_weak():
 
 def test_job_title_no_match():
     assert score_job_title("Chef needed") == 0.0
+
+
+# --- Word Boundary Matching ---
+
+def test_word_boundary_intern():
+    """'internet' should NOT match 'intern' signal."""
+    score = score_tech_stack("Internet of Things platform")
+    assert score == 0.0
+    score = score_seniority("Internet Engineer")
+    assert score == 0.5  # neutral — no seniority match
+
+
+def test_word_boundary_lead():
+    """'leading' should NOT match 'lead' seniority signal."""
+    score = score_seniority("Leading technology company")
+    assert score == 0.5  # neutral
+
+
+def test_word_boundary_ios():
+    """'curious' should NOT match 'ios' tech signal."""
+    score = score_tech_stack("We want curious engineers")
+    assert score == 0.0
+
+
+def test_word_boundary_staff():
+    """'staffing' should NOT match 'staff' seniority signal."""
+    score = score_seniority("Staffing agency recruiter")
+    assert score == 0.5  # neutral
+
+
+def test_word_boundary_dart():
+    """'dartboard' should NOT match 'dart' tech signal."""
+    score = score_tech_stack("Office has a dartboard")
+    assert score == 0.0
+
+
+def test_word_boundary_sr_dot():
+    """'sr.' should match as seniority signal."""
+    score = score_seniority("Sr. Mobile Engineer")
+    assert score >= 0.9
+
+
+# --- Title-Scoped Seniority ---
+
+def test_seniority_not_matched_in_body():
+    """'mentoring interns' in body should NOT trigger negative seniority."""
+    scorer = RuleBasedScorer()
+    result = scorer.score(
+        "Mobile Engineer",
+        "You will be mentoring interns and junior developers as part of the team."
+    )
+    # Seniority should be neutral (0.5), not penalized
+    assert result.breakdown["seniority_match"] == 0.5
 
 
 # --- Full Scorer ---

@@ -86,7 +86,7 @@ def compute_features(
         score_tech_stack(text, cfg.tech_keywords),
         score_job_title(text, cfg.job_titles),
         score_location(text, cfg.locations),
-        score_seniority(text, cfg.seniority_patterns),
+        score_seniority(subject, cfg.seniority_patterns),
         score_salary(text, cfg.salary_patterns),
         score_negatives(text, cfg.negatives),
     ]

@@ -45,6 +45,7 @@ poetry.lock
 # Claude Code / Superpowers
 .claude/
 .superpowers/
+CLAUDE.md
 
 # Internal docs
 docs/

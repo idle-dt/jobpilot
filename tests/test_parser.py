@@ -3,8 +3,7 @@
 import base64
 
 from jobpilot.classifier.signals import detect_platform, extract_signals
-from jobpilot.gmail.parser import _extract_body, _extract_domain, _html_to_text, parse_message
-
+from jobpilot.gmail.parser import _extract_domain, _html_to_text, parse_message
 
 # --- Helper to build fake Gmail API messages ---
 
@@ -123,6 +122,20 @@ def test_extract_salary_eur():
     signals = extract_signals("Job", "Salary range: €60,000 - €90,000", None)
     salary = [s for s in signals if s["type"] == "salary"]
     assert len(salary) == 1
+
+
+def test_extract_seniority_only_in_subject():
+    """Seniority keyword only in body should NOT extract a seniority signal."""
+    signals = extract_signals("Mobile Engineer", "mentoring interns and juniors", None)
+    seniority = [s for s in signals if s["type"] == "seniority"]
+    assert len(seniority) == 0
+
+
+def test_extract_word_boundary_no_false_positive():
+    """'internet' in text should NOT extract 'intern' as a negative seniority signal."""
+    signals = extract_signals("Internet Engineer", "Build internet of things", None)
+    seniority = [s for s in signals if s["type"] == "seniority"]
+    assert len(seniority) == 0
 
 
 def test_extract_salary_k_notation():
