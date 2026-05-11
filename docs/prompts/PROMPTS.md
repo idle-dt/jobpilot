@@ -19,10 +19,11 @@
 - [x] **Description Improvements** — [PROMPT_description_improvements.md](PROMPT_description_improvements.md) — Preserve formatting, strip "show more" artifacts, highlight matched signals (green/red) in description text
 - [x] **Signal Matching Accuracy** — [PROMPT_signal_matching_accuracy.md](PROMPT_signal_matching_accuracy.md) — Word boundary matching to prevent substring false positives (intern/internet), title-scoped seniority to avoid context-blind negatives
 
-## Not Yet Implemented
-
 - [x] **Security & Critical Fixes** — [PROMPT_security_critical_fixes.md](PROMPT_security_critical_fixes.md) — SQL parameterization, inline HTML→partials, OAUTHLIB guard, narrow exception catches, ruff fixes, debug default
 - [x] **Architecture Refactor** — [PROMPT_architecture_refactor.md](PROMPT_architecture_refactor.md) — Split repository.py into focused repos, extract services from routes, remove direct conn.execute, fix email._signals hack, type hints, docstrings
+- [x] **README & License** — [PROMPT_readme.md](PROMPT_readme.md) — Portfolio-quality README with screenshots, badges, architecture overview, getting started guide, MIT license
+
+## Not Yet Implemented
 
 ## Future / Ideas
 
