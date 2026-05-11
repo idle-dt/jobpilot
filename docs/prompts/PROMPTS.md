@@ -25,6 +25,8 @@
 
 ## Not Yet Implemented
 
+- [ ] **Security Hardening** — [PROMPT_security_hardening.md](PROMPT_security_hardening.md) — CSRF protection (Flask-WTF), Chart.js SRI hash, email_id validation, sync rate limiting (Flask-Limiter)
+
 ## Future / Ideas
 
 - Expired job auto-detection (manual toggle implemented, auto-detection via URL scraping or date heuristic deferred)

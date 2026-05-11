@@ -416,7 +416,9 @@ var DATA = {{ data | tojson }};
     function boot() {
         if (typeof Chart === 'undefined') {
             var s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
+            s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js';
+            s.integrity = 'sha384-T/4KgSWuZEPozpPz7rnnp/5lDSnpY1VPJCojf1S81uTHS1E38qgLfMgVsAeRCWc4';
+            s.crossOrigin = 'anonymous';
             s.onload = initCharts;
             document.head.appendChild(s);
         } else {
