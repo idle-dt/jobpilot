@@ -11,6 +11,8 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+SCRAPE_EXPIRED = "__EXPIRED__"
+
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -66,6 +68,9 @@ class JobPageScraper:
                 if not _is_safe_url(target):
                     logger.warning("Blocked redirect to unsafe URL: %s", target)
                     return None
+                if "expired_jd_redirect" in target:
+                    logger.info("Detected expired job: %s", url)
+                    return SCRAPE_EXPIRED
                 resp = requests.get(
                     target, headers=_HEADERS, timeout=_TIMEOUT,
                     allow_redirects=False,
@@ -91,7 +96,7 @@ class JobPageScraper:
             desc = soup.find("section", class_="description")
         if desc:
             return self._clean_text(desc.get_text(separator="\n"))
-        return self._parse_generic(html)
+        return None
 
     def _parse_indeed(self, html: str) -> str | None:
         soup = BeautifulSoup(html, "lxml")
@@ -131,6 +136,29 @@ class JobPageScraper:
 
     @staticmethod
     def _clean_text(text: str) -> str:
-        lines = [line.strip() for line in text.splitlines()]
-        lines = [line for line in lines if line]
-        return "\n".join(lines)
+        """Collapse excessive blank lines, strip trailing whitespace, remove artifacts."""
+        lines = [line.rstrip() for line in text.splitlines()]
+
+        # Collapse runs of 3+ consecutive blank lines down to 2
+        collapsed: list[str] = []
+        blank_run = 0
+        max_consecutive_blanks = 2
+        for line in lines:
+            if not line.strip():
+                blank_run += 1
+                if blank_run <= max_consecutive_blanks:
+                    collapsed.append(line)
+            else:
+                blank_run = 0
+                collapsed.append(line)
+
+        # Remove "Show more" / "Show less" artifacts
+        show_artifact = re.compile(
+            r"^[\u2026.]*\s*show\s+more\s*$|^show\s+less\s*$", re.IGNORECASE,
+        )
+        collapsed = [
+            line for line in collapsed
+            if not show_artifact.match(line.strip())
+        ]
+
+        return "\n".join(collapsed).strip()

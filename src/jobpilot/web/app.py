@@ -41,6 +41,10 @@ def create_app() -> Flask:
         svc.parse_existing_digests()
         svc.score_pending_jobs()
 
+    # Register custom filters
+    from jobpilot.web.filters import highlight_signals
+    app.jinja_env.filters["highlight_signals"] = highlight_signals
+
     # Register routes
     from jobpilot.web.auth_routes import bp_auth
     from jobpilot.web.routes import bp

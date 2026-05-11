@@ -71,7 +71,7 @@
     {% if job.description %}
     <details class="description-preview">
         <summary>Show fetched description</summary>
-        <div class="description-text">{{ job.description }}</div>
+        <div class="description-text">{{ job.description|highlight_signals(job.matched_signals) }}</div>
     </details>
     {% endif %}
 

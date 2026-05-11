@@ -120,9 +120,10 @@ class Repository:
     def update_scraped_job_scores(
         self, job_id: int, score: float,
         ml_score: float | None, classification: str,
+        matched_signals: str | None = None,
     ) -> None:
         return self.jobs.update_scraped_job_scores(
-            job_id, score, ml_score, classification,
+            job_id, score, ml_score, classification, matched_signals,
         )
 
     def update_scraped_job_description(

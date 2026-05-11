@@ -133,6 +133,7 @@ class ScrapedJob:
     expired: bool = False
     description: str | None = None
     scrape_attempted: bool = False
+    matched_signals: str | None = None
 
 
 @dataclass

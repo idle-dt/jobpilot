@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS scraped_jobs (
     email_id TEXT REFERENCES emails(id),
     expired BOOLEAN DEFAULT FALSE,
     description TEXT,
-    scrape_attempted BOOLEAN DEFAULT FALSE
+    scrape_attempted BOOLEAN DEFAULT FALSE,
+    matched_signals TEXT
 );
 
 CREATE TABLE IF NOT EXISTS applications (

@@ -1,5 +1,6 @@
 """Email classification and job scoring business logic."""
 
+import json
 import logging
 
 from jobpilot.storage.repository import Repository
@@ -91,6 +92,7 @@ class ClassificationService:
 
     def score_pending_jobs(self) -> None:
         """Score scraped jobs that are still pending classification."""
+        from jobpilot.classifier.features import extract_matched_keywords
         from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
 
         config = load_signal_config(self.repo)
@@ -122,6 +124,11 @@ class ClassificationService:
             except Exception:
                 logger.exception("ML scoring prediction failed for job %d", row["id"])
 
+            signals = extract_matched_keywords(body, config)
+            has_signals = signals["positive"] or signals["negative"]
+            signals_json = json.dumps(signals) if has_signals else None
+
             self.repo.update_scraped_job_scores(
                 row["id"], result.score, ml_score, result.classification,
+                matched_signals=signals_json,
             )

@@ -54,13 +54,19 @@ class JobRepository:
         self.conn.commit()
 
     def update_scraped_job_scores(
-        self, job_id: int, score: float, ml_score: float | None, classification: str
+        self,
+        job_id: int,
+        score: float,
+        ml_score: float | None,
+        classification: str,
+        matched_signals: str | None = None,
     ) -> None:
         """Update scoring results for a scraped job."""
         self.conn.execute(
-            """UPDATE scraped_jobs SET score = ?, ml_score = ?, classification = ?
+            """UPDATE scraped_jobs
+            SET score = ?, ml_score = ?, classification = ?, matched_signals = ?
             WHERE id = ?""",
-            (score, ml_score, classification, job_id),
+            (score, ml_score, classification, matched_signals, job_id),
         )
         self.conn.commit()
 
@@ -167,4 +173,5 @@ class JobRepository:
             expired=bool(row["expired"]),
             description=row["description"],
             scrape_attempted=bool(row["scrape_attempted"]),
+            matched_signals=row["matched_signals"],
         )

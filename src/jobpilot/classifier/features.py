@@ -1,6 +1,12 @@
 """Feature extraction for classification scoring."""
 
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jobpilot.classifier.rules import SignalConfig
 
 # --- Scoring constants ---
 TOP_KEYWORD_MATCHES = 3
@@ -121,6 +127,66 @@ def score_job_title(text: str, titles: dict[str, dict] | None = None) -> float:
             best_weight = max(best_weight, info["weight"])
 
     return best_weight
+
+
+def extract_matched_keywords(text: str, config: SignalConfig) -> dict[str, list[str]]:
+    """Return positive and negative keyword matches found in text.
+
+    Uses the same keyword dictionaries as the score_* functions.
+    """
+    positive: list[str] = []
+    negative: list[str] = []
+
+    if not text:
+        return {"positive": positive, "negative": negative}
+
+    text_lower = text.lower()
+
+    # Tech stack keywords
+    if config.tech_keywords:
+        for keyword in config.tech_keywords:
+            if keyword in text_lower:
+                positive.append(keyword)
+
+    # Job titles
+    if config.job_titles:
+        for title in config.job_titles:
+            if title in text_lower:
+                positive.append(title)
+
+    # Locations — split by weight sign
+    if config.locations:
+        for location, info in config.locations.items():
+            if location in text_lower:
+                if info["weight"] < 0:
+                    negative.append(location)
+                else:
+                    positive.append(location)
+
+    # Seniority — split by weight sign
+    if config.seniority_patterns:
+        for pattern, info in config.seniority_patterns.items():
+            if pattern in text_lower:
+                if info["weight"] < 0:
+                    negative.append(pattern)
+                else:
+                    positive.append(pattern)
+
+    # Salary matches
+    if config.salary_patterns:
+        for pat in config.salary_patterns:
+            if re.search(pat, text_lower):
+                match = re.search(pat, text_lower)
+                if match:
+                    positive.append(match.group(0))
+
+    # Negatives
+    if config.negatives:
+        for neg in config.negatives:
+            if neg in text_lower:
+                negative.append(neg)
+
+    return {"positive": sorted(set(positive)), "negative": sorted(set(negative))}
 
 
 # --- Structural features for noise model tiers ---
