@@ -471,32 +471,34 @@ def _maybe_auto_retrain(repo) -> None:
 @bp.route("/api/ml/train", methods=["POST"])
 @limiter.limit("2 per minute")
 def ml_train():
-    """Train all ML algorithms for a model type."""
-    from jobpilot.classifier.ml_trainer import MLTrainer
+    """Train all ML algorithms for a model type in a subprocess."""
+    from jobpilot.services.ml_service import MLService
 
     repo = _repo()
     model_type = _get_param("model_type", "scoring")
     if model_type not in ("noise", "scoring"):
         return jsonify({"status": "error", "message": "Invalid model_type"}), 400
 
-    trainer = MLTrainer(repo)
-    model_ids = trainer.train_all(model_type)
+    service = MLService(repo)
+    success, message = service.run_manual_retrain(model_type)
 
-    if not model_ids:
-        return jsonify({"status": "error", "message": "Not enough training data"}), 400
+    if not success:
+        status_code = 504 if message == "Training timed out" else 500
+        return jsonify({"status": "error", "message": message}), status_code
 
-    # Gather metrics for response
+    # Gather metrics from DB after subprocess completed
     results = {}
-    for mid in model_ids:
-        mv = repo.get_model_version(mid)
-        if mv:
-            results[mv.algorithm] = {
-                "accuracy": mv.accuracy,
-                "precision": mv.precision_score,
-                "recall": mv.recall_score,
-                "f1": mv.f1_score,
-                "is_active": mv.is_active,
-            }
+    for mv in repo.get_model_versions_by_type(model_type):
+        results[mv.algorithm] = {
+            "accuracy": mv.accuracy,
+            "precision": mv.precision_score,
+            "recall": mv.recall_score,
+            "f1": mv.f1_score,
+            "is_active": mv.is_active,
+        }
+
+    if not results:
+        return jsonify({"status": "error", "message": "Not enough training data"}), 400
 
     return jsonify({"status": "ok", "results": results})
 
