@@ -24,6 +24,7 @@
 - [x] **README & License** — [PROMPT_readme.md](PROMPT_readme.md) — Portfolio-quality README with screenshots, badges, architecture overview, getting started guide, MIT license
 - [x] **Security Hardening** — [PROMPT_security_hardening.md](PROMPT_security_hardening.md) — CSRF protection (Flask-WTF), Chart.js SRI hash, email_id validation, sync rate limiting (Flask-Limiter)
 - [x] **Noise Predictions Table** — [PROMPT_noise_predictions_table.md](PROMPT_noise_predictions_table.md) — Predictions comparison table for noise model on stats dashboard
+- [x] **ML Retrain Crash Fix** — [PROMPT_ml_retrain_crash.md](PROMPT_ml_retrain_crash.md) — Run auto-retrain in subprocess to survive segfaults, add class imbalance guards, zero_division scoring
 
 ## Not Yet Implemented
 

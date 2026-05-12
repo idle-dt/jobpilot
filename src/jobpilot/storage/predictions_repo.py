@@ -24,10 +24,10 @@ class PredictionsRepository:
         return items
 
     def recent_noise(self) -> list[dict]:
-        """Recent labeled items with noise model predictions."""
+        """Recent labeled items with noise model predictions (emails only)."""
         items = self._fetch_labeled_items(
             email_label_filter="1=1",
-            scraped_label_filter="user_label IS NOT NULL",
+            scraped_label_filter="1=0",
         )
         for item in items:
             item["noise_label"] = (
