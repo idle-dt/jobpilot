@@ -32,7 +32,9 @@ logger = logging.getLogger(__name__)
 ALGORITHMS = {
     "LR": lambda: LogisticRegression(max_iter=1000, random_state=42),
     "RF": lambda: RandomForestClassifier(n_estimators=100, random_state=42),
-    "GBC": lambda: GradientBoostingClassifier(n_estimators=100, random_state=42),
+    "GBC": lambda: CalibratedClassifierCV(
+        GradientBoostingClassifier(n_estimators=100, random_state=42),
+    ),
     "SVM": lambda: CalibratedClassifierCV(LinearSVC(max_iter=2000, random_state=42)),
 }
 
@@ -254,6 +256,8 @@ class MLTrainer:
                 return np.abs(clf.coef_[0]).tolist()
             if hasattr(clf, "calibrated_classifiers_"):
                 base = clf.calibrated_classifiers_[0].estimator
+                if hasattr(base, "feature_importances_"):
+                    return base.feature_importances_.tolist()
                 if hasattr(base, "coef_"):
                     return np.abs(base.coef_[0]).tolist()
         except (AttributeError, IndexError, ValueError):
