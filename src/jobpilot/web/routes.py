@@ -471,32 +471,45 @@ def _maybe_auto_retrain(repo) -> None:
 @bp.route("/api/ml/train", methods=["POST"])
 @limiter.limit("2 per minute")
 def ml_train():
-    """Train all ML algorithms for a model type."""
-    from jobpilot.classifier.ml_trainer import MLTrainer
+    """Train all ML algorithms for a model type in a subprocess."""
+    import multiprocessing
+
+    from jobpilot.services.ml_service import MLService
 
     repo = _repo()
     model_type = _get_param("model_type", "scoring")
     if model_type not in ("noise", "scoring"):
         return jsonify({"status": "error", "message": "Invalid model_type"}), 400
 
-    trainer = MLTrainer(repo)
-    model_ids = trainer.train_all(model_type)
+    p = multiprocessing.Process(
+        target=MLService._retrain_in_subprocess,
+        args=(model_type,),
+    )
+    p.start()
+    from jobpilot.services.ml_service import MANUAL_RETRAIN_TIMEOUT_SECONDS
+    p.join(timeout=MANUAL_RETRAIN_TIMEOUT_SECONDS)
 
-    if not model_ids:
-        return jsonify({"status": "error", "message": "Not enough training data"}), 400
+    if p.is_alive():
+        p.terminate()
+        p.join(timeout=5)
+        return jsonify({"status": "error", "message": "Training timed out"}), 504
 
-    # Gather metrics for response
+    if p.exitcode != 0:
+        return jsonify({"status": "error", "message": "Training failed"}), 500
+
+    # Gather metrics from DB after subprocess completed
     results = {}
-    for mid in model_ids:
-        mv = repo.get_model_version(mid)
-        if mv:
-            results[mv.algorithm] = {
-                "accuracy": mv.accuracy,
-                "precision": mv.precision_score,
-                "recall": mv.recall_score,
-                "f1": mv.f1_score,
-                "is_active": mv.is_active,
-            }
+    for mv in repo.get_model_versions_by_type(model_type):
+        results[mv.algorithm] = {
+            "accuracy": mv.accuracy,
+            "precision": mv.precision_score,
+            "recall": mv.recall_score,
+            "f1": mv.f1_score,
+            "is_active": mv.is_active,
+        }
+
+    if not results:
+        return jsonify({"status": "error", "message": "Not enough training data"}), 400
 
     return jsonify({"status": "ok", "results": results})
 

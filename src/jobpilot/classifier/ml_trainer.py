@@ -9,6 +9,7 @@ import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score, make_scorer, precision_score, recall_score
 from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.svm import LinearSVC
 
@@ -170,14 +171,27 @@ class MLTrainer:
             clf = algo_factory()
 
             min_class = int(np.min(np.bincount(y)))
+            if min_class < MIN_CV_SPLITS:
+                logger.warning(
+                    "Skipping %s — min class count %d < %d required",
+                    algo_name, min_class, MIN_CV_SPLITS,
+                )
+                return None
+
             n_splits = min(MAX_CV_SPLITS, min_class)
             n_splits = max(MIN_CV_SPLITS, n_splits)
             cv = StratifiedKFold(
                 n_splits=n_splits, shuffle=True, random_state=42,
             )
+            scoring = {
+                "accuracy": "accuracy",
+                "precision": make_scorer(precision_score, zero_division=0),
+                "recall": make_scorer(recall_score, zero_division=0),
+                "f1": make_scorer(f1_score, zero_division=0),
+            }
             scores = cross_validate(
                 clf, x, y, cv=cv,
-                scoring=["accuracy", "precision", "recall", "f1"],
+                scoring=scoring,
                 return_train_score=False,
             )
 
