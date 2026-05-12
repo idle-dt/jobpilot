@@ -99,6 +99,30 @@ class MLRepository:
         )
         self.conn.commit()
 
+    def delete_old_model_versions(
+        self, model_type: str, keep_ids: list[int],
+    ) -> None:
+        """Delete old model versions for a type, keeping specified IDs."""
+        if not keep_ids:
+            return
+        placeholders = ",".join("?" * len(keep_ids))
+        ids = self.conn.execute(
+            f"SELECT id FROM model_versions WHERE model_type = ?"
+            f" AND id NOT IN ({placeholders})",
+            [model_type, *keep_ids],
+        ).fetchall()
+        for row in ids:
+            self.conn.execute(
+                "DELETE FROM ml_predictions WHERE model_version_id = ?",
+                (row["id"],),
+            )
+        self.conn.execute(
+            f"DELETE FROM model_versions WHERE model_type = ?"
+            f" AND id NOT IN ({placeholders})",
+            [model_type, *keep_ids],
+        )
+        self.conn.commit()
+
     def get_next_version(self, model_type: str) -> int:
         """Get the next version number for a model type."""
         row = self.conn.execute(

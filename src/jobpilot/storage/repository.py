@@ -33,6 +33,10 @@ class Repository:
         self.stats = StatsRepository(conn)
         self.settings = SettingsRepository(conn)
 
+    def commit(self) -> None:
+        """Commit pending transaction on the underlying connection."""
+        self.conn.commit()
+
     # --- Email delegation ---
 
     def insert_email(self, email: Email) -> None:
@@ -252,6 +256,12 @@ class Repository:
         self, model_type: str,
     ) -> None:
         return self.ml.delete_model_versions_by_type(model_type)
+
+    def delete_old_model_versions(
+        self, model_type: str, keep_ids: list[int],
+    ) -> None:
+        """Delete old model versions, keeping the specified IDs."""
+        return self.ml.delete_old_model_versions(model_type, keep_ids)
 
     def get_next_version(self, model_type: str) -> int:
         return self.ml.get_next_version(model_type)

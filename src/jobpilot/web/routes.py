@@ -472,34 +472,19 @@ def _maybe_auto_retrain(repo) -> None:
 @limiter.limit("2 per minute")
 def ml_train():
     """Train all ML algorithms for a model type in a subprocess."""
-    from jobpilot.services.ml_service import (
-        MANUAL_RETRAIN_TIMEOUT_SECONDS,
-        MLService,
-        _spawn_ctx,
-    )
+    from jobpilot.services.ml_service import MLService
 
     repo = _repo()
     model_type = _get_param("model_type", "scoring")
     if model_type not in ("noise", "scoring"):
         return jsonify({"status": "error", "message": "Invalid model_type"}), 400
 
-    # Release implicit transactions so the subprocess can write to the DB
-    repo.conn.commit()
+    service = MLService(repo)
+    success, message = service.run_manual_retrain(model_type)
 
-    p = _spawn_ctx.Process(
-        target=MLService._retrain_in_subprocess,
-        args=(model_type,),
-    )
-    p.start()
-    p.join(timeout=MANUAL_RETRAIN_TIMEOUT_SECONDS)
-
-    if p.is_alive():
-        p.terminate()
-        p.join(timeout=5)
-        return jsonify({"status": "error", "message": "Training timed out"}), 504
-
-    if p.exitcode != 0:
-        return jsonify({"status": "error", "message": "Training failed"}), 500
+    if not success:
+        status_code = 504 if message == "Training timed out" else 500
+        return jsonify({"status": "error", "message": message}), status_code
 
     # Gather metrics from DB after subprocess completed
     results = {}

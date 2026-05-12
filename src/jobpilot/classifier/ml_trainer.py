@@ -129,9 +129,6 @@ class MLTrainer:
 
         y_train = np.array([d["label"] for d in data])
 
-        # Clean up previous training run for this model type
-        self.repo.delete_model_versions_by_type(model_type)
-
         version = self.repo.get_next_version(model_type)
         model_ids = []
         best_f1 = -1.0
@@ -148,6 +145,13 @@ class MLTrainer:
                 if mv and (mv.f1_score or 0) > best_f1:
                     best_f1 = mv.f1_score or 0
                     best_id = model_id
+
+        if not model_ids:
+            return []
+
+        # Delete old models only after new ones are saved — prevents data loss
+        # if the subprocess is killed mid-training (daemon process or timeout).
+        self.repo.delete_old_model_versions(model_type, keep_ids=model_ids)
 
         if best_id:
             mv = self.repo.get_model_version(best_id)
@@ -170,6 +174,8 @@ class MLTrainer:
         try:
             clf = algo_factory()
 
+            # Defense-in-depth: should_retrain() checks MIN_NEGATIVE_LABELS for
+            # noise, but scoring model and direct train_all() calls need this guard.
             min_class = int(np.min(np.bincount(y)))
             if min_class < MIN_CV_SPLITS:
                 logger.warning(

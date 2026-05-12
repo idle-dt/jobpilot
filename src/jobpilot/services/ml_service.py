@@ -2,6 +2,7 @@
 
 import logging
 import multiprocessing
+import sqlite3
 
 from jobpilot.storage.repository import Repository
 
@@ -32,7 +33,7 @@ class MLService:
             if not retrain_types:
                 return
             # Release implicit transactions so the subprocess can write to the DB
-            self.repo.conn.commit()
+            self.repo.commit()
             for model_type in retrain_types:
                 logger.info("Auto-retraining %s model in subprocess", model_type)
                 p = _spawn_ctx.Process(
@@ -41,14 +42,36 @@ class MLService:
                     daemon=True,
                 )
                 p.start()
-        except (ValueError, RuntimeError, ImportError, OSError):
+        except (
+            ValueError, RuntimeError, ImportError, OSError,
+            sqlite3.OperationalError,
+        ):
             logger.exception("Auto-retrain check failed")
+
+    def run_manual_retrain(self, model_type: str) -> tuple[bool, str]:
+        """Run retrain in subprocess with timeout. Returns (success, message)."""
+        self.repo.commit()
+        p = _spawn_ctx.Process(
+            target=self._retrain_in_subprocess,
+            args=(model_type,),
+        )
+        p.start()
+        p.join(timeout=MANUAL_RETRAIN_TIMEOUT_SECONDS)
+
+        if p.is_alive():
+            p.terminate()
+            p.join(timeout=5)
+            return False, "Training timed out"
+
+        if p.exitcode != 0:
+            return False, "Training failed"
+
+        return True, "ok"
 
     @staticmethod
     def _retrain_in_subprocess(model_type: str) -> None:
         """Run training in isolated subprocess so segfaults don't kill the server."""
-        import sqlite3
-
+        conn = None
         try:
             from jobpilot.classifier.ml_trainer import MLTrainer
             from jobpilot.config import settings
@@ -62,7 +85,13 @@ class MLService:
             repo = Repository(conn)
             trainer = MLTrainer(repo)
             trainer.train_all(model_type)
-        except Exception:
+        except (
+            ValueError, RuntimeError, ImportError, OSError,
+            sqlite3.Error,
+        ):
             logging.getLogger(__name__).exception(
                 "Subprocess retrain failed for %s", model_type,
             )
+        finally:
+            if conn:
+                conn.close()
