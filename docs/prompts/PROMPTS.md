@@ -26,7 +26,12 @@
 - [x] **Noise Predictions Table** — [PROMPT_noise_predictions_table.md](PROMPT_noise_predictions_table.md) — Predictions comparison table for noise model on stats dashboard
 - [x] **ML Retrain Crash Fix** — [PROMPT_ml_retrain_crash.md](PROMPT_ml_retrain_crash.md) — Run auto-retrain in subprocess to survive segfaults, add class imbalance guards, zero_division scoring
 
+- [x] **GBC Calibration** — [PROMPT_gbc_calibration.md](PROMPT_gbc_calibration.md) — Wrap GBC in CalibratedClassifierCV for realistic probabilities instead of 0/100%
+
 ## Not Yet Implemented
+
+- [ ] **Application Tracker** — [PROMPT_application_tracker.md](PROMPT_application_tracker.md) — Tracker tab with list view, inline status dropdown, detail modal with offer/contact/history, schema cleanup
+- [ ] **Browser Scraper** — [PROMPT_browser_scraper.md](PROMPT_browser_scraper.md) — Playwright fallback for Glassdoor/Wellfound/LinkedIn login walls, persistent sessions, login wall detection, data cleanup
 
 ## Future / Ideas
 

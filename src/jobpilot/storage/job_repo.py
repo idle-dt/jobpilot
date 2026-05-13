@@ -29,6 +29,15 @@ class JobRepository:
         except sqlite3.IntegrityError:
             return False
 
+    def get_scraped_job(self, job_id: int) -> ScrapedJob | None:
+        """Get a single scraped job by ID."""
+        row = self.conn.execute(
+            "SELECT * FROM scraped_jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_scraped_job(row)
+
     def get_scraped_jobs_for_review(self, limit: int = 20) -> list[ScrapedJob]:
         """Get scraped jobs that need user review."""
         rows = self.conn.execute(

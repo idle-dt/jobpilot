@@ -2130,3 +2130,434 @@ td .badge-ml-active {
         transition: none;
     }
 }
+
+
+/* ── Tracker ──────────────────────────────────────────── */
+
+.tracker-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.tracker-toolbar h2 {
+    margin: 0;
+}
+
+.btn-new-app {
+    background: var(--ink);
+    color: var(--canvas);
+    border: none;
+    border-radius: var(--radius-pill);
+    padding: 8px 22px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.btn-new-app:hover {
+    opacity: 0.85;
+}
+
+.btn-cancel {
+    background: transparent;
+    border: 1.5px solid var(--dust);
+    border-radius: var(--radius-pill);
+    padding: 8px 22px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--ink);
+    font-family: inherit;
+}
+
+.btn-cancel:hover {
+    border-color: var(--ink);
+}
+
+.btn-danger-outline {
+    background: transparent;
+    border: 1.5px solid var(--danger);
+    border-radius: var(--radius-pill);
+    padding: 6px 18px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--danger);
+    font-family: inherit;
+}
+
+.btn-danger-outline:hover {
+    background: var(--danger);
+    color: #fff;
+}
+
+/* Filter pills */
+.tracker-pills {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.tracker-pill {
+    background: var(--lifted);
+    border: 1.5px solid var(--dust);
+    border-radius: var(--radius-pill);
+    padding: 5px 14px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--ink);
+    text-decoration: none;
+    transition: border-color 0.15s;
+}
+
+.tracker-pill:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+}
+
+.tracker-pill.active {
+    background: var(--ink);
+    color: var(--canvas);
+    border-color: var(--ink);
+}
+
+.pill-count {
+    font-weight: 700;
+}
+
+/* Table */
+.tracker-table-wrap {
+    overflow-x: auto;
+}
+
+.tracker-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--lifted);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    border: 1px solid var(--dust);
+    box-shadow: var(--shadow-1);
+}
+
+.tracker-table th {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--slate);
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--dust);
+    font-weight: 600;
+}
+
+.tracker-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--dust);
+    font-size: 0.85rem;
+    vertical-align: middle;
+}
+
+.tracker-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.tracker-table tbody tr:hover {
+    background: var(--canvas);
+}
+
+.tracker-row-dimmed {
+    opacity: 0.6;
+}
+
+.tracker-muted {
+    color: var(--slate);
+    font-size: 0.8rem;
+}
+
+.role-link {
+    font-weight: 600;
+    color: var(--ink);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.role-link:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--dust);
+}
+
+/* Status badges */
+.status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.status-saved,
+.status-applied {
+    background: #E3F2FD;
+    color: #1565C0;
+}
+
+.status-screening,
+.status-technical,
+.status-onsite {
+    background: #FFF3E0;
+    color: #E65100;
+}
+
+.status-offer,
+.status-accepted {
+    background: #E8F5E9;
+    color: var(--success);
+}
+
+.status-rejected,
+.status-withdrawn,
+.status-no_response {
+    background: #FFEBEE;
+    color: var(--danger);
+}
+
+[data-theme="dark"] .status-saved,
+[data-theme="dark"] .status-applied {
+    background: rgba(21, 101, 192, 0.18);
+    color: #90CAF9;
+}
+
+[data-theme="dark"] .status-screening,
+[data-theme="dark"] .status-technical,
+[data-theme="dark"] .status-onsite {
+    background: rgba(230, 81, 0, 0.18);
+    color: #FFAB91;
+}
+
+[data-theme="dark"] .status-offer,
+[data-theme="dark"] .status-accepted {
+    background: rgba(46, 125, 50, 0.18);
+    color: #A5D6A7;
+}
+
+[data-theme="dark"] .status-rejected,
+[data-theme="dark"] .status-withdrawn,
+[data-theme="dark"] .status-no_response {
+    background: rgba(198, 40, 40, 0.18);
+    color: #EF9A9A;
+}
+
+/* Inline status select */
+.tracker-badge-wrap {
+    display: inline-block;
+}
+
+.status-select {
+    font-size: 0.78rem;
+    padding: 2px 6px;
+    border-radius: var(--radius-btn);
+    border: 1.5px solid var(--dust);
+    background: var(--lifted);
+    color: var(--ink);
+    font-family: inherit;
+    cursor: pointer;
+}
+
+/* Modal */
+.tracker-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(20, 20, 19, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+[data-theme="dark"] .tracker-modal-backdrop {
+    background: rgba(0, 0, 0, 0.65);
+}
+
+.tracker-modal {
+    background: var(--lifted);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-2);
+    width: 100%;
+    max-width: 680px;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+}
+
+.tracker-modal-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 1.25rem 1.5rem 0.75rem;
+    border-bottom: 1px solid var(--dust);
+}
+
+.tracker-modal-header h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+
+.tracker-modal-company {
+    color: var(--slate);
+    font-size: 0.9rem;
+}
+
+.tracker-modal-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--slate);
+    line-height: 1;
+    padding: 4px 8px;
+}
+
+.tracker-modal-close:hover {
+    color: var(--ink);
+}
+
+.tracker-modal-body {
+    padding: 1.25rem 1.5rem;
+}
+
+.tracker-modal-body label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--slate);
+    margin-bottom: 0.75rem;
+}
+
+.tracker-modal-body input,
+.tracker-modal-body textarea,
+.tracker-modal-body select {
+    display: block;
+    width: 100%;
+    margin-top: 0.25rem;
+    padding: 7px 10px;
+    border: 1.5px solid var(--dust);
+    border-radius: var(--radius-btn);
+    font-size: 0.85rem;
+    background: var(--lifted);
+    color: var(--ink);
+    font-family: inherit;
+}
+
+.tracker-modal-body input:focus,
+.tracker-modal-body textarea:focus,
+.tracker-modal-body select:focus {
+    border-color: var(--ink);
+    outline: none;
+}
+
+.tracker-muted-input {
+    color: var(--slate);
+}
+
+.tracker-modal-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+@media (max-width: 600px) {
+    .tracker-modal-cols {
+        grid-template-columns: 1fr;
+    }
+}
+
+.tracker-offer-col h4 {
+    margin: 0 0 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.tracker-hidden {
+    display: none;
+}
+
+.tracker-modal-bottom {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--dust);
+}
+
+.tracker-contact-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+@media (max-width: 600px) {
+    .tracker-contact-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.tracker-link {
+    display: inline-block;
+    font-size: 0.78rem;
+    color: var(--slate);
+    word-break: break-all;
+    margin-bottom: 0.25rem;
+}
+
+/* Status history timeline */
+.tracker-history {
+    margin-top: 1rem;
+}
+
+.tracker-history h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.tracker-timeline {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.tracker-timeline li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 4px 0;
+    font-size: 0.8rem;
+}
+
+.tracker-modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--dust);
+}
+
+.required {
+    color: var(--danger);
+}

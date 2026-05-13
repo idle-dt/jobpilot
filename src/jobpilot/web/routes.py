@@ -11,6 +11,7 @@ from jobpilot.config import settings
 from jobpilot.storage.models import ExtractedSignal, UserFeedback
 from jobpilot.storage.repository import Repository
 from jobpilot.web.app import limiter
+from jobpilot.web.request_utils import get_param as _get_param
 
 logger = logging.getLogger(__name__)
 
@@ -39,17 +40,6 @@ SIGNAL_PRIORITY = {
 def _sort_signals(signals: list[ExtractedSignal]) -> list[ExtractedSignal]:
     """Sort signals by priority (tech_stack first, platform last)."""
     return sorted(signals, key=lambda s: SIGNAL_PRIORITY.get(s.signal_type, 99))
-
-
-def _get_param(name: str, default: str = "") -> str:
-    """Get a parameter from any request source: form, query string, or JSON body."""
-    val = request.values.get(name)
-    if val:
-        return val
-    json_body = request.get_json(silent=True)
-    if json_body:
-        return json_body.get(name, default)
-    return default
 
 
 def _repo() -> Repository:
@@ -195,6 +185,10 @@ def submit_scraped_feedback(job_id: int):
         return "Invalid label", 400
 
     repo.update_scraped_job_label(job_id, label)
+
+    if label == "worth_checking":
+        from jobpilot.services.tracker_service import TrackerService
+        TrackerService(repo).auto_track_scraped_job(job_id)
 
     _maybe_auto_retrain(repo)
     return render_template(

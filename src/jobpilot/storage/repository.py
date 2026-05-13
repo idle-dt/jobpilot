@@ -111,6 +111,9 @@ class Repository:
     def insert_scraped_job(self, job: ScrapedJob) -> bool:
         return self.jobs.insert_scraped_job(job)
 
+    def get_scraped_job(self, job_id: int) -> ScrapedJob | None:
+        return self.jobs.get_scraped_job(job_id)
+
     def get_scraped_jobs_for_review(
         self, limit: int = 20,
     ) -> list[ScrapedJob]:
@@ -194,6 +197,15 @@ class Repository:
 
     def count_applications_by_status(self) -> dict[str, int]:
         return self.apps.count_applications_by_status()
+
+    def get_application_by_scraped_job_id(self, scraped_job_id: int) -> Application | None:
+        return self.apps.get_application_by_scraped_job_id(scraped_job_id)
+
+    def update_application(self, app_id: int, **fields: str | None) -> bool:
+        return self.apps.update_application(app_id, **fields)
+
+    def delete_application(self, app_id: int) -> None:
+        return self.apps.delete_application(app_id)
 
     # --- Preference delegation ---
 

@@ -36,6 +36,7 @@
                 <a href="/" {% if request.path == '/' %}class="nav-active"{% endif %}>Inbox</a>
                 <a href="/emails" {% if request.path == '/emails' %}class="nav-active"{% endif %}>Emails</a>
                 <a href="/stats" {% if request.path == '/stats' %}class="nav-active"{% endif %}>Stats</a>
+                <a href="/tracker" {% if request.path == '/tracker' %}class="nav-active"{% endif %}>Tracker</a>
                 <a href="/settings" {% if request.path == '/settings' %}class="nav-active"{% endif %}>Settings</a>
             </div>
             <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
@@ -150,6 +151,7 @@
         }
     });
     </script>
+    <script src="{{ url_for('static', filename='tracker.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

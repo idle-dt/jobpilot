@@ -131,7 +131,7 @@ def test_scraped_job_insert_and_dedup(repo: Repository):
 def test_application_lifecycle(repo: Repository):
     app = Application(
         id=None, company="TechCorp", role_title="Senior Flutter Engineer",
-        location="Amsterdam", platform="linkedin", track="A",
+        location="Amsterdam", platform="linkedin",
     )
     app_id = repo.insert_application(app)
     assert app_id > 0
