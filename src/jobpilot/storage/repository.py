@@ -198,6 +198,9 @@ class Repository:
     def count_applications_by_status(self) -> dict[str, int]:
         return self.apps.count_applications_by_status()
 
+    def get_application_by_scraped_job_id(self, scraped_job_id: int) -> Application | None:
+        return self.apps.get_application_by_scraped_job_id(scraped_job_id)
+
     def update_application(self, app_id: int, **fields: str | None) -> bool:
         return self.apps.update_application(app_id, **fields)
 

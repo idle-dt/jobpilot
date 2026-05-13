@@ -140,8 +140,8 @@ class ScrapedJob:
 class Application:
     """A tracked job application with status history.
 
-    Status values: 'applied', 'screening', 'interview', 'offer',
-    'accepted', 'rejected', 'withdrawn'.
+    Status values: 'saved', 'applied', 'screening', 'technical',
+    'onsite', 'offer', 'accepted', 'rejected', 'withdrawn', 'no_response'.
     """
     id: int | None
     company: str

@@ -1,5 +1,6 @@
 """Application data access."""
 
+import re
 import sqlite3
 
 from jobpilot.storage.models import Application, ApplicationStatusHistory
@@ -9,6 +10,10 @@ _UPDATABLE_COLUMNS = frozenset({
     "notes", "contact_name", "contact_email", "offer_salary", "offer_currency",
     "offer_equity", "offer_relocation_package", "offer_notes",
 })
+
+# Safety: column names are validated against _UPDATABLE_COLUMNS AND this regex
+# before interpolation into SQL. Both guards must pass.
+_COLUMN_NAME_RE = re.compile(r"^[a-z_]+$")
 
 
 class ApplicationRepository:
@@ -97,9 +102,22 @@ class ApplicationRepository:
         ).fetchall()
         return {r["status"]: r["cnt"] for r in rows}
 
+    def get_application_by_scraped_job_id(self, scraped_job_id: int) -> Application | None:
+        """Get an application linked to a scraped job."""
+        row = self.conn.execute(
+            "SELECT * FROM applications WHERE scraped_job_id = ? LIMIT 1",
+            (scraped_job_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_application(row)
+
     def update_application(self, app_id: int, **fields: str | None) -> bool:
         """Partial update of application fields. Returns True if updated."""
-        safe = {k: v for k, v in fields.items() if k in _UPDATABLE_COLUMNS}
+        safe = {
+            k: v for k, v in fields.items()
+            if k in _UPDATABLE_COLUMNS and _COLUMN_NAME_RE.match(k)
+        }
         if not safe:
             return False
         sets = ", ".join(f"{col} = ?" for col in safe)
@@ -109,13 +127,17 @@ class ApplicationRepository:
         return True
 
     def delete_application(self, app_id: int) -> None:
-        """Delete an application and its status history."""
-        self.conn.execute(
-            "DELETE FROM application_status_history WHERE application_id = ?",
-            (app_id,),
-        )
-        self.conn.execute("DELETE FROM applications WHERE id = ?", (app_id,))
-        self.conn.commit()
+        """Delete an application and its status history atomically."""
+        try:
+            self.conn.execute(
+                "DELETE FROM application_status_history WHERE application_id = ?",
+                (app_id,),
+            )
+            self.conn.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+            self.conn.commit()
+        except sqlite3.Error:
+            self.conn.rollback()
+            raise
 
     def _row_to_application(self, row: sqlite3.Row) -> Application:
         """Convert a database row to an Application model."""

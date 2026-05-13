@@ -1,75 +1,34 @@
 """Route handlers for the application tracker."""
 
 import logging
-import re
 
 from flask import Blueprint, current_app, jsonify, render_template, request
 
-from jobpilot.storage.models import Application
+from jobpilot.services.tracker_service import (
+    APPLICATION_STATUSES,
+    PATCH_BLOCKED_FIELDS,
+    STATUS_LABELS,
+    TrackerService,
+)
 from jobpilot.storage.repository import Repository
+from jobpilot.web.request_utils import get_param
 
 logger = logging.getLogger(__name__)
 
 bp_tracker = Blueprint("tracker", __name__)
 
-APPLICATION_STATUSES = [
-    "saved", "applied", "screening", "technical",
-    "onsite", "offer", "accepted", "rejected",
-    "withdrawn", "no_response",
-]
 
-STATUS_LABELS = {
-    "saved": "Saved",
-    "applied": "Applied",
-    "screening": "Screening",
-    "technical": "Technical",
-    "onsite": "Onsite",
-    "offer": "Offer",
-    "accepted": "Accepted",
-    "rejected": "Rejected",
-    "withdrawn": "Withdrawn",
-    "no_response": "No Response",
-}
-
-_URL_SCHEME_RE = re.compile(r"^https?://", re.IGNORECASE)
-
-
-def _repo() -> Repository:
-    """Get the repository from the current Flask app config."""
-    return current_app.config["repo"]
-
-
-def _get_param(name: str, default: str = "") -> str:
-    """Get a parameter from form, query string, or JSON body."""
-    val = request.values.get(name)
-    if val:
-        return val
-    json_body = request.get_json(silent=True)
-    if json_body:
-        return json_body.get(name, default)
-    return default
-
-
-def _validate_url(url: str) -> str | None:
-    """Return the URL if it has a safe scheme, else None."""
-    if not url:
-        return None
-    return url if _URL_SCHEME_RE.match(url) else None
+def _service() -> TrackerService:
+    """Get a TrackerService from the current Flask app config."""
+    repo: Repository = current_app.config["repo"]
+    return TrackerService(repo)
 
 
 @bp_tracker.route("/tracker")
 def tracker_page() -> str:
     """Main tracker page with status filter pills and table."""
-    repo = _repo()
     status_filter = request.args.get("status", "")
-    if status_filter and status_filter not in APPLICATION_STATUSES:
-        status_filter = ""
-
-    apps = repo.get_applications_by_status(
-        status=status_filter or None,
-    )
-    counts = repo.count_applications_by_status()
-    total = sum(counts.values())
+    apps, counts, total = _service().list_applications(status_filter)
 
     return render_template(
         "tracker.html",
@@ -85,11 +44,11 @@ def tracker_page() -> str:
 @bp_tracker.route("/api/tracker/<int:app_id>")
 def tracker_modal(app_id: int) -> tuple[str, int]:
     """Return modal HTML partial for an application."""
-    repo = _repo()
-    app = repo.get_application(app_id)
+    svc = _service()
+    app = svc.get_application(app_id)
     if not app:
         return "", 404
-    history = repo.get_application_history(app_id)
+    history = svc.get_history(app_id)
     return render_template(
         "partials/tracker_modal.html",
         app=app,
@@ -97,7 +56,7 @@ def tracker_modal(app_id: int) -> tuple[str, int]:
         statuses=APPLICATION_STATUSES,
         status_labels=STATUS_LABELS,
         create_mode=False,
-    )
+    ), 200
 
 
 @bp_tracker.route("/api/tracker/new")
@@ -116,91 +75,87 @@ def tracker_modal_new() -> str:
 @bp_tracker.route("/api/tracker", methods=["POST"])
 def tracker_create() -> tuple:
     """Create a new application."""
-    repo = _repo()
-    company = _get_param("company").strip()
-    role_title = _get_param("role_title").strip()
+    company = get_param("company").strip()
+    role_title = get_param("role_title").strip()
     if not company or not role_title:
         return jsonify({"status": "error", "message": "Company and role are required"}), 400
 
-    status = _get_param("status", "applied")
-    if status not in APPLICATION_STATUSES:
-        status = "applied"
-
-    job_url = _validate_url(_get_param("job_url").strip())
-
-    app = Application(
-        id=None,
+    new_id = _service().create_application(
         company=company,
         role_title=role_title,
-        status=status,
-        location=_get_param("location").strip() or None,
-        salary_range=_get_param("salary_range").strip() or None,
-        job_url=job_url,
-        platform=_get_param("platform").strip() or None,
-        contact_name=_get_param("contact_name").strip() or None,
-        contact_email=_get_param("contact_email").strip() or None,
-        notes=_get_param("notes").strip() or None,
+        status=get_param("status", "applied"),
+        location=get_param("location").strip() or None,
+        salary_range=get_param("salary_range").strip() or None,
+        job_url=get_param("job_url").strip() or None,
+        platform=get_param("platform").strip() or None,
+        contact_name=get_param("contact_name").strip() or None,
+        contact_email=get_param("contact_email").strip() or None,
+        notes=get_param("notes").strip() or None,
     )
-    new_id = repo.insert_application(app)
     logger.info("Created application %d: %s at %s", new_id, role_title, company)
-
     return "", 204, {"HX-Redirect": "/tracker"}
 
 
 @bp_tracker.route("/api/tracker/<int:app_id>/status", methods=["POST"])
 def tracker_update_status(app_id: int) -> tuple[str, int]:
     """Inline status update — returns updated badge partial."""
-    repo = _repo()
-    app = repo.get_application(app_id)
+    svc = _service()
+    app = svc.get_application(app_id)
     if not app:
         return "", 404
 
-    new_status = _get_param("status")
-    if new_status not in APPLICATION_STATUSES:
+    new_status = get_param("status")
+    ok = svc.update_status(app_id, new_status)
+    if not ok:
         return jsonify({"status": "error", "message": "Invalid status"}), 400
 
-    repo.update_application_status(app_id, new_status)
     app.status = new_status
     return render_template(
         "partials/tracker_status_badge.html",
         app=app,
         statuses=APPLICATION_STATUSES,
         status_labels=STATUS_LABELS,
-    )
+    ), 200
 
 
 @bp_tracker.route("/api/tracker/<int:app_id>", methods=["PATCH"])
 def tracker_update(app_id: int) -> tuple:
     """Partial field update for an application."""
-    repo = _repo()
-    app = repo.get_application(app_id)
+    svc = _service()
+    app = svc.get_application(app_id)
     if not app:
         return "", 404
 
     data = request.get_json(silent=True) or {}
+    blocked = set(data.keys()) & PATCH_BLOCKED_FIELDS
+    if blocked:
+        return jsonify({
+            "status": "error",
+            "message": f"Cannot update: {', '.join(sorted(blocked))}",
+        }), 400
+
     fields: dict[str, str | None] = {}
     for key, val in data.items():
-        if key == "job_url":
-            fields[key] = _validate_url(str(val).strip())
-        else:
-            cleaned = str(val).strip() if val else None
-            fields[key] = cleaned or None
+        cleaned = str(val).strip() if val else None
+        fields[key] = cleaned or None
 
     if not fields:
-        return jsonify({"status": "ok"})
+        return jsonify({"status": "ok"}), 200
 
-    repo.update_application(app_id, **fields)
-    return jsonify({"status": "ok"})
+    updated = svc.update_fields(app_id, fields)
+    if not updated:
+        return jsonify({"status": "error", "message": "No valid fields to update"}), 400
+    return jsonify({"status": "ok"}), 200
 
 
 @bp_tracker.route("/api/tracker/<int:app_id>", methods=["DELETE"])
 def tracker_delete(app_id: int) -> tuple:
     """Delete an application."""
-    repo = _repo()
-    app = repo.get_application(app_id)
+    svc = _service()
+    app = svc.get_application(app_id)
     if not app:
         return "", 404
 
-    repo.delete_application(app_id)
+    svc.delete_application(app_id)
     logger.info("Deleted application %d", app_id)
     return "", 200, {"HX-Trigger": "applicationDeleted"}

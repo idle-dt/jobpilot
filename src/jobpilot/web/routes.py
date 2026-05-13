@@ -8,9 +8,10 @@ from datetime import datetime
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from jobpilot.config import settings
-from jobpilot.storage.models import Application, ExtractedSignal, UserFeedback
+from jobpilot.storage.models import ExtractedSignal, UserFeedback
 from jobpilot.storage.repository import Repository
 from jobpilot.web.app import limiter
+from jobpilot.web.request_utils import get_param as _get_param
 
 logger = logging.getLogger(__name__)
 
@@ -39,17 +40,6 @@ SIGNAL_PRIORITY = {
 def _sort_signals(signals: list[ExtractedSignal]) -> list[ExtractedSignal]:
     """Sort signals by priority (tech_stack first, platform last)."""
     return sorted(signals, key=lambda s: SIGNAL_PRIORITY.get(s.signal_type, 99))
-
-
-def _get_param(name: str, default: str = "") -> str:
-    """Get a parameter from any request source: form, query string, or JSON body."""
-    val = request.values.get(name)
-    if val:
-        return val
-    json_body = request.get_json(silent=True)
-    if json_body:
-        return json_body.get(name, default)
-    return default
 
 
 def _repo() -> Repository:
@@ -197,7 +187,8 @@ def submit_scraped_feedback(job_id: int):
     repo.update_scraped_job_label(job_id, label)
 
     if label == "worth_checking":
-        _auto_track_scraped_job(repo, job_id)
+        from jobpilot.services.tracker_service import TrackerService
+        TrackerService(repo).auto_track_scraped_job(job_id)
 
     _maybe_auto_retrain(repo)
     return render_template(
@@ -460,26 +451,6 @@ def sync_emails():
     except Exception:
         logger.exception("Sync failed")
         return jsonify({"status": "error", "message": "Sync failed, check server logs"}), 500
-
-
-def _auto_track_scraped_job(repo: Repository, job_id: int) -> None:
-    """Auto-create a tracker application from a scraped job if not expired."""
-    job = repo.get_scraped_job(job_id)
-    if not job or job.expired:
-        return
-    app = Application(
-        id=None,
-        company=job.company or "Unknown",
-        role_title=job.title,
-        status="saved",
-        scraped_job_id=job.id,
-        location=job.location,
-        salary_range=job.salary,
-        job_url=job.url if job.url.startswith(("http://", "https://")) else None,
-        platform=job.source,
-    )
-    repo.insert_application(app)
-    logger.info("Auto-tracked scraped job %d as application", job_id)
 
 
 def _maybe_auto_retrain(repo) -> None:

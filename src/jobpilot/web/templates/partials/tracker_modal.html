@@ -77,7 +77,7 @@
                            onblur="patchApp({{ app.id }}, 'platform', this.value)">
                 </label>
                 <label>Job URL
-                    {% if app.job_url %}
+                    {% if app.job_url and app.job_url.startswith(('http://', 'https://')) %}
                     <a href="{{ app.job_url }}" target="_blank" rel="noopener" class="tracker-link">{{ app.job_url[:60] }}{% if app.job_url|length > 60 %}...{% endif %}</a>
                     {% endif %}
                     <input type="url" value="{{ app.job_url or '' }}"
@@ -162,41 +162,6 @@
         </div>
     </div>
 
-    <script>
-    function patchApp(id, field, value) {
-        var body = {};
-        body[field] = value;
-        var token = document.querySelector('meta[name="csrf-token"]');
-        fetch('/api/tracker/' + id, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': token ? token.content : ''
-            },
-            body: JSON.stringify(body)
-        });
-    }
-    function updateStatus(id, status) {
-        var token = document.querySelector('meta[name="csrf-token"]');
-        var form = new FormData();
-        form.append('status', status);
-        fetch('/api/tracker/' + id + '/status', {
-            method: 'POST',
-            headers: { 'X-CSRFToken': token ? token.content : '' },
-            body: form
-        }).then(function() {
-            /* Toggle offer column visibility */
-            var offerCol = document.getElementById('offer-col-' + id);
-            if (offerCol) {
-                if (status === 'offer' || status === 'accepted') {
-                    offerCol.classList.remove('tracker-hidden');
-                } else {
-                    offerCol.classList.add('tracker-hidden');
-                }
-            }
-        });
-    }
-    </script>
     {% endif %}
 </div>
 </div>
