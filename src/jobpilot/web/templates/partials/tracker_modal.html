@@ -1,0 +1,202 @@
+<div class="tracker-modal-backdrop" onclick="if(event.target===this) this.remove();">
+<div class="tracker-modal">
+    <div class="tracker-modal-header">
+        {% if create_mode %}
+        <h3>New Application</h3>
+        {% else %}
+        <h3>{{ app.role_title }}</h3>
+        <span class="tracker-modal-company">{{ app.company }}</span>
+        {% endif %}
+        <button class="tracker-modal-close" onclick="this.closest('.tracker-modal-backdrop').remove();">&times;</button>
+    </div>
+
+    {% if create_mode %}
+    <form class="tracker-modal-body"
+          hx-post="/api/tracker"
+          hx-swap="none">
+        <div class="tracker-modal-cols">
+            <div class="tracker-modal-col">
+                <label>Company <span class="required">*</span>
+                    <input type="text" name="company" required placeholder="Company name">
+                </label>
+                <label>Role Title <span class="required">*</span>
+                    <input type="text" name="role_title" required placeholder="Job title">
+                </label>
+                <label>Location
+                    <input type="text" name="location" placeholder="City, Country">
+                </label>
+                <label>Salary Range
+                    <input type="text" name="salary_range" placeholder="e.g. 50k-70k EUR">
+                </label>
+                <label>Job URL
+                    <input type="url" name="job_url" placeholder="https://...">
+                </label>
+                <label>Platform
+                    <input type="text" name="platform" placeholder="LinkedIn, Indeed, etc.">
+                </label>
+                <label>Status
+                    <select name="status">
+                        {% for s in statuses %}
+                        <option value="{{ s }}" {% if s == 'applied' %}selected{% endif %}>{{ status_labels[s] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Notes
+                    <textarea name="notes" rows="3" placeholder="Any notes..."></textarea>
+                </label>
+            </div>
+            <div class="tracker-modal-col">
+                <label>Contact Name
+                    <input type="text" name="contact_name" placeholder="Recruiter name">
+                </label>
+                <label>Contact Email
+                    <input type="email" name="contact_email" placeholder="recruiter@company.com">
+                </label>
+            </div>
+        </div>
+        <div class="tracker-modal-actions">
+            <button type="submit" class="btn-new-app">Create Application</button>
+            <button type="button" class="btn-cancel" onclick="this.closest('.tracker-modal-backdrop').remove();">Cancel</button>
+        </div>
+    </form>
+
+    {% else %}
+    <div class="tracker-modal-body">
+        <div class="tracker-modal-cols">
+            <div class="tracker-modal-col">
+                <label>Location
+                    <input type="text" value="{{ app.location or '' }}"
+                           onblur="patchApp({{ app.id }}, 'location', this.value)">
+                </label>
+                <label>Salary Range
+                    <input type="text" value="{{ app.salary_range or '' }}"
+                           onblur="patchApp({{ app.id }}, 'salary_range', this.value)">
+                </label>
+                <label>Platform
+                    <input type="text" value="{{ app.platform or '' }}"
+                           onblur="patchApp({{ app.id }}, 'platform', this.value)">
+                </label>
+                <label>Job URL
+                    {% if app.job_url %}
+                    <a href="{{ app.job_url }}" target="_blank" rel="noopener" class="tracker-link">{{ app.job_url[:60] }}{% if app.job_url|length > 60 %}...{% endif %}</a>
+                    {% endif %}
+                    <input type="url" value="{{ app.job_url or '' }}"
+                           onblur="patchApp({{ app.id }}, 'job_url', this.value)">
+                </label>
+                <label>Applied Date
+                    <input type="text" value="{{ app.applied_at or '' }}" disabled class="tracker-muted-input">
+                </label>
+                <label>Status
+                    <select onchange="updateStatus({{ app.id }}, this.value)">
+                        {% for s in statuses %}
+                        <option value="{{ s }}" {% if s == app.status %}selected{% endif %}>{{ status_labels[s] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Notes
+                    <textarea rows="3" onblur="patchApp({{ app.id }}, 'notes', this.value)">{{ app.notes or '' }}</textarea>
+                </label>
+            </div>
+
+            <div class="tracker-modal-col tracker-offer-col {% if app.status not in ('offer', 'accepted') %}tracker-hidden{% endif %}" id="offer-col-{{ app.id }}">
+                <h4>Offer Details</h4>
+                <label>Offer Salary
+                    <input type="text" value="{{ app.offer_salary or '' }}"
+                           onblur="patchApp({{ app.id }}, 'offer_salary', this.value)">
+                </label>
+                <label>Currency
+                    <select onblur="patchApp({{ app.id }}, 'offer_currency', this.value)">
+                        <option value="">--</option>
+                        {% for c in ['EUR', 'USD', 'SEK', 'NOK', 'GBP'] %}
+                        <option value="{{ c }}" {% if app.offer_currency == c %}selected{% endif %}>{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Equity
+                    <input type="text" value="{{ app.offer_equity or '' }}"
+                           onblur="patchApp({{ app.id }}, 'offer_equity', this.value)">
+                </label>
+                <label>Relocation Package
+                    <input type="text" value="{{ app.offer_relocation_package or '' }}"
+                           onblur="patchApp({{ app.id }}, 'offer_relocation_package', this.value)">
+                </label>
+                <label>Offer Notes
+                    <textarea rows="2" onblur="patchApp({{ app.id }}, 'offer_notes', this.value)">{{ app.offer_notes or '' }}</textarea>
+                </label>
+            </div>
+        </div>
+
+        <div class="tracker-modal-bottom">
+            <div class="tracker-contact-row">
+                <label>Contact Name
+                    <input type="text" value="{{ app.contact_name or '' }}"
+                           onblur="patchApp({{ app.id }}, 'contact_name', this.value)">
+                </label>
+                <label>Contact Email
+                    <input type="email" value="{{ app.contact_email or '' }}"
+                           onblur="patchApp({{ app.id }}, 'contact_email', this.value)">
+                </label>
+            </div>
+
+            {% if history %}
+            <div class="tracker-history">
+                <h4>Status History</h4>
+                <ul class="tracker-timeline">
+                    {% for h in history %}
+                    <li>
+                        <span class="status-badge status-{{ h.to_status }}">{{ status_labels.get(h.to_status, h.to_status) }}</span>
+                        {% if h.from_status %}<span class="tracker-muted">from {{ status_labels.get(h.from_status, h.from_status) }}</span>{% endif %}
+                        <span class="tracker-muted">{{ h.changed_at[:10] if h.changed_at else '' }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="tracker-modal-actions">
+                <button class="btn-danger-outline"
+                        hx-delete="/api/tracker/{{ app.id }}"
+                        hx-confirm="Delete this application?"
+                        hx-swap="none">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function patchApp(id, field, value) {
+        var body = {};
+        body[field] = value;
+        var token = document.querySelector('meta[name="csrf-token"]');
+        fetch('/api/tracker/' + id, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': token ? token.content : ''
+            },
+            body: JSON.stringify(body)
+        });
+    }
+    function updateStatus(id, status) {
+        var token = document.querySelector('meta[name="csrf-token"]');
+        var form = new FormData();
+        form.append('status', status);
+        fetch('/api/tracker/' + id + '/status', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': token ? token.content : '' },
+            body: form
+        }).then(function() {
+            /* Toggle offer column visibility */
+            var offerCol = document.getElementById('offer-col-' + id);
+            if (offerCol) {
+                if (status === 'offer' || status === 'accepted') {
+                    offerCol.classList.remove('tracker-hidden');
+                } else {
+                    offerCol.classList.add('tracker-hidden');
+                }
+            }
+        });
+    }
+    </script>
+    {% endif %}
+</div>
+</div>

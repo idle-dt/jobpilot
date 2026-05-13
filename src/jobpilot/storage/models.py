@@ -153,15 +153,11 @@ class Application:
     salary_range: str | None = None
     job_url: str | None = None
     platform: str | None = None
-    track: str | None = None
-    saved_at: str | None = None
     applied_at: str | None = None
     last_status_change: str | None = None
     contact_name: str | None = None
     contact_email: str | None = None
     notes: str | None = None
-    cover_letter_track: str | None = None
-    cv_version: str | None = None
     offer_salary: str | None = None
     offer_currency: str | None = None
     offer_equity: str | None = None

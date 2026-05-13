@@ -4,6 +4,12 @@ import sqlite3
 
 from jobpilot.storage.models import Application, ApplicationStatusHistory
 
+_UPDATABLE_COLUMNS = frozenset({
+    "company", "role_title", "location", "salary_range", "job_url", "platform",
+    "notes", "contact_name", "contact_email", "offer_salary", "offer_currency",
+    "offer_equity", "offer_relocation_package", "offer_notes",
+})
+
 
 class ApplicationRepository:
     """CRUD operations for job applications and status history."""
@@ -16,14 +22,12 @@ class ApplicationRepository:
         cursor = self.conn.execute(
             """INSERT INTO applications
             (email_id, scraped_job_id, company, role_title, location, salary_range,
-             job_url, platform, track, status, contact_name, contact_email, notes,
-             cover_letter_track, cv_version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             job_url, platform, status, contact_name, contact_email, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 app.email_id, app.scraped_job_id, app.company, app.role_title,
                 app.location, app.salary_range, app.job_url, app.platform,
-                app.track, app.status, app.contact_name, app.contact_email,
-                app.notes, app.cover_letter_track, app.cv_version,
+                app.status, app.contact_name, app.contact_email, app.notes,
             ),
         )
         self.conn.commit()
@@ -93,6 +97,26 @@ class ApplicationRepository:
         ).fetchall()
         return {r["status"]: r["cnt"] for r in rows}
 
+    def update_application(self, app_id: int, **fields: str | None) -> bool:
+        """Partial update of application fields. Returns True if updated."""
+        safe = {k: v for k, v in fields.items() if k in _UPDATABLE_COLUMNS}
+        if not safe:
+            return False
+        sets = ", ".join(f"{col} = ?" for col in safe)
+        sql = f"UPDATE applications SET {sets}, updated_at = datetime('now') WHERE id = ?"  # noqa: S608
+        self.conn.execute(sql, [*safe.values(), app_id])
+        self.conn.commit()
+        return True
+
+    def delete_application(self, app_id: int) -> None:
+        """Delete an application and its status history."""
+        self.conn.execute(
+            "DELETE FROM application_status_history WHERE application_id = ?",
+            (app_id,),
+        )
+        self.conn.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+        self.conn.commit()
+
     def _row_to_application(self, row: sqlite3.Row) -> Application:
         """Convert a database row to an Application model."""
         return Application(
@@ -100,12 +124,10 @@ class ApplicationRepository:
             status=row["status"], email_id=row["email_id"],
             scraped_job_id=row["scraped_job_id"], location=row["location"],
             salary_range=row["salary_range"], job_url=row["job_url"],
-            platform=row["platform"], track=row["track"],
-            saved_at=row["saved_at"], applied_at=row["applied_at"],
+            platform=row["platform"], applied_at=row["applied_at"],
             last_status_change=row["last_status_change"],
             contact_name=row["contact_name"], contact_email=row["contact_email"],
-            notes=row["notes"], cover_letter_track=row["cover_letter_track"],
-            cv_version=row["cv_version"], offer_salary=row["offer_salary"],
+            notes=row["notes"], offer_salary=row["offer_salary"],
             offer_currency=row["offer_currency"], offer_equity=row["offer_equity"],
             offer_relocation_package=row["offer_relocation_package"],
             offer_notes=row["offer_notes"], created_at=row["created_at"],

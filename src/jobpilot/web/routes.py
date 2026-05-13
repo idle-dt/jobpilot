@@ -8,7 +8,7 @@ from datetime import datetime
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from jobpilot.config import settings
-from jobpilot.storage.models import ExtractedSignal, UserFeedback
+from jobpilot.storage.models import Application, ExtractedSignal, UserFeedback
 from jobpilot.storage.repository import Repository
 from jobpilot.web.app import limiter
 
@@ -195,6 +195,9 @@ def submit_scraped_feedback(job_id: int):
         return "Invalid label", 400
 
     repo.update_scraped_job_label(job_id, label)
+
+    if label == "worth_checking":
+        _auto_track_scraped_job(repo, job_id)
 
     _maybe_auto_retrain(repo)
     return render_template(
@@ -457,6 +460,26 @@ def sync_emails():
     except Exception:
         logger.exception("Sync failed")
         return jsonify({"status": "error", "message": "Sync failed, check server logs"}), 500
+
+
+def _auto_track_scraped_job(repo: Repository, job_id: int) -> None:
+    """Auto-create a tracker application from a scraped job if not expired."""
+    job = repo.get_scraped_job(job_id)
+    if not job or job.expired:
+        return
+    app = Application(
+        id=None,
+        company=job.company or "Unknown",
+        role_title=job.title,
+        status="saved",
+        scraped_job_id=job.id,
+        location=job.location,
+        salary_range=job.salary,
+        job_url=job.url if job.url.startswith(("http://", "https://")) else None,
+        platform=job.source,
+    )
+    repo.insert_application(app)
+    logger.info("Auto-tracked scraped job %d as application", job_id)
 
 
 def _maybe_auto_retrain(repo) -> None:

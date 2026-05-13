@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Tracker — JobPilot{% endblock %}
+
+{% block content %}
+<div class="tracker-toolbar">
+    <h2>Tracker</h2>
+    <button class="btn-new-app"
+            hx-get="/api/tracker/new"
+            hx-target="#modal-container"
+            hx-swap="innerHTML">+ New Application</button>
+</div>
+
+<div class="tracker-pills">
+    <a href="/tracker" class="tracker-pill {% if not status_filter %}active{% endif %}">All <span class="pill-count">{{ total }}</span></a>
+    {% for s in statuses %}
+        {% if counts.get(s, 0) > 0 %}
+        <a href="/tracker?status={{ s }}" class="tracker-pill {% if status_filter == s %}active{% endif %}">
+            {{ status_labels[s] }} <span class="pill-count">{{ counts[s] }}</span>
+        </a>
+        {% endif %}
+    {% endfor %}
+</div>
+
+{% if apps %}
+<div class="tracker-table-wrap">
+    <table class="tracker-table">
+        <thead>
+            <tr>
+                <th>Role</th>
+                <th>Company</th>
+                <th>Location</th>
+                <th>Status</th>
+                <th>Platform</th>
+                <th>Applied</th>
+            </tr>
+        </thead>
+        <tbody id="tracker-body">
+            {% for app in apps %}
+                {% include "partials/tracker_row.html" %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <p>No applications yet. Click "+ New Application" to get started.</p>
+</div>
+{% endif %}
+
+<div id="modal-container"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.addEventListener('applicationDeleted', function() {
+    window.location.reload();
+});
+</script>
+{% endblock %}

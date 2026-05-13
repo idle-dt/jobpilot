@@ -1,0 +1,17 @@
+<span class="tracker-badge-wrap" id="status-{{ app.id }}">
+    <span class="status-badge status-{{ app.status }}"
+          onclick="this.parentElement.querySelector('.status-select').style.display='inline-block'; this.style.display='none';">
+        {{ status_labels.get(app.status, app.status) }}
+    </span>
+    <select class="status-select" style="display:none"
+            hx-post="/api/tracker/{{ app.id }}/status"
+            hx-target="#status-{{ app.id }}"
+            hx-swap="outerHTML"
+            name="status"
+            onchange="htmx.trigger(this, 'change')"
+            onblur="this.style.display='none'; this.previousElementSibling.style.display='';">
+        {% for s in statuses %}
+        <option value="{{ s }}" {% if s == app.status %}selected{% endif %}>{{ status_labels[s] }}</option>
+        {% endfor %}
+    </select>
+</span>

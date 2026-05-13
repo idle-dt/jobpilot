@@ -97,20 +97,16 @@ CREATE TABLE IF NOT EXISTS applications (
     salary_range TEXT,
     job_url TEXT,
     platform TEXT,
-    track TEXT CHECK(track IN ('A', 'B')),
     status TEXT NOT NULL DEFAULT 'applied' CHECK(status IN (
         'saved', 'applied', 'screening', 'technical',
         'onsite', 'offer', 'accepted', 'rejected',
         'withdrawn', 'no_response'
     )),
-    saved_at TEXT,
     applied_at TEXT DEFAULT (datetime('now')),
     last_status_change TEXT DEFAULT (datetime('now')),
     contact_name TEXT,
     contact_email TEXT,
     notes TEXT,
-    cover_letter_track TEXT,
-    cv_version TEXT,
     offer_salary TEXT,
     offer_currency TEXT,
     offer_equity TEXT,
@@ -153,7 +149,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_scraped_url ON scraped_jobs(url);
 CREATE INDEX IF NOT EXISTS idx_scraped_class ON scraped_jobs(classification);
 CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
 CREATE INDEX IF NOT EXISTS idx_applications_company ON applications(company);
-CREATE INDEX IF NOT EXISTS idx_applications_track ON applications(track);
 CREATE INDEX IF NOT EXISTS idx_applications_email ON applications(email_id);
 CREATE INDEX IF NOT EXISTS idx_applications_scraped ON applications(scraped_job_id);
 CREATE INDEX IF NOT EXISTS idx_scraped_email ON scraped_jobs(email_id);

@@ -61,8 +61,10 @@ def create_app() -> Flask:
     # Register routes
     from jobpilot.web.auth_routes import bp_auth
     from jobpilot.web.routes import bp
+    from jobpilot.web.tracker_routes import bp_tracker
     app.register_blueprint(bp)
     app.register_blueprint(bp_auth)
+    app.register_blueprint(bp_tracker)
 
     # Auth gate: redirect unauthenticated users to login
     @app.before_request
