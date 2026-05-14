@@ -223,7 +223,10 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         ("_migration_browser_scrape_cleanup",),
     ).fetchone()
     if not ran:
-        conn.executescript(_CLEANUP_BROWSER_SCRAPE_SQL)
+        for stmt in _CLEANUP_BROWSER_SCRAPE_SQL.strip().split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                conn.execute(stmt)
         conn.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("_migration_browser_scrape_cleanup", "1"),

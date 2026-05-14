@@ -9,48 +9,40 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from jobpilot.scraper.constants import (
+    BROWSER_ONLY_DOMAINS,
+    LOGIN_WALL_SIGNALS,
+    MIN_DESCRIPTION_LENGTH,
+    USER_AGENT,
+)
+
 logger = logging.getLogger(__name__)
 
 SCRAPE_EXPIRED = "__EXPIRED__"
 
 _HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": USER_AGENT,
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
 
 _TIMEOUT = 15
-_MIN_DESCRIPTION_LENGTH = 100
-
-BROWSER_ONLY_DOMAINS: set[str] = {"glassdoor.com", "wellfound.com"}
-
-LOGIN_WALL_SIGNALS: list[str] = [
-    "Sign in to set job alerts",
-    "Forgot password",
-    "Join now",
-    "Create an account",
-    "Log in to continue",
-    "Sign in to view",
-]
 
 
-def _is_login_wall(text: str) -> bool:
+def is_login_wall(text: str) -> bool:
     """Check if scraped text is a login page, not a job description."""
     text_lower = text.lower()
     matches = sum(1 for s in LOGIN_WALL_SIGNALS if s.lower() in text_lower)
     return matches >= 2
 
 
-def _needs_browser(url: str) -> bool:
+def needs_browser(url: str) -> bool:
     """Check if URL requires a browser-based scraper."""
     hostname = urlparse(url).hostname or ""
     return any(hostname.endswith(d) for d in BROWSER_ONLY_DOMAINS)
 
 
-def _is_safe_url(url: str) -> bool:
+def is_safe_url(url: str) -> bool:
     """Reject URLs that could cause SSRF (private IPs, non-HTTP schemes)."""
     try:
         parsed = urlparse(url)
@@ -78,11 +70,11 @@ class JobPageScraper:
 
         Returns plain text description, or None if scraping fails.
         """
-        if not _is_safe_url(url):
+        if not is_safe_url(url):
             logger.warning("[Scrape] requests: %s — blocked unsafe URL", url)
             return None
 
-        if _needs_browser(url):
+        if needs_browser(url):
             logger.info("[Scrape] requests: %s — skipped (browser-only domain)", url)
             return None
 
@@ -93,7 +85,7 @@ class JobPageScraper:
             )
             if resp.is_redirect:
                 target = resp.headers.get("Location", "")
-                if not _is_safe_url(target):
+                if not is_safe_url(target):
                     logger.warning("[Scrape] requests: %s — blocked redirect to unsafe URL", url)
                     return None
                 if "expired_jd_redirect" in target:
@@ -116,7 +108,7 @@ class JobPageScraper:
         else:
             description = self._parse_generic(html)
 
-        if description and _is_login_wall(description):
+        if description and is_login_wall(description):
             logger.warning("[Scrape] requests: %s — login wall detected, rejecting", url)
             return None
         if description:
@@ -162,14 +154,14 @@ class JobPageScraper:
             container = soup.find("div", **selector)
             if container:
                 text = self._clean_text(container.get_text(separator="\n"))
-                if len(text) > _MIN_DESCRIPTION_LENGTH:
+                if len(text) > MIN_DESCRIPTION_LENGTH:
                     return text
 
         # Fallback: main or article content
         main = soup.find("main") or soup.find("article")
         if main:
             text = self._clean_text(main.get_text(separator="\n"))
-            if len(text) > _MIN_DESCRIPTION_LENGTH:
+            if len(text) > MIN_DESCRIPTION_LENGTH:
                 return text
 
         return None

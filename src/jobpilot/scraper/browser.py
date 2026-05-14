@@ -6,7 +6,12 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-from jobpilot.scraper.job_page import _MIN_DESCRIPTION_LENGTH, _is_login_wall, _is_safe_url
+from jobpilot.scraper.constants import (
+    BROWSER_SKIP_DOMAINS,
+    MIN_DESCRIPTION_LENGTH,
+    USER_AGENT,
+)
+from jobpilot.scraper.job_page import is_login_wall, is_safe_url
 
 try:
     from playwright.sync_api import (
@@ -14,6 +19,9 @@ try:
         Page,
         Playwright,
         sync_playwright,
+    )
+    from playwright.sync_api import (
+        Error as PlaywrightError,
     )
     from playwright.sync_api import (
         TimeoutError as PlaywrightTimeout,
@@ -30,26 +38,30 @@ _PROFILE_DIR = Path.home() / ".jobpilot" / "browser-profile"
 
 _LOGIN_URLS: dict[str, str] = {
     "linkedin": "https://www.linkedin.com/login",
-    "glassdoor": "https://www.glassdoor.com/profile/login_input.htm",
 }
 
-_ALLOWED_SITES: set[str] = set(_LOGIN_URLS.keys())
+ALLOWED_SITES: set[str] = set(_LOGIN_URLS.keys())
 
 _NAVIGATION_TIMEOUT_MS = 30_000
 _MIN_HUMAN_DELAY = 3.0
 _MAX_HUMAN_DELAY = 6.0
 
-# Domains where browser scraping is futile (aggressive bot detection)
-_BROWSER_SKIP_DOMAINS: set[str] = {"wellfound.com", "glassdoor.com"}
-
-_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
-
 _BROWSER_ARGS = [
     "--disable-blink-features=AutomationControlled",
 ]
+
+
+def _launch_context(pw: Playwright, *, headless: bool) -> BrowserContext:
+    """Launch a persistent browser context with shared settings."""
+    _PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    return pw.chromium.launch_persistent_context(
+        user_data_dir=str(_PROFILE_DIR),
+        channel="chrome",
+        headless=headless,
+        user_agent=USER_AGENT,
+        viewport={"width": 1280, "height": 900},
+        args=_BROWSER_ARGS,
+    )
 
 
 class BrowserScraper:
@@ -66,62 +78,46 @@ class BrowserScraper:
         if self._context is not None:
             return self._context
 
-        _PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         lock_file = _PROFILE_DIR / "SingletonLock"
         if lock_file.exists():
             lock_file.unlink(missing_ok=True)
         self._playwright = sync_playwright().start()
-        self._context = self._playwright.chromium.launch_persistent_context(
-            user_data_dir=str(_PROFILE_DIR),
-            channel="chrome",
-            headless=self._headless,
-            user_agent=_USER_AGENT,
-            viewport={"width": 1280, "height": 900},
-            args=_BROWSER_ARGS,
-        )
+        self._context = _launch_context(self._playwright, headless=self._headless)
         return self._context
 
     def login(self, site: str) -> None:
         """Open a visible browser window for manual login to a job site."""
-        if site not in _ALLOWED_SITES:
-            raise ValueError(f"Unknown site: {site}. Allowed: {_ALLOWED_SITES}")
+        if site not in ALLOWED_SITES:
+            raise ValueError(f"Unknown site: {site}. Allowed: {ALLOWED_SITES}")
 
-        _PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         pw = sync_playwright().start()
         ctx = None
         try:
-            ctx = pw.chromium.launch_persistent_context(
-                user_data_dir=str(_PROFILE_DIR),
-                channel="chrome",
-                headless=False,
-                user_agent=_USER_AGENT,
-                viewport={"width": 1280, "height": 900},
-                args=_BROWSER_ARGS,
-            )
+            ctx = _launch_context(pw, headless=False)
             page = ctx.new_page()
             page.goto(_LOGIN_URLS[site], timeout=30_000)
             logger.info("[Scrape] browser: opened %s login — waiting for user", site)
             page.wait_for_event("close", timeout=300_000)
         except PlaywrightTimeout:
             logger.info("[Scrape] browser: login window timed out for %s", site)
-        except (OSError, RuntimeError):
+        except (PlaywrightError, OSError):
             logger.info("[Scrape] browser: %s login window closed", site)
         finally:
             try:
                 if ctx is not None:
                     ctx.close()
-            except (OSError, RuntimeError):
+            except (PlaywrightError, OSError):
                 pass
             pw.stop()
 
     def scrape(self, url: str) -> str | None:
         """Open URL in browser, wait for content, extract description."""
-        if not _is_safe_url(url):
+        if not is_safe_url(url):
             logger.warning("[Scrape] browser: %s — blocked unsafe URL", url)
             return None
 
         hostname = urlparse(url).hostname or ""
-        if any(hostname.endswith(d) for d in _BROWSER_SKIP_DOMAINS):
+        if any(hostname.endswith(d) for d in BROWSER_SKIP_DOMAINS):
             logger.info("[Scrape] browser: %s — skipped (blocked domain)", url)
             return None
 
@@ -132,7 +128,7 @@ class BrowserScraper:
         except PlaywrightTimeout:
             logger.warning("[Scrape] browser: %s — page load timeout", url)
             return None
-        except Exception:
+        except (PlaywrightError, OSError):
             logger.exception("[Scrape] browser: %s — error", url)
             return None
         finally:
@@ -147,7 +143,7 @@ class BrowserScraper:
         hostname = urlparse(url).hostname or ""
         description = self._extract_for_domain(page, hostname)
 
-        if description and _is_login_wall(description):
+        if description and is_login_wall(description):
             logger.warning(
                 "[Scrape] browser: %s — login wall detected, session may be expired", url,
             )
@@ -164,8 +160,6 @@ class BrowserScraper:
         """Route to site-specific extractor based on hostname."""
         if "linkedin.com" in hostname:
             return self._extract_linkedin(page)
-        if "glassdoor" in hostname:
-            return self._extract_glassdoor(page)
         return self._extract_generic(page)
 
     def _extract_linkedin(self, page: Page) -> str | None:
@@ -174,15 +168,6 @@ class BrowserScraper:
             "div.description__text",
             "div.show-more-less-html__markup",
             "section.description",
-        ]
-        return self._try_selectors(page, selectors)
-
-    def _extract_glassdoor(self, page: Page) -> str | None:
-        """Extract job description from Glassdoor."""
-        selectors = [
-            'div[class*="JobDetails"]',
-            'div[class*="jobDescription"]',
-            'div[data-test="description"]',
         ]
         return self._try_selectors(page, selectors)
 
@@ -208,7 +193,7 @@ class BrowserScraper:
             locator = page.locator(selector).first
             if locator.count() > 0:
                 text = locator.inner_text().strip()
-                if len(text) >= _MIN_DESCRIPTION_LENGTH:
+                if len(text) >= MIN_DESCRIPTION_LENGTH:
                     return text
         return None
 

@@ -109,7 +109,7 @@
     <h3>Browser Sessions</h3>
     <small>Log in to job sites that require authentication. Opens a browser window for manual login.</small>
     <div style="margin-top: 0.5rem;">
-        {% for site in ['LinkedIn', 'Glassdoor'] %}
+        {% for site in ['LinkedIn'] %}
         {% set key = site|lower %}
         {% set logged_in = browser_sessions.get(key, false) %}
         <div class="setting-row" style="margin-bottom: 0.5rem;">
@@ -278,7 +278,12 @@ function browserLogin(site, btn) {
     btn.textContent = 'Opening browser…';
     var success = false;
     const result = document.getElementById('login-result-' + site);
-    fetch('/api/scraper/login?site=' + encodeURIComponent(site))
+    var csrf = document.querySelector('meta[name="csrf-token"]').content;
+    fetch('/api/scraper/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrf},
+        body: 'site=' + encodeURIComponent(site),
+    })
         .then(resp => resp.json())
         .then(data => {
             if (data.status === 'ok') {

@@ -25,7 +25,7 @@ MAX_SYNC_DAYS = 90
 MAX_PREFERENCE_LENGTH = 100
 SCRAPE_DELAY_SECONDS = 2
 EXPORT_PREDICTIONS_LIMIT = 50
-ALLOWED_LOGIN_SITES = {"linkedin", "glassdoor"}
+ALLOWED_LOGIN_SITES = {"linkedin"}
 
 SIGNAL_PRIORITY = {
     "tech_stack": 0,
@@ -467,12 +467,12 @@ def scrape_progress_api():
     return jsonify(scrape_progress.to_dict())
 
 
-@bp.route("/api/scraper/login")
+@bp.route("/api/scraper/login", methods=["POST"])
 def scraper_login():
     """Open a visible browser for manual login to a job site."""
     import threading
 
-    site = request.args.get("site", "").strip().lower()
+    site = request.form.get("site", "").strip().lower()
     if site not in ALLOWED_LOGIN_SITES:
         return jsonify({"status": "error", "message": "Invalid site"}), 400
 

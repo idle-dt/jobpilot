@@ -98,6 +98,25 @@ class SyncService:
         from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
         from jobpilot.scraper.job_page import JobPageScraper
 
+        jobs = self._get_scrape_candidates()
+        if not jobs:
+            return
+
+        config = load_signal_config(self.repo)
+        score_threshold = float(
+            self.repo.get_setting("score_threshold", str(settings.score_threshold))
+        )
+        scraper = JobPageScraper()
+        scorer = RuleBasedScorer(config=config, score_threshold=score_threshold)
+
+        success, browser = self._run_scrape_batch(jobs, scraper, scorer, config)
+        if browser is not None:
+            browser.close()
+        scrape_progress.reset()
+        logger.info("[Scrape] Batch complete: %d/%d descriptions fetched", success, len(jobs))
+
+    def _get_scrape_candidates(self) -> list:
+        """Fetch jobs eligible for description scraping."""
         scrape_threshold = float(
             self.repo.get_setting(
                 "scrape_confidence_threshold",
@@ -107,13 +126,12 @@ class SyncService:
         score_threshold = float(
             self.repo.get_setting("score_threshold", str(settings.score_threshold))
         )
-        jobs = self.repo.get_jobs_needing_scrape(score_threshold, scrape_threshold)
-        if not jobs:
-            return
+        return self.repo.get_jobs_needing_scrape(score_threshold, scrape_threshold)
 
-        config = load_signal_config(self.repo)
-        scraper = JobPageScraper()
-        scorer = RuleBasedScorer(config=config, score_threshold=score_threshold)
+    def _run_scrape_batch(
+        self, jobs: list, scraper: object, scorer: object, config: dict,
+    ) -> tuple[int, object | None]:
+        """Run scrape loop over jobs, returning (success_count, browser_scraper)."""
         browser_scraper = None
         success_count = 0
         logger.info("[Scrape] Scraping %d low-confidence jobs...", len(jobs))
@@ -128,22 +146,22 @@ class SyncService:
             if desc:
                 success_count += 1
             time.sleep(SCRAPE_DELAY_SECONDS)
+        return success_count, browser_scraper
 
-        if browser_scraper is not None:
-            browser_scraper.close()
-        scrape_progress.reset()
-        logger.info("[Scrape] Batch complete: %d/%d descriptions fetched", success_count, len(jobs))
-
-    def _scrape_single_job(self, job, scraper, browser_scraper, scorer, config):
+    def _scrape_single_job(
+        self, job: object, scraper: object, browser_scraper: object | None,
+        scorer: object, config: dict,
+    ) -> tuple[str | None, object | None]:
         """Scrape a single job, falling back to browser if needed."""
-        from jobpilot.classifier.features import extract_matched_keywords
-        from jobpilot.scraper.browser import _BROWSER_SKIP_DOMAINS
-        from jobpilot.scraper.job_page import BROWSER_ONLY_DOMAINS, SCRAPE_EXPIRED
+        from urllib.parse import urlparse
+
+        from jobpilot.scraper.constants import BROWSER_ONLY_DOMAINS, BROWSER_SKIP_DOMAINS
+        from jobpilot.scraper.job_page import SCRAPE_EXPIRED
 
         description = scraper.scrape(job.url)
         if description is None:
-            hostname = job.url.split("/")[2] if "/" in job.url else ""
-            skip = any(hostname.endswith(d) for d in _BROWSER_SKIP_DOMAINS | BROWSER_ONLY_DOMAINS)
+            hostname = urlparse(job.url).hostname or ""
+            skip = any(hostname.endswith(d) for d in BROWSER_SKIP_DOMAINS | BROWSER_ONLY_DOMAINS)
             if not skip:
                 logger.info("[Scrape] %s — requests failed, falling back to browser", job.title)
                 if browser_scraper is None:
@@ -157,19 +175,23 @@ class SyncService:
             return None, browser_scraper
 
         if description:
-            self._save_description(job, description, scorer, config, extract_matched_keywords)
+            self._save_description(job, description, scorer, config)
             logger.info("[Scrape] %s — description saved (%d chars)", job.title, len(description))
         else:
             logger.info("[Scrape] %s — all methods failed, marking as attempted", job.title)
         self.repo.mark_scrape_attempted(job.id)
         return description, browser_scraper
 
-    def _save_description(self, job, description, scorer, config, extract_fn) -> None:
+    def _save_description(
+        self, job: object, description: str, scorer: object, config: dict,
+    ) -> None:
         """Save scraped description and re-score the job."""
+        from jobpilot.classifier.features import extract_matched_keywords
+
         self.repo.update_scraped_job_description(job.id, description)
         text = f"{job.title} {job.company or ''} {job.location or ''} {description}"
         result = scorer.score(job.title, text)
-        signals = extract_fn(text, config, subject=job.title)
+        signals = extract_matched_keywords(text, config, subject=job.title)
         has_signals = signals["positive"] or signals["negative"]
         signals_json = json.dumps(signals) if has_signals else None
         self.repo.update_scraped_job_scores(

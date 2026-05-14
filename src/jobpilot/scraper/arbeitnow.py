@@ -7,7 +7,7 @@ from datetime import datetime
 
 import requests
 
-from jobpilot.scraper.job_page import _is_safe_url
+from jobpilot.scraper.job_page import is_safe_url
 from jobpilot.storage.models import ScrapedJob
 from jobpilot.storage.repository import Repository
 
@@ -83,7 +83,7 @@ class ArbeitNowClient:
                             continue
 
                     url = job_data.get("url", "")
-                    if not url or not _is_safe_url(url):
+                    if not url or not is_safe_url(url):
                         continue
 
                     job = ScrapedJob(
