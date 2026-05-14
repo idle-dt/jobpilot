@@ -104,6 +104,29 @@
     </div>
 </section>
 
+{# ── Browser Sessions ── #}
+<section class="settings-section">
+    <h3>Browser Sessions</h3>
+    <small>Log in to job sites that require authentication. Opens a browser window for manual login.</small>
+    <div style="margin-top: 0.5rem;">
+        {% for site in ['LinkedIn', 'Glassdoor'] %}
+        {% set key = site|lower %}
+        {% set logged_in = browser_sessions.get(key, false) %}
+        <div class="setting-row" style="margin-bottom: 0.5rem;">
+            <span>{{ site }}</span>
+            {% if logged_in %}
+            <span class="pref-tag" style="font-size: 0.85em;" id="session-badge-{{ key }}">Logged in</span>
+            <button class="btn-save" onclick="browserLogin('{{ key }}', this)" style="opacity: 0.7;">Re-login</button>
+            {% else %}
+            <span id="session-badge-{{ key }}"></span>
+            <button class="btn-save" onclick="browserLogin('{{ key }}', this)">Login</button>
+            {% endif %}
+            <span class="setting-result" id="login-result-{{ key }}"></span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
 {# ── Scoring ── #}
 <section class="settings-section">
     <h3>Scoring</h3>
@@ -248,6 +271,35 @@ document.querySelectorAll('.tag-input').forEach(input => {
         }
     });
 });
+
+/* Browser Sessions */
+function browserLogin(site, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Opening browser…';
+    var success = false;
+    const result = document.getElementById('login-result-' + site);
+    fetch('/api/scraper/login?site=' + encodeURIComponent(site))
+        .then(resp => resp.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                success = true;
+                result.textContent = 'Browser opened — log in and close the window';
+                result.className = 'setting-result setting-success';
+            } else {
+                result.textContent = data.message || 'Failed';
+                result.className = 'setting-result setting-error';
+            }
+        })
+        .catch(() => {
+            result.textContent = 'Error';
+            result.className = 'setting-result setting-error';
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = success ? 'Re-login' : 'Login';
+            btn.style.opacity = success ? '0.7' : '1';
+        });
+}
 
 /* ArbeitNow */
 function updateArbeitnow() {

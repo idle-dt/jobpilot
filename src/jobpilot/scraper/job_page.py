@@ -25,6 +25,30 @@ _HEADERS = {
 _TIMEOUT = 15
 _MIN_DESCRIPTION_LENGTH = 100
 
+BROWSER_ONLY_DOMAINS: set[str] = {"glassdoor.com", "wellfound.com"}
+
+LOGIN_WALL_SIGNALS: list[str] = [
+    "Sign in to set job alerts",
+    "Forgot password",
+    "Join now",
+    "Create an account",
+    "Log in to continue",
+    "Sign in to view",
+]
+
+
+def _is_login_wall(text: str) -> bool:
+    """Check if scraped text is a login page, not a job description."""
+    text_lower = text.lower()
+    matches = sum(1 for s in LOGIN_WALL_SIGNALS if s.lower() in text_lower)
+    return matches >= 2
+
+
+def _needs_browser(url: str) -> bool:
+    """Check if URL requires a browser-based scraper."""
+    hostname = urlparse(url).hostname or ""
+    return any(hostname.endswith(d) for d in BROWSER_ONLY_DOMAINS)
+
 
 def _is_safe_url(url: str) -> bool:
     """Reject URLs that could cause SSRF (private IPs, non-HTTP schemes)."""
@@ -55,7 +79,11 @@ class JobPageScraper:
         Returns plain text description, or None if scraping fails.
         """
         if not _is_safe_url(url):
-            logger.warning("Blocked unsafe URL: %s", url)
+            logger.warning("[Scrape] requests: %s — blocked unsafe URL", url)
+            return None
+
+        if _needs_browser(url):
+            logger.info("[Scrape] requests: %s — skipped (browser-only domain)", url)
             return None
 
         try:
@@ -66,10 +94,10 @@ class JobPageScraper:
             if resp.is_redirect:
                 target = resp.headers.get("Location", "")
                 if not _is_safe_url(target):
-                    logger.warning("Blocked redirect to unsafe URL: %s", target)
+                    logger.warning("[Scrape] requests: %s — blocked redirect to unsafe URL", url)
                     return None
                 if "expired_jd_redirect" in target:
-                    logger.info("Detected expired job: %s", url)
+                    logger.info("[Scrape] requests: %s — expired job (redirect)", url)
                     return SCRAPE_EXPIRED
                 resp = requests.get(
                     target, headers=_HEADERS, timeout=_TIMEOUT,
@@ -77,15 +105,27 @@ class JobPageScraper:
                 )
             resp.raise_for_status()
         except requests.RequestException:
-            logger.warning("Failed to fetch %s", url)
+            logger.warning("[Scrape] requests: %s — HTTP error", url)
             return None
 
         html = resp.text
         if "linkedin.com/jobs" in url:
-            return self._parse_linkedin(html)
-        if "indeed.com" in url:
-            return self._parse_indeed(html)
-        return self._parse_generic(html)
+            description = self._parse_linkedin(html)
+        elif "indeed.com" in url:
+            description = self._parse_indeed(html)
+        else:
+            description = self._parse_generic(html)
+
+        if description and _is_login_wall(description):
+            logger.warning("[Scrape] requests: %s — login wall detected, rejecting", url)
+            return None
+        if description:
+            logger.info(
+                "[Scrape] requests: %s — description extracted (%d chars)", url, len(description),
+            )
+        else:
+            logger.info("[Scrape] requests: %s — no description found", url)
+        return description
 
     def _parse_linkedin(self, html: str) -> str | None:
         soup = BeautifulSoup(html, "lxml")

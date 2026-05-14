@@ -23,7 +23,7 @@
         {% endif %}
 
         {% if credentials_exist %}
-        <a href="{{ url_for('auth.google_auth') }}" role="button" class="btn-google">
+        <a href="{{ url_for('auth.google_auth') }}" role="button" class="btn-google" hx-boost="false">
             Log in with Google
         </a>
         {% else %}

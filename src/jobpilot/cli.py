@@ -18,7 +18,10 @@ def serve():
     from jobpilot.web.app import create_app
 
     app = create_app()
-    app.run(host=settings.server_host, port=settings.server_port, debug=settings.debug)
+    app.run(
+        host=settings.server_host, port=settings.server_port,
+        debug=settings.debug, threaded=True,
+    )
 
 
 @cli.command()

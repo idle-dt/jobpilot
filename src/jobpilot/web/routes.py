@@ -25,6 +25,7 @@ MAX_SYNC_DAYS = 90
 MAX_PREFERENCE_LENGTH = 100
 SCRAPE_DELAY_SECONDS = 2
 EXPORT_PREDICTIONS_LIMIT = 50
+ALLOWED_LOGIN_SITES = {"linkedin", "glassdoor"}
 
 SIGNAL_PRIORITY = {
     "tech_stack": 0,
@@ -252,6 +253,11 @@ def settings_page():
     all_domains = list(dict.fromkeys(list(MONITORED_DOMAINS) + sorted(active_domains)))
     domain_list = [{"domain": d, "active": d in active_domains} for d in all_domains]
 
+    browser_sessions = {
+        site: repo.get_setting(f"browser_session_{site}", "") == "1"
+        for site in ALLOWED_LOGIN_SITES
+    }
+
     return render_template(
         "settings.html",
         sync_days=sync_days,
@@ -264,6 +270,7 @@ def settings_page():
         arbeitnow_enabled=arbeitnow_enabled,
         arbeitnow_visa_only=arbeitnow_visa_only,
         domain_list=domain_list,
+        browser_sessions=browser_sessions,
     )
 
 
@@ -451,6 +458,39 @@ def sync_emails():
     except Exception:
         logger.exception("Sync failed")
         return jsonify({"status": "error", "message": "Sync failed, check server logs"}), 500
+
+
+@bp.route("/api/scrape/progress")
+def scrape_progress_api():
+    """Return current scrape progress for UI polling."""
+    from jobpilot.services.sync_service import scrape_progress
+    return jsonify(scrape_progress.to_dict())
+
+
+@bp.route("/api/scraper/login")
+def scraper_login():
+    """Open a visible browser for manual login to a job site."""
+    import threading
+
+    site = request.args.get("site", "").strip().lower()
+    if site not in ALLOWED_LOGIN_SITES:
+        return jsonify({"status": "error", "message": "Invalid site"}), 400
+
+    repo = _repo()
+
+    def _run_login(site_name: str) -> None:
+        from jobpilot.scraper.browser import BrowserScraper
+        try:
+            scraper = BrowserScraper(headless=False)
+            scraper.login(site_name)
+            scraper.close()
+            repo.set_setting(f"browser_session_{site_name}", "1")
+            logger.info("[Scrape] browser: %s session saved", site_name)
+        except (OSError, ImportError):
+            logger.exception("Browser login failed for %s", site_name)
+
+    threading.Thread(target=_run_login, args=(site,), daemon=True).start()
+    return jsonify({"status": "ok", "site": site})
 
 
 def _maybe_auto_retrain(repo) -> None:

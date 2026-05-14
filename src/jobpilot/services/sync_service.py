@@ -2,8 +2,9 @@
 
 import json
 import logging
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from jobpilot.config import settings
@@ -13,6 +14,39 @@ from jobpilot.storage.repository import Repository
 logger = logging.getLogger(__name__)
 
 SCRAPE_DELAY_SECONDS = 2
+
+
+@dataclass
+class ScrapeProgress:
+    """Thread-safe scrape progress tracker."""
+
+    current: int = 0
+    total: int = 0
+    step: str = ""
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def update(self, current: int, total: int, step: str) -> None:
+        """Update progress atomically."""
+        with self._lock:
+            self.current = current
+            self.total = total
+            self.step = step
+
+    def to_dict(self) -> dict:
+        """Return progress as a dict for JSON serialization."""
+        with self._lock:
+            return {"current": self.current, "total": self.total, "step": self.step}
+
+    def reset(self) -> None:
+        """Reset progress."""
+        with self._lock:
+            self.current = 0
+            self.total = 0
+            self.step = ""
+
+
+# Global progress instance — shared between sync service and routes
+scrape_progress = ScrapeProgress()
 
 
 @dataclass
@@ -61,9 +95,8 @@ class SyncService:
 
     def _scrape_low_confidence_jobs(self) -> None:
         """Scrape full descriptions for jobs with low scoring confidence."""
-        from jobpilot.classifier.features import extract_matched_keywords
         from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
-        from jobpilot.scraper.job_page import SCRAPE_EXPIRED, JobPageScraper
+        from jobpilot.scraper.job_page import JobPageScraper
 
         scrape_threshold = float(
             self.repo.get_setting(
@@ -81,25 +114,65 @@ class SyncService:
         config = load_signal_config(self.repo)
         scraper = JobPageScraper()
         scorer = RuleBasedScorer(config=config, score_threshold=score_threshold)
-        logger.info("Scraping %d low-confidence jobs", len(jobs))
+        browser_scraper = None
+        success_count = 0
+        logger.info("[Scrape] Scraping %d low-confidence jobs...", len(jobs))
+        scrape_progress.update(0, len(jobs), "starting")
 
-        for job in jobs:
-            description = scraper.scrape(job.url)
-            if description == SCRAPE_EXPIRED:
-                self.repo.toggle_scraped_job_expired(job.id)
-                self.repo.mark_scrape_attempted(job.id)
-                time.sleep(SCRAPE_DELAY_SECONDS)
-                continue
-            if description:
-                self.repo.update_scraped_job_description(job.id, description)
-                text = f"{job.title} {job.company or ''} {job.location or ''} {description}"
-                result = scorer.score(job.title, text)
-                signals = extract_matched_keywords(text, config, subject=job.title)
-                has_signals = signals["positive"] or signals["negative"]
-                signals_json = json.dumps(signals) if has_signals else None
-                self.repo.update_scraped_job_scores(
-                    job.id, result.score, None, result.classification,
-                    matched_signals=signals_json,
-                )
-            self.repo.mark_scrape_attempted(job.id)
+        for i, job in enumerate(jobs, 1):
+            scrape_progress.update(i, len(jobs), job.title[:50])
+            logger.info("[Scrape] [%d/%d] %s — %s", i, len(jobs), job.title, job.url[:80])
+            desc, browser_scraper = self._scrape_single_job(
+                job, scraper, browser_scraper, scorer, config,
+            )
+            if desc:
+                success_count += 1
             time.sleep(SCRAPE_DELAY_SECONDS)
+
+        if browser_scraper is not None:
+            browser_scraper.close()
+        scrape_progress.reset()
+        logger.info("[Scrape] Batch complete: %d/%d descriptions fetched", success_count, len(jobs))
+
+    def _scrape_single_job(self, job, scraper, browser_scraper, scorer, config):
+        """Scrape a single job, falling back to browser if needed."""
+        from jobpilot.classifier.features import extract_matched_keywords
+        from jobpilot.scraper.browser import _BROWSER_SKIP_DOMAINS
+        from jobpilot.scraper.job_page import BROWSER_ONLY_DOMAINS, SCRAPE_EXPIRED
+
+        description = scraper.scrape(job.url)
+        if description is None:
+            hostname = job.url.split("/")[2] if "/" in job.url else ""
+            skip = any(hostname.endswith(d) for d in _BROWSER_SKIP_DOMAINS | BROWSER_ONLY_DOMAINS)
+            if not skip:
+                logger.info("[Scrape] %s — requests failed, falling back to browser", job.title)
+                if browser_scraper is None:
+                    from jobpilot.scraper.browser import BrowserScraper
+                    browser_scraper = BrowserScraper()
+                description = browser_scraper.scrape(job.url)
+
+        if description == SCRAPE_EXPIRED:
+            self.repo.toggle_scraped_job_expired(job.id)
+            self.repo.mark_scrape_attempted(job.id)
+            return None, browser_scraper
+
+        if description:
+            self._save_description(job, description, scorer, config, extract_matched_keywords)
+            logger.info("[Scrape] %s — description saved (%d chars)", job.title, len(description))
+        else:
+            logger.info("[Scrape] %s — all methods failed, marking as attempted", job.title)
+        self.repo.mark_scrape_attempted(job.id)
+        return description, browser_scraper
+
+    def _save_description(self, job, description, scorer, config, extract_fn) -> None:
+        """Save scraped description and re-score the job."""
+        self.repo.update_scraped_job_description(job.id, description)
+        text = f"{job.title} {job.company or ''} {job.location or ''} {description}"
+        result = scorer.score(job.title, text)
+        signals = extract_fn(text, config, subject=job.title)
+        has_signals = signals["positive"] or signals["negative"]
+        signals_json = json.dumps(signals) if has_signals else None
+        self.repo.update_scraped_job_scores(
+            job.id, result.score, None, result.classification,
+            matched_signals=signals_json,
+        )
