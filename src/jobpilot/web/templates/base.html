@@ -61,13 +61,7 @@
     }
 
     let syncStepTimer = null;
-    const syncSteps = [
-        'Fetching emails…',
-        'Classifying…',
-        'Parsing digests…',
-        'Scoring jobs…',
-        'Scraping descriptions…',
-    ];
+    let progressPollTimer = null;
 
     function setSyncInfo(text, className) {
         var info = document.getElementById('sync-info');
@@ -91,6 +85,17 @@
         }
     }
 
+    function pollScrapeProgress() {
+        fetch('/api/scrape/progress').then(r => r.json()).then(data => {
+            if (data.total > 0) {
+                var pct = Math.round((data.current / data.total) * 100);
+                setSyncInfo('Scraping ' + data.current + '/' + data.total + '…', 'sync-info syncing');
+                var fill = document.getElementById('progress-fill');
+                if (fill) fill.style.width = pct + '%';
+            }
+        }).catch(() => {});
+    }
+
     document.body.addEventListener('htmx:beforeRequest', (e) => {
         if (e.detail.pathInfo.requestPath !== '/api/sync') return;
         var dot = document.getElementById('sync-dot');
@@ -104,19 +109,17 @@
         if (btn) btn.style.visibility = 'hidden';
         if (progress) progress.classList.add('active');
 
-        var step = 0;
-        setSyncInfo(syncSteps[0], 'sync-info syncing');
-        if (fill) fill.style.width = '10%';
-        syncStepTimer = setInterval(function() {
-            step = Math.min(step + 1, syncSteps.length - 1);
-            setSyncInfo(syncSteps[step] + ' ' + (step + 1) + ' / ' + syncSteps.length, 'sync-info syncing');
-            if (fill) fill.style.width = Math.round(((step + 1) / syncSteps.length) * 100) + '%';
-        }, 8000);
+        setSyncInfo('Syncing…', 'sync-info syncing');
+        if (fill) fill.style.width = '5%';
+
+        /* Poll for real scrape progress every 3 seconds */
+        progressPollTimer = setInterval(pollScrapeProgress, 3000);
     });
 
     document.body.addEventListener('htmx:afterRequest', (e) => {
         if (e.detail.pathInfo.requestPath !== '/api/sync') return;
         if (syncStepTimer) { clearInterval(syncStepTimer); syncStepTimer = null; }
+        if (progressPollTimer) { clearInterval(progressPollTimer); progressPollTimer = null; }
 
         var dot = document.getElementById('sync-dot');
         var btn = document.getElementById('sync-btn');

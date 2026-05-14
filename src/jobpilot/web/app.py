@@ -1,7 +1,9 @@
 """Flask application factory."""
 
 import logging
+import logging.handlers
 import os
+from pathlib import Path
 
 from flask import Flask, g, redirect, request, url_for
 from flask_limiter import Limiter
@@ -36,6 +38,16 @@ def create_app() -> Flask:
     )
     app.config["SECRET_KEY"] = settings.secret_key
     app.debug = settings.debug
+
+    # File logging for scrape operations
+    log_dir = Path.home() / ".jobpilot"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    fh = logging.handlers.RotatingFileHandler(
+        log_dir / "scrape.log", maxBytes=2_000_000, backupCount=3,
+    )
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.getLogger("jobpilot").addHandler(fh)
+    logging.getLogger("jobpilot").setLevel(logging.INFO)
 
     csrf.init_app(app)
     limiter.init_app(app)

@@ -212,7 +212,7 @@ def test_scraper_indeed_html():
     assert "Mobile Developer" in result
 
 
-@patch("jobpilot.scraper.job_page._is_safe_url", return_value=True)
+@patch("jobpilot.scraper.job_page.is_safe_url", return_value=True)
 @patch("jobpilot.scraper.job_page.requests.get")
 def test_scraper_fetch_failure(mock_get, _mock_safe):
     """Scrape should return None on network failure."""
@@ -224,7 +224,7 @@ def test_scraper_fetch_failure(mock_get, _mock_safe):
     assert result is None
 
 
-@patch("jobpilot.scraper.job_page._is_safe_url", return_value=True)
+@patch("jobpilot.scraper.job_page.is_safe_url", return_value=True)
 @patch("jobpilot.scraper.job_page.requests.get")
 def test_scraper_routes_to_linkedin(mock_get, _mock_safe):
     """Should use LinkedIn parser for LinkedIn URLs."""
@@ -240,11 +240,11 @@ def test_scraper_routes_to_linkedin(mock_get, _mock_safe):
     assert "Flutter" in result
 
 
-def test_is_safe_url_rejects_private():
+def testis_safe_url_rejects_private():
     """Should reject private/loopback URLs."""
-    from jobpilot.scraper.job_page import _is_safe_url
+    from jobpilot.scraper.job_page import is_safe_url
 
-    assert _is_safe_url("javascript:alert(1)") is False
-    assert _is_safe_url("file:///etc/passwd") is False
-    assert _is_safe_url("ftp://example.com") is False
-    assert _is_safe_url("") is False
+    assert is_safe_url("javascript:alert(1)") is False
+    assert is_safe_url("file:///etc/passwd") is False
+    assert is_safe_url("ftp://example.com") is False
+    assert is_safe_url("") is False

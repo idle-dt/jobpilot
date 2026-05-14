@@ -2,8 +2,9 @@
 
 import json
 import logging
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from jobpilot.config import settings
@@ -13,6 +14,39 @@ from jobpilot.storage.repository import Repository
 logger = logging.getLogger(__name__)
 
 SCRAPE_DELAY_SECONDS = 2
+
+
+@dataclass
+class ScrapeProgress:
+    """Thread-safe scrape progress tracker."""
+
+    current: int = 0
+    total: int = 0
+    step: str = ""
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def update(self, current: int, total: int, step: str) -> None:
+        """Update progress atomically."""
+        with self._lock:
+            self.current = current
+            self.total = total
+            self.step = step
+
+    def to_dict(self) -> dict:
+        """Return progress as a dict for JSON serialization."""
+        with self._lock:
+            return {"current": self.current, "total": self.total, "step": self.step}
+
+    def reset(self) -> None:
+        """Reset progress."""
+        with self._lock:
+            self.current = 0
+            self.total = 0
+            self.step = ""
+
+
+# Global progress instance — shared between sync service and routes
+scrape_progress = ScrapeProgress()
 
 
 @dataclass
@@ -61,10 +95,28 @@ class SyncService:
 
     def _scrape_low_confidence_jobs(self) -> None:
         """Scrape full descriptions for jobs with low scoring confidence."""
-        from jobpilot.classifier.features import extract_matched_keywords
         from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
-        from jobpilot.scraper.job_page import SCRAPE_EXPIRED, JobPageScraper
+        from jobpilot.scraper.job_page import JobPageScraper
 
+        jobs = self._get_scrape_candidates()
+        if not jobs:
+            return
+
+        config = load_signal_config(self.repo)
+        score_threshold = float(
+            self.repo.get_setting("score_threshold", str(settings.score_threshold))
+        )
+        scraper = JobPageScraper()
+        scorer = RuleBasedScorer(config=config, score_threshold=score_threshold)
+
+        success, browser = self._run_scrape_batch(jobs, scraper, scorer, config)
+        if browser is not None:
+            browser.close()
+        scrape_progress.reset()
+        logger.info("[Scrape] Batch complete: %d/%d descriptions fetched", success, len(jobs))
+
+    def _get_scrape_candidates(self) -> list:
+        """Fetch jobs eligible for description scraping."""
         scrape_threshold = float(
             self.repo.get_setting(
                 "scrape_confidence_threshold",
@@ -74,32 +126,75 @@ class SyncService:
         score_threshold = float(
             self.repo.get_setting("score_threshold", str(settings.score_threshold))
         )
-        jobs = self.repo.get_jobs_needing_scrape(score_threshold, scrape_threshold)
-        if not jobs:
-            return
+        return self.repo.get_jobs_needing_scrape(score_threshold, scrape_threshold)
 
-        config = load_signal_config(self.repo)
-        scraper = JobPageScraper()
-        scorer = RuleBasedScorer(config=config, score_threshold=score_threshold)
-        logger.info("Scraping %d low-confidence jobs", len(jobs))
+    def _run_scrape_batch(
+        self, jobs: list, scraper: object, scorer: object, config: dict,
+    ) -> tuple[int, object | None]:
+        """Run scrape loop over jobs, returning (success_count, browser_scraper)."""
+        browser_scraper = None
+        success_count = 0
+        logger.info("[Scrape] Scraping %d low-confidence jobs...", len(jobs))
+        scrape_progress.update(0, len(jobs), "starting")
 
-        for job in jobs:
-            description = scraper.scrape(job.url)
-            if description == SCRAPE_EXPIRED:
-                self.repo.toggle_scraped_job_expired(job.id)
-                self.repo.mark_scrape_attempted(job.id)
-                time.sleep(SCRAPE_DELAY_SECONDS)
-                continue
-            if description:
-                self.repo.update_scraped_job_description(job.id, description)
-                text = f"{job.title} {job.company or ''} {job.location or ''} {description}"
-                result = scorer.score(job.title, text)
-                signals = extract_matched_keywords(text, config, subject=job.title)
-                has_signals = signals["positive"] or signals["negative"]
-                signals_json = json.dumps(signals) if has_signals else None
-                self.repo.update_scraped_job_scores(
-                    job.id, result.score, None, result.classification,
-                    matched_signals=signals_json,
-                )
-            self.repo.mark_scrape_attempted(job.id)
+        for i, job in enumerate(jobs, 1):
+            scrape_progress.update(i, len(jobs), job.title[:50])
+            logger.info("[Scrape] [%d/%d] %s — %s", i, len(jobs), job.title, job.url[:80])
+            desc, browser_scraper = self._scrape_single_job(
+                job, scraper, browser_scraper, scorer, config,
+            )
+            if desc:
+                success_count += 1
             time.sleep(SCRAPE_DELAY_SECONDS)
+        return success_count, browser_scraper
+
+    def _scrape_single_job(
+        self, job: object, scraper: object, browser_scraper: object | None,
+        scorer: object, config: dict,
+    ) -> tuple[str | None, object | None]:
+        """Scrape a single job, falling back to browser if needed."""
+        from urllib.parse import urlparse
+
+        from jobpilot.scraper.constants import BROWSER_ONLY_DOMAINS, BROWSER_SKIP_DOMAINS
+        from jobpilot.scraper.job_page import SCRAPE_EXPIRED
+
+        description = scraper.scrape(job.url)
+        if description is None:
+            hostname = urlparse(job.url).hostname or ""
+            skip = any(hostname.endswith(d) for d in BROWSER_SKIP_DOMAINS | BROWSER_ONLY_DOMAINS)
+            if not skip:
+                logger.info("[Scrape] %s — requests failed, falling back to browser", job.title)
+                if browser_scraper is None:
+                    from jobpilot.scraper.browser import BrowserScraper
+                    browser_scraper = BrowserScraper()
+                description = browser_scraper.scrape(job.url)
+
+        if description == SCRAPE_EXPIRED:
+            self.repo.toggle_scraped_job_expired(job.id)
+            self.repo.mark_scrape_attempted(job.id)
+            return None, browser_scraper
+
+        if description:
+            self._save_description(job, description, scorer, config)
+            logger.info("[Scrape] %s — description saved (%d chars)", job.title, len(description))
+        else:
+            logger.info("[Scrape] %s — all methods failed, marking as attempted", job.title)
+        self.repo.mark_scrape_attempted(job.id)
+        return description, browser_scraper
+
+    def _save_description(
+        self, job: object, description: str, scorer: object, config: dict,
+    ) -> None:
+        """Save scraped description and re-score the job."""
+        from jobpilot.classifier.features import extract_matched_keywords
+
+        self.repo.update_scraped_job_description(job.id, description)
+        text = f"{job.title} {job.company or ''} {job.location or ''} {description}"
+        result = scorer.score(job.title, text)
+        signals = extract_matched_keywords(text, config, subject=job.title)
+        has_signals = signals["positive"] or signals["negative"]
+        signals_json = json.dumps(signals) if has_signals else None
+        self.repo.update_scraped_job_scores(
+            job.id, result.score, None, result.classification,
+            matched_signals=signals_json,
+        )

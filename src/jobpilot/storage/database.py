@@ -185,6 +185,26 @@ CREATE INDEX IF NOT EXISTS idx_prefs_category ON user_preferences(category);
 """
 
 
+_CLEANUP_BROWSER_SCRAPE_SQL = """
+-- Reset corrupted LinkedIn descriptions (login wall content)
+UPDATE scraped_jobs
+SET description = NULL, scrape_attempted = 0
+WHERE url LIKE '%linkedin%'
+  AND description IS NOT NULL
+  AND (description LIKE '%Sign in to set job alerts%'
+       OR description LIKE '%Forgot password%'
+       OR description LIKE '%Join now%');
+
+-- Reset failed Glassdoor scrapes for re-attempt with browser
+UPDATE scraped_jobs
+SET scrape_attempted = 0
+WHERE url LIKE '%glassdoor%'
+  AND description IS NULL
+  AND scrape_attempted = 1;
+
+"""
+
+
 def _run_migrations(conn: sqlite3.Connection) -> None:
     """Apply incremental schema changes idempotently."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(model_versions)").fetchall()}
@@ -196,6 +216,21 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE model_versions ADD COLUMN train_accuracy REAL")
     conn.executescript(MIGRATION_SQL)
     conn.executescript(MIGRATION_PREFS_SQL)
+
+    # One-time cleanup for browser scraper migration
+    ran = conn.execute(
+        "SELECT value FROM settings WHERE key = ?",
+        ("_migration_browser_scrape_cleanup",),
+    ).fetchone()
+    if not ran:
+        for stmt in _CLEANUP_BROWSER_SCRAPE_SQL.strip().split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                conn.execute(stmt)
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            ("_migration_browser_scrape_cleanup", "1"),
+        )
 
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
