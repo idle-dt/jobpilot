@@ -95,17 +95,28 @@ class JobRepository:
         )
         self.conn.commit()
 
-    def get_jobs_needing_scrape(
-        self, score_threshold: float, confidence_threshold: float
-    ) -> list[ScrapedJob]:
-        """Return scored jobs where confidence is below threshold and scrape not yet attempted."""
+    def get_jobs_needing_scrape(self) -> list[ScrapedJob]:
+        """Return jobs with LinkedIn or Glassdoor URLs that haven't been scraped yet.
+
+        NOTE: The domain list here must stay in sync with SCRAPABLE_DOMAINS
+        in scraper/constants.py. If a new domain is added there, add matching
+        LIKE patterns below.
+        """
         rows = self.conn.execute(
             """SELECT * FROM scraped_jobs
-            WHERE score IS NOT NULL
-            AND scrape_attempted = FALSE
-            AND ABS(score - ?) / 0.4 < ?
-            ORDER BY ABS(score - ?) ASC""",
-            (score_threshold, confidence_threshold, score_threshold),
+            WHERE scrape_attempted = FALSE
+            AND score IS NOT NULL
+            AND (
+                url LIKE 'https://linkedin.com/%'
+                OR url LIKE 'https://%.linkedin.com/%'
+                OR url LIKE 'http://linkedin.com/%'
+                OR url LIKE 'http://%.linkedin.com/%'
+                OR url LIKE 'https://glassdoor.com/%'
+                OR url LIKE 'https://%.glassdoor.com/%'
+                OR url LIKE 'http://glassdoor.com/%'
+                OR url LIKE 'http://%.glassdoor.com/%'
+            )
+            ORDER BY id ASC""",
         ).fetchall()
         return [self._row_to_scraped_job(r) for r in rows]
 
@@ -139,7 +150,7 @@ class JobRepository:
         self.conn.commit()
         return cur.rowcount
 
-    def count_scraped_jobs_for_email(self, email_id) -> int:
+    def count_scraped_jobs_for_email(self, email_id: str | int) -> int:
         """Count scraped jobs linked to an email (for digest_job_count feature)."""
         row = self.conn.execute(
             "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE email_id = ?",

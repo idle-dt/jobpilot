@@ -3,11 +3,14 @@
 import json as json_module
 import logging
 import re
+import sqlite3
 from datetime import datetime
 
+import requests
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from jobpilot.config import settings
+from jobpilot.scraper.browser import ALLOWED_SITES
 from jobpilot.storage.models import ExtractedSignal, UserFeedback
 from jobpilot.storage.repository import Repository
 from jobpilot.web.app import limiter
@@ -23,9 +26,7 @@ EMAILS_PER_PAGE = 50
 NOISE_CONFIDENCE_THRESHOLD = 0.3
 MAX_SYNC_DAYS = 90
 MAX_PREFERENCE_LENGTH = 100
-SCRAPE_DELAY_SECONDS = 2
 EXPORT_PREDICTIONS_LIMIT = 50
-ALLOWED_LOGIN_SITES = {"linkedin"}
 
 SIGNAL_PRIORITY = {
     "tech_stack": 0,
@@ -235,9 +236,6 @@ def settings_page():
 
     repo = _repo()
     sync_days = repo.get_setting("sync_days", "7")
-    scrape_threshold = repo.get_setting(
-        "scrape_confidence_threshold", str(settings.scrape_confidence_threshold)
-    )
     score_threshold = repo.get_setting("score_threshold", str(settings.score_threshold))
     prefs = repo.get_all_preferences()
 
@@ -255,13 +253,12 @@ def settings_page():
 
     browser_sessions = {
         site: repo.get_setting(f"browser_session_{site}", "") == "1"
-        for site in ALLOWED_LOGIN_SITES
+        for site in ALLOWED_SITES
     }
 
     return render_template(
         "settings.html",
         sync_days=sync_days,
-        scrape_threshold=scrape_threshold,
         score_threshold=score_threshold,
         prefs=prefs,
         salary_currency=salary_currency,
@@ -290,22 +287,6 @@ def update_sync_days():
 
     repo.set_setting("sync_days", str(days))
     return jsonify({"status": "ok", "value": days})
-
-
-@bp.route("/api/settings/scrape_confidence_threshold", methods=["POST"])
-def update_scrape_threshold():
-    """Update the scrape confidence threshold setting."""
-    repo = _repo()
-    value = _get_param("value", str(settings.scrape_confidence_threshold))
-    try:
-        threshold = float(value)
-        if not 0.0 <= threshold <= 1.0:
-            return jsonify({"status": "error", "message": "Must be between 0.0 and 1.0"}), 400
-    except ValueError:
-        return jsonify({"status": "error", "message": "Invalid number"}), 400
-
-    repo.set_setting("scrape_confidence_threshold", str(threshold))
-    return jsonify({"status": "ok", "value": threshold})
 
 
 ALLOWED_CATEGORIES = {
@@ -455,7 +436,7 @@ def sync_emails():
     except (ValueError, FileNotFoundError, OSError):
         logger.exception("Auth failed during sync")
         return jsonify({"status": "auth_required"}), 401
-    except Exception:
+    except (requests.RequestException, sqlite3.OperationalError, RuntimeError):
         logger.exception("Sync failed")
         return jsonify({"status": "error", "message": "Sync failed, check server logs"}), 500
 
@@ -473,12 +454,14 @@ def scraper_login():
     import threading
 
     site = request.form.get("site", "").strip().lower()
-    if site not in ALLOWED_LOGIN_SITES:
+    if site not in ALLOWED_SITES:
         return jsonify({"status": "error", "message": "Invalid site"}), 400
 
     repo = _repo()
 
     def _run_login(site_name: str) -> None:
+        from playwright.sync_api import Error as PlaywrightError
+
         from jobpilot.scraper.browser import BrowserScraper
         try:
             scraper = BrowserScraper(headless=False)
@@ -486,7 +469,7 @@ def scraper_login():
             scraper.close()
             repo.set_setting(f"browser_session_{site_name}", "1")
             logger.info("[Scrape] browser: %s session saved", site_name)
-        except (OSError, ImportError):
+        except (OSError, ImportError, ValueError, PlaywrightError):
             logger.exception("Browser login failed for %s", site_name)
 
     threading.Thread(target=_run_login, args=(site,), daemon=True).start()

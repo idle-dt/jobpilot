@@ -32,6 +32,7 @@
 
 - [ ] **Application Tracker** — [PROMPT_application_tracker.md](PROMPT_application_tracker.md) — Tracker tab with list view, inline status dropdown, detail modal with offer/contact/history, schema cleanup
 - [ ] **Browser Scraper** — [PROMPT_browser_scraper.md](PROMPT_browser_scraper.md) — Playwright fallback for Glassdoor/Wellfound/LinkedIn login walls, persistent sessions, login wall detection, data cleanup
+- [ ] **Scraper Refactor** — [PROMPT_scraper_refactor.md](PROMPT_scraper_refactor.md) — Simplify scraping to LinkedIn-only (always scrape, requests+browser) with Glassdoor requests fallback, remove dead domain sets and confidence filter
 
 ## Future / Ideas
 

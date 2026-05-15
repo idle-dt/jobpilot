@@ -189,16 +189,18 @@ _CLEANUP_BROWSER_SCRAPE_SQL = """
 -- Reset corrupted LinkedIn descriptions (login wall content)
 UPDATE scraped_jobs
 SET description = NULL, scrape_attempted = 0
-WHERE url LIKE '%linkedin%'
+WHERE (url LIKE 'https://linkedin.com/%' OR url LIKE 'https://%.linkedin.com/%'
+       OR url LIKE 'http://linkedin.com/%' OR url LIKE 'http://%.linkedin.com/%')
   AND description IS NOT NULL
   AND (description LIKE '%Sign in to set job alerts%'
        OR description LIKE '%Forgot password%'
        OR description LIKE '%Join now%');
 
--- Reset failed Glassdoor scrapes for re-attempt with browser
+-- Reset failed Glassdoor scrapes for re-attempt
 UPDATE scraped_jobs
 SET scrape_attempted = 0
-WHERE url LIKE '%glassdoor%'
+WHERE (url LIKE 'https://glassdoor.com/%' OR url LIKE 'https://%.glassdoor.com/%'
+       OR url LIKE 'http://glassdoor.com/%' OR url LIKE 'http://%.glassdoor.com/%')
   AND description IS NULL
   AND scrape_attempted = 1;
 
@@ -218,10 +220,13 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_PREFS_SQL)
 
     # One-time cleanup for browser scraper migration
-    ran = conn.execute(
-        "SELECT value FROM settings WHERE key = ?",
-        ("_migration_browser_scrape_cleanup",),
-    ).fetchone()
+    try:
+        ran = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("_migration_browser_scrape_cleanup",),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ran = None
     if not ran:
         for stmt in _CLEANUP_BROWSER_SCRAPE_SQL.strip().split(";"):
             stmt = stmt.strip()
@@ -231,6 +236,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("_migration_browser_scrape_cleanup", "1"),
         )
+        conn.commit()
 
 
 def get_connection(db_path: Path) -> sqlite3.Connection:

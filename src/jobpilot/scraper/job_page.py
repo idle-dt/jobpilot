@@ -10,7 +10,6 @@ import requests
 from bs4 import BeautifulSoup
 
 from jobpilot.scraper.constants import (
-    BROWSER_ONLY_DOMAINS,
     LOGIN_WALL_SIGNALS,
     MIN_DESCRIPTION_LENGTH,
     USER_AGENT,
@@ -27,6 +26,7 @@ _HEADERS = {
 }
 
 _TIMEOUT = 15
+_MAX_CONSECUTIVE_BLANKS = 2
 
 
 def is_login_wall(text: str) -> bool:
@@ -36,14 +36,14 @@ def is_login_wall(text: str) -> bool:
     return matches >= 2
 
 
-def needs_browser(url: str) -> bool:
-    """Check if URL requires a browser-based scraper."""
-    hostname = urlparse(url).hostname or ""
-    return any(hostname.endswith(d) for d in BROWSER_ONLY_DOMAINS)
-
-
 def is_safe_url(url: str) -> bool:
-    """Reject URLs that could cause SSRF (private IPs, non-HTTP schemes)."""
+    """Reject URLs that could cause SSRF (private IPs, non-HTTP schemes).
+
+    Policy: reject known-bad (private/loopback IPs, non-HTTP schemes).
+    If DNS resolution fails, the URL is allowed through — the subsequent
+    HTTP request will fail on its own. This avoids blocking legitimate
+    hostnames during transient DNS issues.
+    """
     try:
         parsed = urlparse(url)
     except ValueError:
@@ -68,14 +68,12 @@ class JobPageScraper:
     def scrape(self, url: str) -> str | None:
         """Fetch and extract the job description text from a URL.
 
-        Returns plain text description, or None if scraping fails.
+        Follows at most one redirect hop (SSRF mitigation — each hop is
+        validated against is_safe_url). Returns plain text description,
+        SCRAPE_EXPIRED for expired-job redirects, or None if scraping fails.
         """
         if not is_safe_url(url):
             logger.warning("[Scrape] requests: %s — blocked unsafe URL", url)
-            return None
-
-        if needs_browser(url):
-            logger.info("[Scrape] requests: %s — skipped (browser-only domain)", url)
             return None
 
         try:
@@ -101,10 +99,9 @@ class JobPageScraper:
             return None
 
         html = resp.text
-        if "linkedin.com/jobs" in url:
+        hostname = urlparse(url).hostname or ""
+        if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
             description = self._parse_linkedin(html)
-        elif "indeed.com" in url:
-            description = self._parse_indeed(html)
         else:
             description = self._parse_generic(html)
 
@@ -129,15 +126,6 @@ class JobPageScraper:
         if desc:
             return self._clean_text(desc.get_text(separator="\n"))
         return None
-
-    def _parse_indeed(self, html: str) -> str | None:
-        soup = BeautifulSoup(html, "lxml")
-        desc = soup.find("div", id="jobDescriptionText")
-        if not desc:
-            desc = soup.find("div", class_="jobsearch-jobDescriptionText")
-        if desc:
-            return self._clean_text(desc.get_text(separator="\n"))
-        return self._parse_generic(html)
 
     def _parse_generic(self, html: str) -> str | None:
         soup = BeautifulSoup(html, "lxml")
@@ -174,11 +162,10 @@ class JobPageScraper:
         # Collapse runs of 3+ consecutive blank lines down to 2
         collapsed: list[str] = []
         blank_run = 0
-        max_consecutive_blanks = 2
         for line in lines:
             if not line.strip():
                 blank_run += 1
-                if blank_run <= max_consecutive_blanks:
+                if blank_run <= _MAX_CONSECUTIVE_BLANKS:
                     collapsed.append(line)
             else:
                 blank_run = 0
