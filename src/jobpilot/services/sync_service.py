@@ -1,5 +1,7 @@
 """Sync orchestration — fetch emails, classify, parse, score, scrape."""
 
+from __future__ import annotations
+
 import json
 import logging
 import sqlite3
@@ -7,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import requests
@@ -17,6 +20,10 @@ from jobpilot.scraper.job_page import SCRAPE_EXPIRED, JobPageScraper
 from jobpilot.services.classification_service import ClassificationService
 from jobpilot.storage.models import ScrapedJob
 from jobpilot.storage.repository import Repository
+
+if TYPE_CHECKING:
+    from jobpilot.classifier.rules import RuleBasedScorer
+    from jobpilot.scraper.browser import BrowserScraper
 
 logger = logging.getLogger(__name__)
 
@@ -102,21 +109,34 @@ class SyncService:
 
     def _scrape_job_descriptions(self) -> None:
         """Scrape descriptions for LinkedIn and Glassdoor jobs."""
-        from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
+        from jobpilot.classifier.rules import load_signal_config
 
         jobs = self.repo.get_jobs_needing_scrape()
         if not jobs:
             return
 
         config = load_signal_config(self.repo)
+        scraper = JobPageScraper()
+        scorer = self._build_scorer(config)
+        success = self._run_scrape_batch(jobs, scraper, scorer, config)
+        logger.info("[Scrape] Batch complete: %d/%d descriptions fetched", success, len(jobs))
+
+    def _build_scorer(self, config: dict) -> RuleBasedScorer:
+        """Create a RuleBasedScorer with the current score threshold."""
+        from jobpilot.classifier.rules import RuleBasedScorer
+
         score_threshold = float(
             self.repo.get_setting("score_threshold", str(settings.score_threshold))
         )
-        scraper = JobPageScraper()
-        scorer = RuleBasedScorer(config=config, score_threshold=score_threshold)
-        browser_scraper = None
-        success_count = 0
+        return RuleBasedScorer(config=config, score_threshold=score_threshold)
 
+    def _run_scrape_batch(
+        self, jobs: list[ScrapedJob], scraper: JobPageScraper,
+        scorer: RuleBasedScorer, config: dict,
+    ) -> int:
+        """Run scrape loop over jobs. Returns success count."""
+        browser_scraper: BrowserScraper | None = None
+        success_count = 0
         logger.info("[Scrape] Scraping %d jobs...", len(jobs))
         scrape_progress.update(0, len(jobs), "starting")
 
@@ -124,30 +144,30 @@ class SyncService:
             for i, job in enumerate(jobs, 1):
                 scrape_progress.update(i, len(jobs), job.title[:50])
                 logger.info("[Scrape] [%d/%d] %s — %s", i, len(jobs), job.title, job.url[:80])
-                description, browser_scraper = self._scrape_single_job(
+                desc, browser_scraper = self._scrape_single_job(
                     job, scraper, browser_scraper, scorer, config,
                 )
-                if description:
+                if desc:
                     success_count += 1
                 time.sleep(SCRAPE_DELAY_SECONDS)
         finally:
             if browser_scraper:
                 browser_scraper.close()
             scrape_progress.reset()
-
-        logger.info("[Scrape] Batch complete: %d/%d descriptions fetched", success_count, len(jobs))
+        return success_count
 
     def _scrape_single_job(
         self,
         job: ScrapedJob,
         scraper: JobPageScraper,
-        browser_scraper: object | None,
-        scorer: object,
+        browser_scraper: BrowserScraper | None,
+        scorer: RuleBasedScorer,
         config: dict,
-    ) -> tuple[str | None, object | None]:
+    ) -> tuple[str | None, BrowserScraper | None]:
         """Scrape a single job, falling back to browser if needed."""
         domain = _get_scrapable_domain(job.url)
         if domain is None:
+            logger.warning("[Scrape] %s — unsupported domain, skipping: %s", job.title, job.url)
             self.repo.mark_scrape_attempted(job.id)
             return None, browser_scraper
 
@@ -177,7 +197,7 @@ class SyncService:
         return description, browser_scraper
 
     def _save_description(
-        self, job: ScrapedJob, description: str, scorer: object, config: dict,
+        self, job: ScrapedJob, description: str, scorer: RuleBasedScorer, config: dict,
     ) -> None:
         """Save scraped description and re-score the job."""
         from jobpilot.classifier.features import extract_matched_keywords
@@ -198,6 +218,6 @@ def _get_scrapable_domain(url: str) -> str | None:
     """Return the scrapable domain if URL matches, else None."""
     hostname = urlparse(url).hostname or ""
     for domain in SCRAPABLE_DOMAINS:
-        if hostname.endswith(domain):
+        if hostname == domain or hostname.endswith(f".{domain}"):
             return domain
     return None

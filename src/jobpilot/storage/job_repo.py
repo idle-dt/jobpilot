@@ -101,7 +101,12 @@ class JobRepository:
             """SELECT * FROM scraped_jobs
             WHERE scrape_attempted = FALSE
             AND score IS NOT NULL
-            AND (url LIKE '%linkedin.com%' OR url LIKE '%glassdoor.com%')
+            AND (
+                url LIKE '%://linkedin.com/%'
+                OR url LIKE '%://%.linkedin.com/%'
+                OR url LIKE '%://glassdoor.com/%'
+                OR url LIKE '%://%.glassdoor.com/%'
+            )
             ORDER BY id ASC""",
         ).fetchall()
         return [self._row_to_scraped_job(r) for r in rows]

@@ -113,11 +113,23 @@ def test_get_jobs_needing_scrape(repo):
     for r in rows:
         repo.update_scraped_job_scores(r["id"], 0.7, None, "worth_checking")
 
+    # Also add a lookalike domain that should NOT match
+    fake_job = ScrapedJob(
+        id=None, source="other", title="Fake Job",
+        url="https://fakelinkedin.com/jobs/view/000",
+    )
+    repo.insert_scraped_job(fake_job)
+    rows2 = repo.conn.execute(
+        "SELECT id FROM scraped_jobs WHERE url LIKE '%fakelinkedin%'"
+    ).fetchall()
+    repo.update_scraped_job_scores(rows2[0]["id"], 0.7, None, "worth_checking")
+
     needing = repo.get_jobs_needing_scrape()
     urls = {j.url for j in needing}
     assert "https://www.linkedin.com/jobs/view/123" in urls
     assert "https://www.glassdoor.com/job/456" in urls
     assert "https://example.com/job/789" not in urls
+    assert "https://fakelinkedin.com/jobs/view/000" not in urls
 
 
 def test_get_jobs_needing_scrape_excludes_attempted(repo):
@@ -226,7 +238,7 @@ def test_scraper_routes_to_linkedin(mock_get, _mock_safe):
     assert "Flutter" in result
 
 
-def testis_safe_url_rejects_private():
+def test_is_safe_url_rejects_private():
     """Should reject private/loopback URLs."""
     from jobpilot.scraper.job_page import is_safe_url
 
@@ -234,3 +246,33 @@ def testis_safe_url_rejects_private():
     assert is_safe_url("file:///etc/passwd") is False
     assert is_safe_url("ftp://example.com") is False
     assert is_safe_url("") is False
+
+
+# --- Domain Routing ---
+
+
+def test_get_scrapable_domain_linkedin():
+    """Should match linkedin.com and subdomains."""
+    from jobpilot.services.sync_service import _get_scrapable_domain
+
+    assert _get_scrapable_domain("https://www.linkedin.com/jobs/view/1") == "linkedin.com"
+    assert _get_scrapable_domain("https://de.linkedin.com/jobs/view/2") == "linkedin.com"
+    assert _get_scrapable_domain("https://linkedin.com/jobs/view/3") == "linkedin.com"
+
+
+def test_get_scrapable_domain_glassdoor():
+    """Should match glassdoor.com and subdomains."""
+    from jobpilot.services.sync_service import _get_scrapable_domain
+
+    assert _get_scrapable_domain("https://www.glassdoor.com/job/1") == "glassdoor.com"
+    assert _get_scrapable_domain("https://glassdoor.com/job/2") == "glassdoor.com"
+
+
+def test_get_scrapable_domain_rejects_others():
+    """Should return None for non-scrapable domains."""
+    from jobpilot.services.sync_service import _get_scrapable_domain
+
+    assert _get_scrapable_domain("https://example.com/job/1") is None
+    assert _get_scrapable_domain("https://fakelinkedin.com/jobs/1") is None
+    assert _get_scrapable_domain("https://indeed.com/job/1") is None
+    assert _get_scrapable_domain("not-a-url") is None
