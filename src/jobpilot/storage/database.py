@@ -189,7 +189,7 @@ _CLEANUP_BROWSER_SCRAPE_SQL = """
 -- Reset corrupted LinkedIn descriptions (login wall content)
 UPDATE scraped_jobs
 SET description = NULL, scrape_attempted = 0
-WHERE url LIKE '%linkedin%'
+WHERE (url LIKE '%://linkedin.com/%' OR url LIKE '%://%.linkedin.com/%')
   AND description IS NOT NULL
   AND (description LIKE '%Sign in to set job alerts%'
        OR description LIKE '%Forgot password%'
@@ -198,7 +198,7 @@ WHERE url LIKE '%linkedin%'
 -- Reset failed Glassdoor scrapes for re-attempt with browser
 UPDATE scraped_jobs
 SET scrape_attempted = 0
-WHERE url LIKE '%glassdoor%'
+WHERE (url LIKE '%://glassdoor.com/%' OR url LIKE '%://%.glassdoor.com/%')
   AND description IS NULL
   AND scrape_attempted = 1;
 

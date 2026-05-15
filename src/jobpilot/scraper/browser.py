@@ -152,7 +152,7 @@ class BrowserScraper:
 
     def _extract_for_domain(self, page: Page, hostname: str) -> str | None:
         """Route to site-specific extractor based on hostname."""
-        if "linkedin.com" in hostname:
+        if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
             return self._extract_linkedin(page)
         return self._extract_generic(page)
 

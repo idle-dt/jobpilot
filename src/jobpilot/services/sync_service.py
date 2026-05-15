@@ -22,7 +22,7 @@ from jobpilot.storage.models import ScrapedJob
 from jobpilot.storage.repository import Repository
 
 if TYPE_CHECKING:
-    from jobpilot.classifier.rules import RuleBasedScorer
+    from jobpilot.classifier.rules import RuleBasedScorer, SignalConfig
     from jobpilot.scraper.browser import BrowserScraper
 
 logger = logging.getLogger(__name__)
@@ -121,7 +121,7 @@ class SyncService:
         success = self._run_scrape_batch(jobs, scraper, scorer, config)
         logger.info("[Scrape] Batch complete: %d/%d descriptions fetched", success, len(jobs))
 
-    def _build_scorer(self, config: dict) -> RuleBasedScorer:
+    def _build_scorer(self, config: SignalConfig) -> RuleBasedScorer:
         """Create a RuleBasedScorer with the current score threshold."""
         from jobpilot.classifier.rules import RuleBasedScorer
 
@@ -132,7 +132,7 @@ class SyncService:
 
     def _run_scrape_batch(
         self, jobs: list[ScrapedJob], scraper: JobPageScraper,
-        scorer: RuleBasedScorer, config: dict,
+        scorer: RuleBasedScorer, config: SignalConfig,
     ) -> int:
         """Run scrape loop over jobs. Returns success count."""
         browser_scraper: BrowserScraper | None = None
@@ -162,7 +162,7 @@ class SyncService:
         scraper: JobPageScraper,
         browser_scraper: BrowserScraper | None,
         scorer: RuleBasedScorer,
-        config: dict,
+        config: SignalConfig,
     ) -> tuple[str | None, BrowserScraper | None]:
         """Scrape a single job, falling back to browser if needed."""
         domain = _get_scrapable_domain(job.url)
@@ -181,6 +181,8 @@ class SyncService:
                 browser_scraper = BrowserScraper()
             description = browser_scraper.scrape(job.url)
 
+        # SCRAPE_EXPIRED is a non-None string, so the browser fallback above
+        # (which checks `description is None`) is skipped when requests detects expiry.
         if description == SCRAPE_EXPIRED:
             self.repo.toggle_scraped_job_expired(job.id)
             self.repo.mark_scrape_attempted(job.id)
@@ -197,7 +199,7 @@ class SyncService:
         return description, browser_scraper
 
     def _save_description(
-        self, job: ScrapedJob, description: str, scorer: RuleBasedScorer, config: dict,
+        self, job: ScrapedJob, description: str, scorer: RuleBasedScorer, config: SignalConfig,
     ) -> None:
         """Save scraped description and re-score the job."""
         from jobpilot.classifier.features import extract_matched_keywords

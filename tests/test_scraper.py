@@ -239,9 +239,11 @@ def test_scraper_routes_to_linkedin(mock_get, _mock_safe):
 
 
 def test_is_safe_url_rejects_private():
-    """Should reject private/loopback URLs."""
+    """Should reject dangerous schemes and allow valid HTTPS URLs."""
     from jobpilot.scraper.job_page import is_safe_url
 
+    assert is_safe_url("https://www.linkedin.com/jobs/view/1") is True
+    assert is_safe_url("http://example.com/job") is True
     assert is_safe_url("javascript:alert(1)") is False
     assert is_safe_url("file:///etc/passwd") is False
     assert is_safe_url("ftp://example.com") is False
