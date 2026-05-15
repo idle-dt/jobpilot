@@ -184,9 +184,9 @@ class BrowserScraper:
     def _try_selectors(self, page: Page, selectors: list[str]) -> str | None:
         """Try each selector in order, return first valid text."""
         for selector in selectors:
-            locator = page.locator(selector).first
+            locator = page.locator(selector)
             if locator.count() > 0:
-                text = locator.inner_text().strip()
+                text = locator.first.inner_text().strip()
                 if len(text) >= MIN_DESCRIPTION_LENGTH:
                     return text
         return None

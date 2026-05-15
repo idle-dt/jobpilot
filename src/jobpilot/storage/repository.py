@@ -156,7 +156,7 @@ class Repository:
     def delete_scraped_jobs_for_email(self, email_id: str) -> int:
         return self.jobs.delete_scraped_jobs_for_email(email_id)
 
-    def count_scraped_jobs_for_email(self, email_id) -> int:
+    def count_scraped_jobs_for_email(self, email_id: str | int) -> int:
         return self.jobs.count_scraped_jobs_for_email(email_id)
 
     def get_pending_scraped_jobs(self) -> list[dict]:

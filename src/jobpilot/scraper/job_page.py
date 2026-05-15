@@ -36,7 +36,13 @@ def is_login_wall(text: str) -> bool:
 
 
 def is_safe_url(url: str) -> bool:
-    """Reject URLs that could cause SSRF (private IPs, non-HTTP schemes)."""
+    """Reject URLs that could cause SSRF (private IPs, non-HTTP schemes).
+
+    Policy: reject known-bad (private/loopback IPs, non-HTTP schemes).
+    If DNS resolution fails, the URL is allowed through — the subsequent
+    HTTP request will fail on its own. This avoids blocking legitimate
+    hostnames during transient DNS issues.
+    """
     try:
         parsed = urlparse(url)
     except ValueError:
@@ -61,7 +67,9 @@ class JobPageScraper:
     def scrape(self, url: str) -> str | None:
         """Fetch and extract the job description text from a URL.
 
-        Returns plain text description, or None if scraping fails.
+        Follows at most one redirect hop (SSRF mitigation — each hop is
+        validated against is_safe_url). Returns plain text description,
+        SCRAPE_EXPIRED for expired-job redirects, or None if scraping fails.
         """
         if not is_safe_url(url):
             logger.warning("[Scrape] requests: %s — blocked unsafe URL", url)

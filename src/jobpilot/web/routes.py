@@ -8,6 +8,7 @@ from datetime import datetime
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from jobpilot.config import settings
+from jobpilot.scraper.browser import ALLOWED_SITES
 from jobpilot.storage.models import ExtractedSignal, UserFeedback
 from jobpilot.storage.repository import Repository
 from jobpilot.web.app import limiter
@@ -23,9 +24,7 @@ EMAILS_PER_PAGE = 50
 NOISE_CONFIDENCE_THRESHOLD = 0.3
 MAX_SYNC_DAYS = 90
 MAX_PREFERENCE_LENGTH = 100
-SCRAPE_DELAY_SECONDS = 2
 EXPORT_PREDICTIONS_LIMIT = 50
-ALLOWED_LOGIN_SITES = {"linkedin"}
 
 SIGNAL_PRIORITY = {
     "tech_stack": 0,
@@ -252,7 +251,7 @@ def settings_page():
 
     browser_sessions = {
         site: repo.get_setting(f"browser_session_{site}", "") == "1"
-        for site in ALLOWED_LOGIN_SITES
+        for site in ALLOWED_SITES
     }
 
     return render_template(
@@ -453,7 +452,7 @@ def scraper_login():
     import threading
 
     site = request.form.get("site", "").strip().lower()
-    if site not in ALLOWED_LOGIN_SITES:
+    if site not in ALLOWED_SITES:
         return jsonify({"status": "error", "message": "Invalid site"}), 400
 
     repo = _repo()

@@ -2,13 +2,20 @@
 
 import json
 import logging
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
+
+import requests
 
 from jobpilot.config import settings
+from jobpilot.scraper.constants import SCRAPABLE_DOMAINS, STRATEGY_REQUESTS_THEN_BROWSER
+from jobpilot.scraper.job_page import SCRAPE_EXPIRED, JobPageScraper
 from jobpilot.services.classification_service import ClassificationService
+from jobpilot.storage.models import ScrapedJob
 from jobpilot.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
@@ -85,7 +92,7 @@ class SyncService:
             from jobpilot.scraper.arbeitnow import ArbeitNowClient
             arbeitnow = ArbeitNowClient(self.repo)
             arbeitnow_count = arbeitnow.fetch_and_store()
-        except Exception:
+        except (requests.RequestException, ValueError, sqlite3.OperationalError):
             logger.exception("ArbeitNow fetch failed")
 
         self.classification.score_pending_jobs()
@@ -96,8 +103,6 @@ class SyncService:
     def _scrape_job_descriptions(self) -> None:
         """Scrape descriptions for LinkedIn and Glassdoor jobs."""
         from jobpilot.classifier.rules import RuleBasedScorer, load_signal_config
-        from jobpilot.scraper.constants import SCRAPABLE_DOMAINS
-        from jobpilot.scraper.job_page import SCRAPE_EXPIRED, JobPageScraper
 
         jobs = self.repo.get_jobs_needing_scrape()
         if not jobs:
@@ -115,49 +120,64 @@ class SyncService:
         logger.info("[Scrape] Scraping %d jobs...", len(jobs))
         scrape_progress.update(0, len(jobs), "starting")
 
-        for i, job in enumerate(jobs, 1):
-            scrape_progress.update(i, len(jobs), job.title[:50])
-            logger.info("[Scrape] [%d/%d] %s — %s", i, len(jobs), job.title, job.url[:80])
-
-            domain = _get_scrapable_domain(job.url)
-            if domain is None:
-                self.repo.mark_scrape_attempted(job.id)
-                continue
-
-            strategy = SCRAPABLE_DOMAINS[domain]
-            description = scraper.scrape(job.url)
-
-            # Browser fallback only for LinkedIn
-            if description is None and strategy == "requests_then_browser":
-                logger.info("[Scrape] %s — requests failed, falling back to browser", job.title)
-                if browser_scraper is None:
-                    from jobpilot.scraper.browser import BrowserScraper
-                    browser_scraper = BrowserScraper()
-                description = browser_scraper.scrape(job.url)
-
-            if description == SCRAPE_EXPIRED:
-                self.repo.toggle_scraped_job_expired(job.id)
-                self.repo.mark_scrape_attempted(job.id)
-            elif description:
-                self._save_description(job, description, scorer, config)
-                logger.info(
-                    "[Scrape] %s — description saved (%d chars)", job.title, len(description),
+        try:
+            for i, job in enumerate(jobs, 1):
+                scrape_progress.update(i, len(jobs), job.title[:50])
+                logger.info("[Scrape] [%d/%d] %s — %s", i, len(jobs), job.title, job.url[:80])
+                description, browser_scraper = self._scrape_single_job(
+                    job, scraper, browser_scraper, scorer, config,
                 )
-                self.repo.mark_scrape_attempted(job.id)
-                success_count += 1
-            else:
-                logger.info("[Scrape] %s — all methods failed, marking as attempted", job.title)
-                self.repo.mark_scrape_attempted(job.id)
+                if description:
+                    success_count += 1
+                time.sleep(SCRAPE_DELAY_SECONDS)
+        finally:
+            if browser_scraper:
+                browser_scraper.close()
+            scrape_progress.reset()
 
-            time.sleep(SCRAPE_DELAY_SECONDS)
-
-        if browser_scraper:
-            browser_scraper.close()
-        scrape_progress.reset()
         logger.info("[Scrape] Batch complete: %d/%d descriptions fetched", success_count, len(jobs))
 
+    def _scrape_single_job(
+        self,
+        job: ScrapedJob,
+        scraper: JobPageScraper,
+        browser_scraper: object | None,
+        scorer: object,
+        config: dict,
+    ) -> tuple[str | None, object | None]:
+        """Scrape a single job, falling back to browser if needed."""
+        domain = _get_scrapable_domain(job.url)
+        if domain is None:
+            self.repo.mark_scrape_attempted(job.id)
+            return None, browser_scraper
+
+        strategy = SCRAPABLE_DOMAINS[domain]
+        description = scraper.scrape(job.url)
+
+        if description is None and strategy == STRATEGY_REQUESTS_THEN_BROWSER:
+            logger.info("[Scrape] %s — requests failed, falling back to browser", job.title)
+            if browser_scraper is None:
+                from jobpilot.scraper.browser import BrowserScraper
+                browser_scraper = BrowserScraper()
+            description = browser_scraper.scrape(job.url)
+
+        if description == SCRAPE_EXPIRED:
+            self.repo.toggle_scraped_job_expired(job.id)
+            self.repo.mark_scrape_attempted(job.id)
+            return None, browser_scraper
+
+        if description:
+            self._save_description(job, description, scorer, config)
+            logger.info(
+                "[Scrape] %s — description saved (%d chars)", job.title, len(description),
+            )
+        else:
+            logger.info("[Scrape] %s — all methods failed, marking as attempted", job.title)
+        self.repo.mark_scrape_attempted(job.id)
+        return description, browser_scraper
+
     def _save_description(
-        self, job: object, description: str, scorer: object, config: dict,
+        self, job: ScrapedJob, description: str, scorer: object, config: dict,
     ) -> None:
         """Save scraped description and re-score the job."""
         from jobpilot.classifier.features import extract_matched_keywords
@@ -176,10 +196,6 @@ class SyncService:
 
 def _get_scrapable_domain(url: str) -> str | None:
     """Return the scrapable domain if URL matches, else None."""
-    from urllib.parse import urlparse
-
-    from jobpilot.scraper.constants import SCRAPABLE_DOMAINS
-
     hostname = urlparse(url).hostname or ""
     for domain in SCRAPABLE_DOMAINS:
         if hostname.endswith(domain):

@@ -136,7 +136,7 @@ class JobRepository:
         self.conn.commit()
         return cur.rowcount
 
-    def count_scraped_jobs_for_email(self, email_id) -> int:
+    def count_scraped_jobs_for_email(self, email_id: str | int) -> int:
         """Count scraped jobs linked to an email (for digest_job_count feature)."""
         row = self.conn.execute(
             "SELECT COUNT(*) as cnt FROM scraped_jobs WHERE email_id = ?",
