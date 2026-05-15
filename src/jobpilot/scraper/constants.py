@@ -16,6 +16,10 @@ LOGIN_WALL_SIGNALS: list[str] = [
     "Sign in to view",
 ]
 
-BROWSER_ONLY_DOMAINS: set[str] = {"glassdoor.com", "wellfound.com"}
-
-BROWSER_SKIP_DOMAINS: set[str] = {"wellfound.com", "glassdoor.com"}
+# Domains where we attempt to scrape full job descriptions.
+# LinkedIn: requests first, browser fallback.
+# Glassdoor: requests only (login walls block browser too).
+SCRAPABLE_DOMAINS: dict[str, str] = {
+    "linkedin.com": "requests_then_browser",
+    "glassdoor.com": "requests_only",
+}

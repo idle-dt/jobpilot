@@ -35,7 +35,6 @@ def app(tmp_path: Path) -> Flask:
         mock_settings.debug = False
         mock_settings.db_path = tmp_path / "test.db"
         mock_settings.score_threshold = 0.6
-        mock_settings.scrape_confidence_threshold = 0.7
         mock_settings.min_training_samples = 20
         mock_settings.gmail_credentials_path = ""
         mock_settings.gmail_token_path = ""

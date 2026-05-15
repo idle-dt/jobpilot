@@ -143,12 +143,9 @@ class Repository:
     def mark_scrape_attempted(self, job_id: int) -> None:
         return self.jobs.mark_scrape_attempted(job_id)
 
-    def get_jobs_needing_scrape(
-        self, score_threshold: float, confidence_threshold: float,
-    ) -> list[ScrapedJob]:
-        return self.jobs.get_jobs_needing_scrape(
-            score_threshold, confidence_threshold,
-        )
+    def get_jobs_needing_scrape(self) -> list[ScrapedJob]:
+        """Return jobs with LinkedIn or Glassdoor URLs that haven't been scraped yet."""
+        return self.jobs.get_jobs_needing_scrape()
 
     def get_email_ids_with_extracted_jobs(self) -> set[str]:
         return self.jobs.get_email_ids_with_extracted_jobs()

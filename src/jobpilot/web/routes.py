@@ -235,9 +235,6 @@ def settings_page():
 
     repo = _repo()
     sync_days = repo.get_setting("sync_days", "7")
-    scrape_threshold = repo.get_setting(
-        "scrape_confidence_threshold", str(settings.scrape_confidence_threshold)
-    )
     score_threshold = repo.get_setting("score_threshold", str(settings.score_threshold))
     prefs = repo.get_all_preferences()
 
@@ -261,7 +258,6 @@ def settings_page():
     return render_template(
         "settings.html",
         sync_days=sync_days,
-        scrape_threshold=scrape_threshold,
         score_threshold=score_threshold,
         prefs=prefs,
         salary_currency=salary_currency,
@@ -290,22 +286,6 @@ def update_sync_days():
 
     repo.set_setting("sync_days", str(days))
     return jsonify({"status": "ok", "value": days})
-
-
-@bp.route("/api/settings/scrape_confidence_threshold", methods=["POST"])
-def update_scrape_threshold():
-    """Update the scrape confidence threshold setting."""
-    repo = _repo()
-    value = _get_param("value", str(settings.scrape_confidence_threshold))
-    try:
-        threshold = float(value)
-        if not 0.0 <= threshold <= 1.0:
-            return jsonify({"status": "error", "message": "Must be between 0.0 and 1.0"}), 400
-    except ValueError:
-        return jsonify({"status": "error", "message": "Invalid number"}), 400
-
-    repo.set_setting("scrape_confidence_threshold", str(threshold))
-    return jsonify({"status": "ok", "value": threshold})
 
 
 ALLOWED_CATEGORIES = {

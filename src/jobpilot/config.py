@@ -45,9 +45,6 @@ class Settings(BaseSettings):
     min_training_samples: int = 30
     retrain_after_n_labels: int = 10
 
-    # Scraping
-    scrape_confidence_threshold: float = 0.5
-
     # Scoring weights
     weight_tech_match: float = 0.35
     weight_location_match: float = 0.25

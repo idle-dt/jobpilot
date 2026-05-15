@@ -142,17 +142,6 @@
         <small>Jobs scoring above this are classified "worth checking" (0.0–1.0).</small>
     </form>
 
-    <form id="scrape-threshold-form" hx-post="/api/settings/scrape_confidence_threshold" hx-swap="none" style="margin-top: 1rem;">
-        <label for="scrape-threshold-input">Scrape confidence threshold</label>
-        <div class="setting-row">
-            <input type="text" inputmode="decimal" pattern="[0-9]*\.?[0-9]*" id="scrape-threshold-input" name="value"
-                   value="{{ scrape_threshold }}" placeholder="0.5"
-                   onkeypress="return /[0-9.]/.test(event.key) || event.key==='Backspace'">
-            <button type="submit" class="btn-save">Save</button>
-            <span id="scrape-threshold-result" class="setting-result"></span>
-        </div>
-        <small>Jobs with scoring confidence below this threshold will have their full descriptions scraped. Lower = scrape more jobs (0.0–1.0).</small>
-    </form>
 </section>
 
 {# ── Appearance ── #}
@@ -183,7 +172,6 @@ function setTheme(t) {
 /* Settings save feedback */
 const settingsMap = {
     '/api/settings/sync_days': 'sync-days-result',
-    '/api/settings/scrape_confidence_threshold': 'scrape-threshold-result',
     '/api/settings/score_threshold': 'score-threshold-result',
     '/api/settings/salary': 'salary-result',
 };

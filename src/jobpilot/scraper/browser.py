@@ -7,7 +7,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from jobpilot.scraper.constants import (
-    BROWSER_SKIP_DOMAINS,
     MIN_DESCRIPTION_LENGTH,
     USER_AGENT,
 )
@@ -114,11 +113,6 @@ class BrowserScraper:
         """Open URL in browser, wait for content, extract description."""
         if not is_safe_url(url):
             logger.warning("[Scrape] browser: %s — blocked unsafe URL", url)
-            return None
-
-        hostname = urlparse(url).hostname or ""
-        if any(hostname.endswith(d) for d in BROWSER_SKIP_DOMAINS):
-            logger.info("[Scrape] browser: %s — skipped (blocked domain)", url)
             return None
 
         ctx = self._ensure_context()

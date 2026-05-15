@@ -95,17 +95,14 @@ class JobRepository:
         )
         self.conn.commit()
 
-    def get_jobs_needing_scrape(
-        self, score_threshold: float, confidence_threshold: float
-    ) -> list[ScrapedJob]:
-        """Return scored jobs where confidence is below threshold and scrape not yet attempted."""
+    def get_jobs_needing_scrape(self) -> list[ScrapedJob]:
+        """Return jobs with LinkedIn or Glassdoor URLs that haven't been scraped yet."""
         rows = self.conn.execute(
             """SELECT * FROM scraped_jobs
-            WHERE score IS NOT NULL
-            AND scrape_attempted = FALSE
-            AND ABS(score - ?) / 0.4 < ?
-            ORDER BY ABS(score - ?) ASC""",
-            (score_threshold, confidence_threshold, score_threshold),
+            WHERE scrape_attempted = FALSE
+            AND score IS NOT NULL
+            AND (url LIKE '%linkedin.com%' OR url LIKE '%glassdoor.com%')
+            ORDER BY id ASC""",
         ).fetchall()
         return [self._row_to_scraped_job(r) for r in rows]
 

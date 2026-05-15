@@ -92,23 +92,39 @@ def test_mark_scrape_attempted(repo):
 
 
 def test_get_jobs_needing_scrape(repo):
-    # Insert a job with an ambiguous score (close to threshold 0.6)
-    job = ScrapedJob(id=None, source="linkedin", title="Test Job", url="https://example.com/3")
-    repo.insert_scraped_job(job)
-    rows = repo.conn.execute("SELECT id FROM scraped_jobs").fetchall()
-    job_id = rows[0]["id"]
+    """Should return LinkedIn/Glassdoor jobs that haven't been scraped."""
+    linkedin_job = ScrapedJob(
+        id=None, source="linkedin", title="Test Job",
+        url="https://www.linkedin.com/jobs/view/123",
+    )
+    glassdoor_job = ScrapedJob(
+        id=None, source="glassdoor", title="Test Job 2",
+        url="https://www.glassdoor.com/job/456",
+    )
+    other_job = ScrapedJob(
+        id=None, source="other", title="Test Job 3",
+        url="https://example.com/job/789",
+    )
+    repo.insert_scraped_job(linkedin_job)
+    repo.insert_scraped_job(glassdoor_job)
+    repo.insert_scraped_job(other_job)
 
-    # Set score near the threshold (0.6) -> low confidence
-    repo.update_scraped_job_scores(job_id, 0.55, None, "skip")
+    rows = repo.conn.execute("SELECT id, url FROM scraped_jobs").fetchall()
+    for r in rows:
+        repo.update_scraped_job_scores(r["id"], 0.7, None, "worth_checking")
 
-    # Should be found with default thresholds
-    needing = repo.get_jobs_needing_scrape(score_threshold=0.6, confidence_threshold=0.5)
-    assert len(needing) == 1
-    assert needing[0].id == job_id
+    needing = repo.get_jobs_needing_scrape()
+    urls = {j.url for j in needing}
+    assert "https://www.linkedin.com/jobs/view/123" in urls
+    assert "https://www.glassdoor.com/job/456" in urls
+    assert "https://example.com/job/789" not in urls
 
 
 def test_get_jobs_needing_scrape_excludes_attempted(repo):
-    job = ScrapedJob(id=None, source="linkedin", title="Test Job", url="https://example.com/4")
+    job = ScrapedJob(
+        id=None, source="linkedin", title="Test Job",
+        url="https://www.linkedin.com/jobs/view/999",
+    )
     repo.insert_scraped_job(job)
     rows = repo.conn.execute("SELECT id FROM scraped_jobs").fetchall()
     job_id = rows[0]["id"]
@@ -116,20 +132,7 @@ def test_get_jobs_needing_scrape_excludes_attempted(repo):
     repo.update_scraped_job_scores(job_id, 0.55, None, "skip")
     repo.mark_scrape_attempted(job_id)
 
-    needing = repo.get_jobs_needing_scrape(score_threshold=0.6, confidence_threshold=0.5)
-    assert len(needing) == 0
-
-
-def test_get_jobs_needing_scrape_excludes_high_confidence(repo):
-    job = ScrapedJob(id=None, source="linkedin", title="Test Job", url="https://example.com/5")
-    repo.insert_scraped_job(job)
-    rows = repo.conn.execute("SELECT id FROM scraped_jobs").fetchall()
-    job_id = rows[0]["id"]
-
-    # Score far from threshold -> high confidence
-    repo.update_scraped_job_scores(job_id, 0.95, None, "worth_checking")
-
-    needing = repo.get_jobs_needing_scrape(score_threshold=0.6, confidence_threshold=0.5)
+    needing = repo.get_jobs_needing_scrape()
     assert len(needing) == 0
 
 
@@ -193,23 +196,6 @@ def test_scraper_linkedin_html():
     result = scraper._parse_linkedin(html)
     assert result is not None
     assert "Flutter Developer" in result
-
-
-def test_scraper_indeed_html():
-    scraper = JobPageScraper()
-    html = """
-    <html>
-    <body>
-    <div id="jobDescriptionText">
-        <p>Mobile Developer role. Experience with Android and iOS required.</p>
-        <p>Location: Netherlands. Remote possible.</p>
-    </div>
-    </body>
-    </html>
-    """
-    result = scraper._parse_indeed(html)
-    assert result is not None
-    assert "Mobile Developer" in result
 
 
 @patch("jobpilot.scraper.job_page.is_safe_url", return_value=True)

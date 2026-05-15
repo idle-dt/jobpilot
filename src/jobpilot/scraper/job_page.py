@@ -10,7 +10,6 @@ import requests
 from bs4 import BeautifulSoup
 
 from jobpilot.scraper.constants import (
-    BROWSER_ONLY_DOMAINS,
     LOGIN_WALL_SIGNALS,
     MIN_DESCRIPTION_LENGTH,
     USER_AGENT,
@@ -34,12 +33,6 @@ def is_login_wall(text: str) -> bool:
     text_lower = text.lower()
     matches = sum(1 for s in LOGIN_WALL_SIGNALS if s.lower() in text_lower)
     return matches >= 2
-
-
-def needs_browser(url: str) -> bool:
-    """Check if URL requires a browser-based scraper."""
-    hostname = urlparse(url).hostname or ""
-    return any(hostname.endswith(d) for d in BROWSER_ONLY_DOMAINS)
 
 
 def is_safe_url(url: str) -> bool:
@@ -74,10 +67,6 @@ class JobPageScraper:
             logger.warning("[Scrape] requests: %s — blocked unsafe URL", url)
             return None
 
-        if needs_browser(url):
-            logger.info("[Scrape] requests: %s — skipped (browser-only domain)", url)
-            return None
-
         try:
             resp = requests.get(
                 url, headers=_HEADERS, timeout=_TIMEOUT,
@@ -103,8 +92,6 @@ class JobPageScraper:
         html = resp.text
         if "linkedin.com/jobs" in url:
             description = self._parse_linkedin(html)
-        elif "indeed.com" in url:
-            description = self._parse_indeed(html)
         else:
             description = self._parse_generic(html)
 
@@ -129,15 +116,6 @@ class JobPageScraper:
         if desc:
             return self._clean_text(desc.get_text(separator="\n"))
         return None
-
-    def _parse_indeed(self, html: str) -> str | None:
-        soup = BeautifulSoup(html, "lxml")
-        desc = soup.find("div", id="jobDescriptionText")
-        if not desc:
-            desc = soup.find("div", class_="jobsearch-jobDescriptionText")
-        if desc:
-            return self._clean_text(desc.get_text(separator="\n"))
-        return self._parse_generic(html)
 
     def _parse_generic(self, html: str) -> str | None:
         soup = BeautifulSoup(html, "lxml")
