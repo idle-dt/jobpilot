@@ -96,7 +96,12 @@ class JobRepository:
         self.conn.commit()
 
     def get_jobs_needing_scrape(self) -> list[ScrapedJob]:
-        """Return jobs with LinkedIn or Glassdoor URLs that haven't been scraped yet."""
+        """Return jobs with LinkedIn or Glassdoor URLs that haven't been scraped yet.
+
+        NOTE: The domain list here must stay in sync with SCRAPABLE_DOMAINS
+        in scraper/constants.py. If a new domain is added there, add matching
+        LIKE patterns below.
+        """
         rows = self.conn.execute(
             """SELECT * FROM scraped_jobs
             WHERE scrape_attempted = FALSE

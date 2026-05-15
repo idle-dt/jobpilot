@@ -460,6 +460,8 @@ def scraper_login():
     repo = _repo()
 
     def _run_login(site_name: str) -> None:
+        from playwright.sync_api import Error as PlaywrightError
+
         from jobpilot.scraper.browser import BrowserScraper
         try:
             scraper = BrowserScraper(headless=False)
@@ -467,7 +469,7 @@ def scraper_login():
             scraper.close()
             repo.set_setting(f"browser_session_{site_name}", "1")
             logger.info("[Scrape] browser: %s session saved", site_name)
-        except (OSError, ImportError):
+        except (OSError, ImportError, ValueError, PlaywrightError):
             logger.exception("Browser login failed for %s", site_name)
 
     threading.Thread(target=_run_login, args=(site,), daemon=True).start()

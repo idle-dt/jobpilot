@@ -148,6 +148,18 @@ def test_get_jobs_needing_scrape_excludes_attempted(repo):
     assert len(needing) == 0
 
 
+def test_get_jobs_needing_scrape_requires_score(repo):
+    """Unscored jobs (score IS NULL) should not appear in scrape queue."""
+    job = ScrapedJob(
+        id=None, source="linkedin", title="Unscored Job",
+        url="https://www.linkedin.com/jobs/view/unscored",
+    )
+    repo.insert_scraped_job(job)
+    # score is NULL by default — should not appear
+    needing = repo.get_jobs_needing_scrape()
+    assert len(needing) == 0
+
+
 def test_toggle_scraped_job_expired(repo):
     """toggle_scraped_job_expired should flip the expired flag."""
     job = ScrapedJob(
