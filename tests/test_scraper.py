@@ -148,6 +148,30 @@ def test_get_jobs_needing_scrape_excludes_attempted(repo):
     assert len(needing) == 0
 
 
+def test_toggle_scraped_job_expired(repo):
+    """toggle_scraped_job_expired should flip the expired flag."""
+    job = ScrapedJob(
+        id=None, source="linkedin", title="Expired Job",
+        url="https://www.linkedin.com/jobs/view/expired",
+    )
+    repo.insert_scraped_job(job)
+    rows = repo.conn.execute("SELECT id FROM scraped_jobs").fetchall()
+    job_id = rows[0]["id"]
+
+    # First toggle: False -> True
+    new_val = repo.toggle_scraped_job_expired(job_id)
+    assert new_val is True
+
+    row = repo.conn.execute(
+        "SELECT expired FROM scraped_jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    assert bool(row["expired"]) is True
+
+    # Second toggle: True -> False
+    new_val = repo.toggle_scraped_job_expired(job_id)
+    assert new_val is False
+
+
 def test_row_to_scraped_job_includes_new_fields(repo):
     job = ScrapedJob(id=None, source="linkedin", title="Test Job", url="https://example.com/6")
     repo.insert_scraped_job(job)
@@ -248,6 +272,8 @@ def test_is_safe_url_rejects_private():
     assert is_safe_url("file:///etc/passwd") is False
     assert is_safe_url("ftp://example.com") is False
     assert is_safe_url("") is False
+    assert is_safe_url("http://127.0.0.1/") is False
+    assert is_safe_url("http://192.168.1.1/job") is False
 
 
 # --- Domain Routing ---

@@ -26,6 +26,7 @@ _HEADERS = {
 }
 
 _TIMEOUT = 15
+_MAX_CONSECUTIVE_BLANKS = 2
 
 
 def is_login_wall(text: str) -> bool:
@@ -98,7 +99,8 @@ class JobPageScraper:
             return None
 
         html = resp.text
-        if "linkedin.com/jobs" in url:
+        hostname = urlparse(url).hostname or ""
+        if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
             description = self._parse_linkedin(html)
         else:
             description = self._parse_generic(html)
@@ -160,11 +162,10 @@ class JobPageScraper:
         # Collapse runs of 3+ consecutive blank lines down to 2
         collapsed: list[str] = []
         blank_run = 0
-        max_consecutive_blanks = 2
         for line in lines:
             if not line.strip():
                 blank_run += 1
-                if blank_run <= max_consecutive_blanks:
+                if blank_run <= _MAX_CONSECUTIVE_BLANKS:
                     collapsed.append(line)
             else:
                 blank_run = 0

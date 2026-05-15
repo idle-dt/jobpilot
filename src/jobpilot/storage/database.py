@@ -218,10 +218,13 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_PREFS_SQL)
 
     # One-time cleanup for browser scraper migration
-    ran = conn.execute(
-        "SELECT value FROM settings WHERE key = ?",
-        ("_migration_browser_scrape_cleanup",),
-    ).fetchone()
+    try:
+        ran = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("_migration_browser_scrape_cleanup",),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ran = None
     if not ran:
         for stmt in _CLEANUP_BROWSER_SCRAPE_SQL.strip().split(";"):
             stmt = stmt.strip()
