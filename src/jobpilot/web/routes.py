@@ -3,8 +3,10 @@
 import json as json_module
 import logging
 import re
+import sqlite3
 from datetime import datetime
 
+import requests
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from jobpilot.config import settings
@@ -434,7 +436,7 @@ def sync_emails():
     except (ValueError, FileNotFoundError, OSError):
         logger.exception("Auth failed during sync")
         return jsonify({"status": "auth_required"}), 401
-    except Exception:
+    except (requests.RequestException, sqlite3.OperationalError, RuntimeError):
         logger.exception("Sync failed")
         return jsonify({"status": "error", "message": "Sync failed, check server logs"}), 500
 

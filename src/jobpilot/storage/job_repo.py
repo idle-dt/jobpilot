@@ -102,10 +102,14 @@ class JobRepository:
             WHERE scrape_attempted = FALSE
             AND score IS NOT NULL
             AND (
-                url LIKE '%://linkedin.com/%'
-                OR url LIKE '%://%.linkedin.com/%'
-                OR url LIKE '%://glassdoor.com/%'
-                OR url LIKE '%://%.glassdoor.com/%'
+                url LIKE 'https://linkedin.com/%'
+                OR url LIKE 'https://%.linkedin.com/%'
+                OR url LIKE 'http://linkedin.com/%'
+                OR url LIKE 'http://%.linkedin.com/%'
+                OR url LIKE 'https://glassdoor.com/%'
+                OR url LIKE 'https://%.glassdoor.com/%'
+                OR url LIKE 'http://glassdoor.com/%'
+                OR url LIKE 'http://%.glassdoor.com/%'
             )
             ORDER BY id ASC""",
         ).fetchall()
