@@ -316,3 +316,51 @@ def test_get_scrapable_domain_rejects_others():
     assert _get_scrapable_domain("https://fakelinkedin.com/jobs/1") is None
     assert _get_scrapable_domain("https://indeed.com/job/1") is None
     assert _get_scrapable_domain("not-a-url") is None
+
+
+# --- BrowserScraper ---
+
+
+@patch("jobpilot.scraper.browser.is_safe_url", return_value=False)
+def test_browser_scraper_rejects_unsafe_url(_mock_safe):
+    """BrowserScraper.scrape should return None for unsafe URLs."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    result = scraper.scrape("javascript:alert(1)")
+    assert result is None
+    scraper.close()
+
+
+def test_browser_scraper_close_noop():
+    """close() should be safe to call when context was never created."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    scraper.close()  # must not raise
+
+
+def test_browser_extract_for_domain_routes_linkedin():
+    """_extract_for_domain should route linkedin.com to _extract_linkedin."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    mock_page = MagicMock()
+
+    with patch.object(scraper, "_extract_linkedin", return_value="LinkedIn desc") as mock_li:
+        result = scraper._extract_for_domain(mock_page, "www.linkedin.com")
+    assert result == "LinkedIn desc"
+    mock_li.assert_called_once_with(mock_page)
+
+
+def test_browser_extract_for_domain_routes_generic():
+    """_extract_for_domain should route non-LinkedIn to _extract_generic."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    mock_page = MagicMock()
+
+    with patch.object(scraper, "_extract_generic", return_value="Generic desc") as mock_gen:
+        result = scraper._extract_for_domain(mock_page, "www.glassdoor.com")
+    assert result == "Generic desc"
+    mock_gen.assert_called_once_with(mock_page)

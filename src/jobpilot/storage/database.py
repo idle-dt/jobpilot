@@ -196,7 +196,7 @@ WHERE (url LIKE 'https://linkedin.com/%' OR url LIKE 'https://%.linkedin.com/%'
        OR description LIKE '%Forgot password%'
        OR description LIKE '%Join now%');
 
--- Reset failed Glassdoor scrapes for re-attempt with browser
+-- Reset failed Glassdoor scrapes for re-attempt
 UPDATE scraped_jobs
 SET scrape_attempted = 0
 WHERE (url LIKE 'https://glassdoor.com/%' OR url LIKE 'https://%.glassdoor.com/%'
