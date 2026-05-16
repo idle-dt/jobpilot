@@ -3,17 +3,49 @@
 import logging
 import multiprocessing
 import sqlite3
+import time
+from pathlib import Path
 
 from jobpilot.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
 
 MANUAL_RETRAIN_TIMEOUT_SECONDS = 60
+LOCK_TTL_SECONDS = 300  # 5 minutes — auto-clear stale locks from crashed processes
 
 # Use "spawn" context to avoid inheriting parent's SQLite file descriptors.
 # The default "fork" on macOS copies the parent's connection state, causing
 # "database is locked" even with WAL mode and busy timeouts.
 _spawn_ctx = multiprocessing.get_context("spawn")
+
+_LOCK_DIR = Path.home() / ".jobpilot" / "locks"
+
+
+def _lock_path(model_type: str) -> Path:
+    """Return the lock file path for a model type."""
+    return _LOCK_DIR / f"retrain_{model_type}.lock"
+
+
+def _acquire_lock(model_type: str) -> bool:
+    """Try to acquire a lock file. Returns True if acquired, False if already held."""
+    _LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    lock = _lock_path(model_type)
+    try:
+        if lock.exists():
+            age = time.time() - lock.stat().st_mtime
+            if age > LOCK_TTL_SECONDS:
+                lock.unlink(missing_ok=True)
+            else:
+                return False
+        lock.touch(exist_ok=False)
+        return True
+    except FileExistsError:
+        return False
+
+
+def _release_lock(model_type: str) -> None:
+    """Release the lock file for a model type."""
+    _lock_path(model_type).unlink(missing_ok=True)
 
 
 class MLService:
@@ -35,6 +67,9 @@ class MLService:
             # Release implicit transactions so the subprocess can write to the DB
             self.repo.commit()
             for model_type in retrain_types:
+                if not _acquire_lock(model_type):
+                    logger.info("Skipping %s retrain — already running", model_type)
+                    continue
                 logger.info("Auto-retraining %s model in subprocess", model_type)
                 p = _spawn_ctx.Process(
                     target=self._retrain_in_subprocess,
@@ -50,6 +85,8 @@ class MLService:
 
     def run_manual_retrain(self, model_type: str) -> tuple[bool, str]:
         """Run retrain in subprocess with timeout. Returns (success, message)."""
+        if not _acquire_lock(model_type):
+            return False, "Training already in progress"
         self.repo.commit()
         p = _spawn_ctx.Process(
             target=self._retrain_in_subprocess,
@@ -95,3 +132,4 @@ class MLService:
         finally:
             if conn:
                 conn.close()
+            _release_lock(model_type)

@@ -12,7 +12,9 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## In Progress
 
-Items with implementation prompts in `docs/prompts/` — see `PROMPTS.md` for status.
+- **Application Tracker** — UI for existing `applications` table (branch: `feat/application-tracker`)
+
+See `docs/prompts/PROMPTS.md` for prompt implementation status.
 
 ## UI Improvements
 
@@ -30,16 +32,6 @@ Items with implementation prompts in `docs/prompts/` — see `PROMPTS.md` for st
 - Replace manual "Sync" button with scheduled background fetching (APScheduler is already a dependency)
 - Configurable fetch interval per user
 - Notification when new jobs are found
-
-### Application Tracker
-- Build UI for the existing `applications` table (CRUD is in repository, no web routes yet)
-- Pipeline view: Applied > Screen > Interview > Offer > Rejected
-- Status change history and notes
-
-### Job Board Scraping
-- Expand beyond Gmail monitoring to direct job board scraping
-- Support LinkedIn, Indeed, Wellfound saved searches
-- Deduplication across email and scraped sources
 
 ### Expired Job Auto-Detection
 - Auto-detect expired jobs via URL scraping (404/redirect) or date heuristic

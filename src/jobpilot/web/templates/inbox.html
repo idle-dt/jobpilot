@@ -10,7 +10,7 @@
         <span class="sync-info" id="sync-info">{% if last_sync %}Synced <strong>{{ last_sync.strftime('%b %d, %H:%M') }}</strong>{% else %}Not synced yet{% endif %}</span>
     </div>
     <div class="toolbar-right-group">
-        <button id="sync-btn" class="sync-btn" hx-post="/api/sync" hx-swap="none">
+        <button id="sync-btn" class="sync-btn" onclick="startSync()">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M1 8a7 7 0 0 1 12.3-4.6M15 8a7 7 0 0 1-12.3 4.6"/><polyline points="1 3 1 8 5.5 6.5"/><polyline points="15 13 15 8 10.5 9.5"/></svg>
             Sync
         </button>

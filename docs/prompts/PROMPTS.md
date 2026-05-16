@@ -28,11 +28,14 @@
 
 - [x] **GBC Calibration** — [PROMPT_gbc_calibration.md](PROMPT_gbc_calibration.md) — Wrap GBC in CalibratedClassifierCV for realistic probabilities instead of 0/100%
 
+- [x] **Browser Scraper** — [PROMPT_browser_scraper.md](PROMPT_browser_scraper.md) — (superseded by Scraper Refactor)
+
 ## Not Yet Implemented
 
 - [ ] **Application Tracker** — [PROMPT_application_tracker.md](PROMPT_application_tracker.md) — Tracker tab with list view, inline status dropdown, detail modal with offer/contact/history, schema cleanup
-- [ ] **Browser Scraper** — [PROMPT_browser_scraper.md](PROMPT_browser_scraper.md) — Playwright fallback for Glassdoor/Wellfound/LinkedIn login walls, persistent sessions, login wall detection, data cleanup
 - [ ] **Scraper Refactor** — [PROMPT_scraper_refactor.md](PROMPT_scraper_refactor.md) — Simplify scraping to LinkedIn-only (always scrape, requests+browser) with Glassdoor requests fallback, remove dead domain sets and confidence filter
+- [ ] **Job Title Tiers** — [PROMPT_job_title_tiers.md](PROMPT_job_title_tiers.md) — Split job_title into primary/secondary categories (like tech keywords), with weighted scoring and Settings UI
+- [ ] **Async Sync** — [PROMPT_async_sync.md](PROMPT_async_sync.md) — Background thread sync pipeline with live per-step progress, survives page refresh, comprehensive logging
 
 ## Future / Ideas
 
