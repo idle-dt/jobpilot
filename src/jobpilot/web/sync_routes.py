@@ -33,6 +33,7 @@ def sync_emails():
 
 
 @bp_sync.route("/api/sync/status")
+@limiter.limit("30 per minute")
 def sync_status():
     """Return current sync pipeline state for UI polling."""
     from jobpilot.services.sync_state import sync_state
@@ -46,15 +47,15 @@ def scraper_login():
     if site not in ALLOWED_SITES:
         return jsonify({"status": "error", "message": "Invalid site"}), 400
 
-    conn = get_connection(settings.db_path)
-    conn.execute("PRAGMA busy_timeout=30000")
-    repo = Repository(conn)
-
     def _run_login(site_name: str) -> None:
         from playwright.sync_api import Error as PlaywrightError
 
         from jobpilot.scraper.browser import BrowserScraper
+        conn = None
         try:
+            conn = get_connection(settings.db_path)
+            conn.execute("PRAGMA busy_timeout=30000")
+            repo = Repository(conn)
             scraper = BrowserScraper(headless=False)
             scraper.login(site_name)
             scraper.close()
@@ -63,7 +64,8 @@ def scraper_login():
         except (OSError, ImportError, ValueError, PlaywrightError):
             logger.exception("[Sync] Browser login failed for %s", site_name)
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     threading.Thread(target=_run_login, args=(site,), daemon=True).start()
     return jsonify({"status": "ok", "site": site})
@@ -93,6 +95,11 @@ def _run_sync_background() -> None:
         sync_state.fail("auth_required")
     except (requests.RequestException, sqlite3.OperationalError, RuntimeError, KeyError):
         logger.exception("[Sync] Pipeline failed")
+        sync_state.fail("sync_error")
+    except Exception:
+        # Thread boundary: uncaught exceptions must update state,
+        # otherwise sync_state.running stays True forever.
+        logger.exception("[Sync] Unexpected pipeline failure")
         sync_state.fail("sync_error")
     finally:
         if conn:

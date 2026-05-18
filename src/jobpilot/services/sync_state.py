@@ -69,7 +69,7 @@ class SyncState:
             self.error = error
             self.finished_at = datetime.now().isoformat()
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, bool | str | int | None]:
         """Return state as JSON-serializable dict."""
         with self._lock:
             return {

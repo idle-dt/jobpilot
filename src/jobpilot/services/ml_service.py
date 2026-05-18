@@ -2,6 +2,7 @@
 
 import logging
 import multiprocessing
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -27,17 +28,27 @@ def _lock_path(model_type: str) -> Path:
 
 
 def _acquire_lock(model_type: str) -> bool:
-    """Try to acquire a lock file. Returns True if acquired, False if already held."""
+    """Try to acquire a lock file atomically.
+
+    Uses O_CREAT | O_EXCL for atomic creation. Stale locks older than
+    LOCK_TTL_SECONDS are cleared automatically (handles crashed processes).
+    """
     _LOCK_DIR.mkdir(parents=True, exist_ok=True)
     lock = _lock_path(model_type)
-    try:
-        if lock.exists():
+    if lock.exists():
+        try:
             age = time.time() - lock.stat().st_mtime
+        except FileNotFoundError:
+            pass  # Cleared by another process between exists() and stat()
+        else:
             if age > LOCK_TTL_SECONDS:
+                logger.warning("Clearing stale %s lock (%.0fs old)", model_type, age)
                 lock.unlink(missing_ok=True)
             else:
                 return False
-        lock.touch(exist_ok=False)
+    try:
+        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
         return True
     except FileExistsError:
         return False
@@ -71,12 +82,16 @@ class MLService:
                     logger.info("Skipping %s retrain — already running", model_type)
                     continue
                 logger.info("Auto-retraining %s model in subprocess", model_type)
-                p = _spawn_ctx.Process(
-                    target=self._retrain_in_subprocess,
-                    args=(model_type,),
-                    daemon=True,
-                )
-                p.start()
+                try:
+                    p = _spawn_ctx.Process(
+                        target=self._retrain_in_subprocess,
+                        args=(model_type,),
+                        daemon=True,
+                    )
+                    p.start()
+                except OSError:
+                    _release_lock(model_type)
+                    logger.exception("Failed to spawn %s retrain subprocess", model_type)
         except (
             ValueError, RuntimeError, ImportError, OSError,
             sqlite3.OperationalError,
@@ -88,19 +103,27 @@ class MLService:
         if not _acquire_lock(model_type):
             return False, "Training already in progress"
         self.repo.commit()
-        p = _spawn_ctx.Process(
-            target=self._retrain_in_subprocess,
-            args=(model_type,),
-        )
-        p.start()
+        try:
+            p = _spawn_ctx.Process(
+                target=self._retrain_in_subprocess,
+                args=(model_type,),
+            )
+            p.start()
+        except OSError:
+            _release_lock(model_type)
+            logger.exception("Failed to spawn %s retrain subprocess", model_type)
+            return False, "Training failed"
+
         p.join(timeout=MANUAL_RETRAIN_TIMEOUT_SECONDS)
 
         if p.is_alive():
             p.terminate()
             p.join(timeout=5)
+            _release_lock(model_type)
             return False, "Training timed out"
 
         if p.exitcode != 0:
+            _release_lock(model_type)
             return False, "Training failed"
 
         return True, "ok"

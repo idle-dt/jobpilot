@@ -418,7 +418,6 @@ def update_arbeitnow():
 
 
 
-
 def _maybe_auto_retrain(repo) -> None:
     """Check if conditions are met for automatic retraining after feedback."""
     from jobpilot.services.ml_service import MLService

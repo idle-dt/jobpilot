@@ -125,18 +125,20 @@
         syncPollTimer = setInterval(pollSyncStatus, POLL_INTERVAL_MS);
     }
 
+    var pollFailCount = 0;
+
     function pollSyncStatus() {
         fetch('/api/sync/status').then(function(r) { return r.json(); }).then(function(data) {
+            pollFailCount = 0;
+            var fill = document.getElementById('progress-fill');
             if (data.running) {
                 var label = STEP_LABELS[data.step] || 'Syncing…';
                 if (data.step === 'scraping' && data.total > 0) {
                     var pct = Math.round((data.current / data.total) * 100);
                     setSyncInfo('Scraping ' + data.current + '/' + data.total + '…', 'sync-info syncing');
-                    var fill = document.getElementById('progress-fill');
                     if (fill) fill.style.width = pct + '%';
                 } else {
                     setSyncInfo(label, 'sync-info syncing');
-                    var fill = document.getElementById('progress-fill');
                     if (fill) fill.style.width = '0%';
                 }
                 return;
@@ -148,9 +150,13 @@
                 stopPolling();
                 resetSyncingUI();
                 setSyncInfoSuccess(data.new_emails || 0);
-                /* Refresh review queue and toolbar stats once */
-                htmx.ajax('GET', window.location.href, {target: '#review-queue', select: '#review-queue', swap: 'outerHTML'});
-                htmx.ajax('GET', window.location.href, {target: '#toolbar-stats', select: '#toolbar-stats', swap: 'outerHTML'});
+                /* Refresh review queue and toolbar stats once (inbox only) */
+                if (document.getElementById('review-queue')) {
+                    htmx.ajax('GET', window.location.href, {target: '#review-queue', select: '#review-queue', swap: 'outerHTML'});
+                }
+                if (document.getElementById('toolbar-stats')) {
+                    htmx.ajax('GET', window.location.href, {target: '#toolbar-stats', select: '#toolbar-stats', swap: 'outerHTML'});
+                }
             } else if (data.step === 'error') {
                 stopPolling();
                 resetSyncingUI();
@@ -165,7 +171,14 @@
                 /* Not running, not done/error — just stop polling */
                 stopPolling();
             }
-        }).catch(function() {});
+        }).catch(function() {
+            pollFailCount++;
+            if (pollFailCount >= 3) {
+                stopPolling();
+                resetSyncingUI();
+                setSyncInfo('Lost connection to server', 'sync-info sync-error-text');
+            }
+        });
     }
 
     function startSync() {
@@ -178,7 +191,15 @@
                 'X-CSRFToken': token ? token.content : '',
                 'Content-Type': 'application/json'
             }
-        }).then(function(r) { return r.json(); }).then(function(data) {
+        }).then(function(r) {
+            if (r.status === 429) {
+                resetSyncingUI();
+                setSyncInfo('Too many requests — wait a moment', 'sync-info sync-error-text');
+                return;
+            }
+            return r.json();
+        }).then(function(data) {
+            if (!data) return;
             if (data.status === 'started' || data.status === 'already_running') {
                 startPolling();
             }
@@ -197,6 +218,7 @@
                 startPolling();
             } else if (data.step === 'done' && data.finished_at) {
                 lastHandledFinish = data.finished_at;
+                setSyncInfoSuccess(data.new_emails || 0);
             }
         }).catch(function() {});
     })();

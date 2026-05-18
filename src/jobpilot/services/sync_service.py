@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SCRAPE_DELAY_SECONDS = 2
+_TITLE_DISPLAY_LEN = 60
+_TITLE_LOG_LEN = 80
 
 
 @dataclass
@@ -46,19 +48,7 @@ class SyncService:
 
     def run(self) -> SyncResult:
         """Execute full sync: fetch, classify, parse, score, scrape."""
-        from jobpilot.gmail.auth import GmailAuth
-        from jobpilot.gmail.client import GmailClient
-        from jobpilot.gmail.fetcher import fetch_new_emails
-
-        sync_state.update("fetching", "Fetching emails from Gmail…")
-        auth = GmailAuth(settings.gmail_credentials_path, settings.gmail_token_path)
-        creds = auth.get_credentials()
-
-        sync_days = int(self.repo.get_setting("sync_days", "7"))
-        since = datetime.now() - timedelta(days=sync_days)
-        client = GmailClient(creds)
-        new_emails = fetch_new_emails(client, self.repo, since=since)
-        logger.info("[Sync] Fetched %d new emails", new_emails)
+        new_emails = self._fetch_emails()
 
         sync_state.update("classifying", "Classifying emails…")
         self.classification.classify_unprocessed()
@@ -68,15 +58,7 @@ class SyncService:
         self.classification.parse_existing_digests()
         logger.info("[Sync] Digest parsing complete")
 
-        arbeitnow_count = 0
-        try:
-            sync_state.update("fetching_arbeitnow", "Fetching ArbeitNow jobs…")
-            from jobpilot.scraper.arbeitnow import ArbeitNowClient
-            arbeitnow = ArbeitNowClient(self.repo)
-            arbeitnow_count = arbeitnow.fetch_and_store()
-            logger.info("[Sync] ArbeitNow: fetched %d jobs", arbeitnow_count)
-        except (requests.RequestException, ValueError, sqlite3.OperationalError):
-            logger.exception("[Sync] ArbeitNow fetch failed")
+        arbeitnow_count = self._fetch_arbeitnow()
 
         sync_state.update("scoring", "Scoring scraped jobs…")
         self.classification.score_pending_jobs()
@@ -89,6 +71,35 @@ class SyncService:
             new_emails, arbeitnow_count,
         )
         return SyncResult(new_emails=new_emails, arbeitnow_jobs=arbeitnow_count)
+
+    def _fetch_emails(self) -> int:
+        """Fetch new emails from Gmail."""
+        from jobpilot.gmail.auth import GmailAuth
+        from jobpilot.gmail.client import GmailClient
+        from jobpilot.gmail.fetcher import fetch_new_emails
+
+        sync_state.update("fetching", "Fetching emails from Gmail…")
+        auth = GmailAuth(settings.gmail_credentials_path, settings.gmail_token_path)
+        creds = auth.get_credentials()
+        sync_days = int(self.repo.get_setting("sync_days", "7"))
+        since = datetime.now() - timedelta(days=sync_days)
+        client = GmailClient(creds)
+        new_emails = fetch_new_emails(client, self.repo, since=since)
+        logger.info("[Sync] Fetched %d new emails", new_emails)
+        return new_emails
+
+    def _fetch_arbeitnow(self) -> int:
+        """Fetch jobs from ArbeitNow API."""
+        try:
+            sync_state.update("fetching_arbeitnow", "Fetching ArbeitNow jobs…")
+            from jobpilot.scraper.arbeitnow import ArbeitNowClient
+            arbeitnow = ArbeitNowClient(self.repo)
+            count = arbeitnow.fetch_and_store()
+            logger.info("[Sync] ArbeitNow: fetched %d jobs", count)
+            return count
+        except (requests.RequestException, ValueError, sqlite3.OperationalError):
+            logger.exception("[Sync] ArbeitNow fetch failed")
+            return 0
 
     def _scrape_job_descriptions(self) -> None:
         """Scrape descriptions for LinkedIn and Glassdoor jobs."""
@@ -125,8 +136,11 @@ class SyncService:
 
         try:
             for i, job in enumerate(jobs, 1):
-                sync_state.update("scraping", job.title[:60], i, len(jobs))
-                logger.info("[Sync] [Scrape %d/%d] %s — %s", i, len(jobs), job.title, job.url[:80])
+                sync_state.update("scraping", job.title[:_TITLE_DISPLAY_LEN], i, len(jobs))
+                logger.info(
+                    "[Sync] [Scrape %d/%d] %s — %s",
+                    i, len(jobs), job.title[:_TITLE_LOG_LEN], job.url[:_TITLE_LOG_LEN],
+                )
                 desc, browser_scraper = self._scrape_single_job(
                     job, scraper, browser_scraper, scorer, config,
                 )
