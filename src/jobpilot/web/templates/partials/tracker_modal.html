@@ -68,6 +68,9 @@
                     <input type="text" value="{{ app.location or '' }}"
                            onblur="patchApp({{ app.id }}, 'location', this.value)">
                 </label>
+                {% if app.remote %}
+                <span class="tracker-remote-tag">Remote</span>
+                {% endif %}
                 <label>Salary Range
                     <input type="text" value="{{ app.salary_range or '' }}"
                            onblur="patchApp({{ app.id }}, 'salary_range', this.value)">

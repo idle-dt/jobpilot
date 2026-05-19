@@ -93,6 +93,14 @@ class EmailRepository:
         )
         self.conn.commit()
 
+    def update_email_not_job_related(self, email_id: str) -> None:
+        """Mark an email as not job-related and processed."""
+        self.conn.execute(
+            "UPDATE emails SET is_job_related = FALSE, processed = TRUE WHERE id = ?",
+            (email_id,),
+        )
+        self.conn.commit()
+
     def get_unprocessed_emails(self) -> list[dict]:
         """Get emails that haven't been processed yet (id, subject, body_text)."""
         rows = self.conn.execute(

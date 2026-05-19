@@ -7,7 +7,7 @@
            onclick="event.preventDefault()">{{ app.role_title }}</a>
     </td>
     <td>{{ app.company }}</td>
-    <td class="tracker-muted">{{ app.location or '' }}</td>
+    <td class="tracker-muted">{{ app.location or '' }}{% if app.remote %} / Remote{% endif %}</td>
     <td>{% include "partials/tracker_status_badge.html" %}</td>
     <td class="tracker-muted">{{ app.platform or '' }}</td>
     <td class="tracker-muted">{% if app.applied_at %}{{ app.applied_at[:10] }}{% endif %}</td>

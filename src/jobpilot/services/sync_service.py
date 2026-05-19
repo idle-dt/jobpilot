@@ -66,6 +66,8 @@ class SyncService:
 
         self._scrape_job_descriptions()
 
+        self.repo.set_setting("last_sync_time", datetime.now().isoformat())
+
         logger.info(
             "[Sync] Pipeline complete: %d emails, %d arbeitnow jobs",
             new_emails, arbeitnow_count,

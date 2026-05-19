@@ -79,6 +79,9 @@ class Repository:
     def get_all_processed_emails(self) -> list[dict]:
         return self.emails.get_all_processed_emails()
 
+    def update_email_not_job_related(self, email_id: str) -> None:
+        return self.emails.update_email_not_job_related(email_id)
+
     def _row_to_email(self, row) -> Email:
         return self.emails._row_to_email(row)
 

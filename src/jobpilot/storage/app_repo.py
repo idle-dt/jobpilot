@@ -26,13 +26,14 @@ class ApplicationRepository:
         """Insert a new application. Returns the new ID."""
         cursor = self.conn.execute(
             """INSERT INTO applications
-            (email_id, scraped_job_id, company, role_title, location, salary_range,
-             job_url, platform, status, contact_name, contact_email, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (email_id, scraped_job_id, company, role_title, location, remote,
+             salary_range, job_url, platform, status, contact_name, contact_email, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 app.email_id, app.scraped_job_id, app.company, app.role_title,
-                app.location, app.salary_range, app.job_url, app.platform,
-                app.status, app.contact_name, app.contact_email, app.notes,
+                app.location, app.remote, app.salary_range, app.job_url,
+                app.platform, app.status, app.contact_name, app.contact_email,
+                app.notes,
             ),
         )
         self.conn.commit()
@@ -145,6 +146,7 @@ class ApplicationRepository:
             id=row["id"], company=row["company"], role_title=row["role_title"],
             status=row["status"], email_id=row["email_id"],
             scraped_job_id=row["scraped_job_id"], location=row["location"],
+            remote=bool(row["remote"]),
             salary_range=row["salary_range"], job_url=row["job_url"],
             platform=row["platform"], applied_at=row["applied_at"],
             last_status_change=row["last_status_change"],

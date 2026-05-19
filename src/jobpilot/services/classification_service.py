@@ -2,10 +2,29 @@
 
 import json
 import logging
+import re
 
 from jobpilot.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
+
+_LINKEDIN_NON_JOB_SUBJECTS = [
+    re.compile(r"wants? to connect", re.IGNORECASE),
+    re.compile(r"accepted your invitation", re.IGNORECASE),
+    re.compile(r"congratulat", re.IGNORECASE),
+    re.compile(r"endorsed you", re.IGNORECASE),
+    re.compile(r"viewed your profile", re.IGNORECASE),
+    re.compile(r"new message from", re.IGNORECASE),
+    re.compile(r"is celebrating", re.IGNORECASE),
+]
+
+
+def _is_non_job_linkedin(row: dict) -> bool:
+    """Return True if the email is a LinkedIn non-job notification."""
+    if row.get("platform") != "linkedin":
+        return False
+    subject = row.get("subject", "")
+    return any(pat.search(subject) for pat in _LINKEDIN_NON_JOB_SUBJECTS)
 
 
 class ClassificationService:
@@ -25,6 +44,10 @@ class ClassificationService:
         rows = self.repo.get_unprocessed_emails()
 
         for row in rows:
+            if _is_non_job_linkedin(row):
+                self.repo.update_email_not_job_related(row["id"])
+                continue
+
             text = row["body_text"] or ""
             result = scorer.score(row["subject"], text)
 
@@ -82,13 +105,21 @@ class ClassificationService:
                 continue
 
             extracted_jobs = parse_digest(email)
+            any_inserted = False
+            first_url = None
             for job in extracted_jobs:
-                self.repo.insert_scraped_job(job)
+                if first_url is None:
+                    first_url = job.url
+                if self.repo.insert_scraped_job(job):
+                    any_inserted = True
 
             if not extracted_jobs:
                 origin_url = extract_single_job_url(email.body_text or "", email.platform)
                 if origin_url:
                     self.repo.update_email_origin_url(email.id, origin_url)
+            elif not any_inserted and first_url:
+                # All jobs were duplicates — link to first URL to prevent orphan
+                self.repo.update_email_origin_url(email.id, first_url)
 
     def score_pending_jobs(self) -> None:
         """Score scraped jobs that are still pending classification."""
