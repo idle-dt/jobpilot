@@ -30,12 +30,19 @@ logger = logging.getLogger(__name__)
 # - max_iter=1000/2000: ensure convergence on small datasets
 # - random_state=42: reproducible results across runs
 ALGORITHMS = {
-    "LR": lambda: LogisticRegression(max_iter=1000, random_state=42),
-    "RF": lambda: RandomForestClassifier(n_estimators=100, random_state=42),
+    "LR": lambda: LogisticRegression(
+        max_iter=1000, random_state=42, class_weight="balanced",
+    ),
+    "RF": lambda: RandomForestClassifier(
+        n_estimators=100, random_state=42, class_weight="balanced",
+    ),
+    # GBC: no class_weight support; boosting partially mitigates imbalance
     "GBC": lambda: CalibratedClassifierCV(
         GradientBoostingClassifier(n_estimators=100, random_state=42),
     ),
-    "SVM": lambda: CalibratedClassifierCV(LinearSVC(max_iter=2000, random_state=42)),
+    "SVM": lambda: CalibratedClassifierCV(
+        LinearSVC(max_iter=2000, random_state=42, class_weight="balanced"),
+    ),
 }
 
 # Progressive feature tiers for the noise model only.

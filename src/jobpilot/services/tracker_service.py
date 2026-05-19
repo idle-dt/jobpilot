@@ -114,6 +114,7 @@ class TrackerService:
             status="saved",
             scraped_job_id=job.id,
             location=job.location,
+            remote=job.remote,
             salary_range=job.salary,
             job_url=job.url if job.url.startswith(("http://", "https://")) else None,
             platform=job.source,

@@ -22,7 +22,7 @@ JOB_URL_PATTERNS = [
 _ANY_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
 
 # LinkedIn-specific patterns
-_LINKEDIN_SEPARATOR = re.compile(r"\n-{3,}\n")
+_LINKEDIN_SEPARATOR = re.compile(r"\n\s*-{3,}\s*\n")
 _LINKEDIN_VIEW_JOB = re.compile(
     r"(?:View job|Se jobb|Visa jobb):\s*(https?://[^\s]+)", re.IGNORECASE
 )

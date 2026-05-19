@@ -219,6 +219,18 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_SQL)
     conn.executescript(MIGRATION_PREFS_SQL)
 
+    # Add remote column to applications
+    app_cols = {row[1] for row in conn.execute("PRAGMA table_info(applications)").fetchall()}
+    if "remote" not in app_cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN remote BOOLEAN DEFAULT FALSE")
+        conn.execute(
+            """UPDATE applications SET remote = (
+                SELECT sj.remote FROM scraped_jobs sj
+                WHERE sj.id = applications.scraped_job_id
+            ) WHERE scraped_job_id IS NOT NULL"""
+        )
+        conn.commit()
+
     # One-time cleanup for browser scraper migration
     try:
         ran = conn.execute(

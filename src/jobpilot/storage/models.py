@@ -150,6 +150,7 @@ class Application:
     email_id: str | None = None
     scraped_job_id: int | None = None
     location: str | None = None
+    remote: bool = False
     salary_range: str | None = None
     job_url: str | None = None
     platform: str | None = None
