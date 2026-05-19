@@ -7,7 +7,7 @@ import logging
 import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -66,7 +66,7 @@ class SyncService:
 
         self._scrape_job_descriptions()
 
-        self.repo.set_setting("last_sync_time", datetime.now().isoformat())
+        self.repo.set_setting("last_sync_time", datetime.now(timezone.utc).isoformat())
 
         logger.info(
             "[Sync] Pipeline complete: %d emails, %d arbeitnow jobs",

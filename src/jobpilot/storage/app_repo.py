@@ -6,9 +6,9 @@ import sqlite3
 from jobpilot.storage.models import Application, ApplicationStatusHistory
 
 _UPDATABLE_COLUMNS = frozenset({
-    "company", "role_title", "location", "salary_range", "job_url", "platform",
-    "notes", "contact_name", "contact_email", "offer_salary", "offer_currency",
-    "offer_equity", "offer_relocation_package", "offer_notes",
+    "company", "role_title", "location", "remote", "salary_range", "job_url",
+    "platform", "notes", "contact_name", "contact_email", "offer_salary",
+    "offer_currency", "offer_equity", "offer_relocation_package", "offer_notes",
 })
 
 # Safety: column names are validated against _UPDATABLE_COLUMNS AND this regex

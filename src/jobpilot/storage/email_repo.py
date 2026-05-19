@@ -102,9 +102,9 @@ class EmailRepository:
         self.conn.commit()
 
     def get_unprocessed_emails(self) -> list[dict]:
-        """Get emails that haven't been processed yet (id, subject, body_text)."""
+        """Get unprocessed emails (id, subject, body_text, platform)."""
         rows = self.conn.execute(
-            "SELECT id, subject, body_text FROM emails WHERE processed = FALSE"
+            "SELECT id, subject, body_text, platform FROM emails WHERE processed = FALSE"
         ).fetchall()
         return [dict(r) for r in rows]
 

@@ -64,7 +64,7 @@ class ClassificationService:
                         if pred_data.get("is_active"):
                             ml_score = pred_data.get("probability")
                             break
-            except Exception:
+            except (ValueError, KeyError, RuntimeError, FileNotFoundError):
                 logger.exception("ML noise prediction failed for %s", row["id"])
 
             self.repo.update_email_scores(
@@ -152,7 +152,7 @@ class ClassificationService:
                         if pred_data.get("is_active"):
                             ml_score = pred_data.get("probability")
                             break
-            except Exception:
+            except (ValueError, KeyError, RuntimeError, FileNotFoundError):
                 logger.exception("ML scoring prediction failed for job %d", row["id"])
 
             signals = extract_matched_keywords(body, config, subject=row["title"])

@@ -50,7 +50,8 @@ class StatsRepository:
             "SELECT value FROM settings WHERE key = ?", ("last_sync_time",)
         ).fetchone()
         if row and row["value"]:
-            return datetime.fromisoformat(row["value"])
+            # Strip tzinfo to stay consistent with naive received_at timestamps
+            return datetime.fromisoformat(row["value"]).replace(tzinfo=None)
         # Fallback: most recent email received_at (pre-fix data)
         row = self.conn.execute(
             "SELECT MAX(received_at) as last_sync FROM emails"

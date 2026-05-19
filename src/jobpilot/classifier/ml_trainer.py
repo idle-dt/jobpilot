@@ -36,6 +36,7 @@ ALGORITHMS = {
     "RF": lambda: RandomForestClassifier(
         n_estimators=100, random_state=42, class_weight="balanced",
     ),
+    # GBC: no class_weight support; boosting partially mitigates imbalance
     "GBC": lambda: CalibratedClassifierCV(
         GradientBoostingClassifier(n_estimators=100, random_state=42),
     ),
