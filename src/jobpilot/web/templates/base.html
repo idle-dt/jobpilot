@@ -60,8 +60,19 @@
         localStorage.setItem('theme', next);
     }
 
-    let syncStepTimer = null;
-    let progressPollTimer = null;
+    /* --- Sync pipeline polling --- */
+    var STEP_LABELS = {
+        'starting': 'Starting sync…',
+        'fetching': 'Fetching emails…',
+        'classifying': 'Classifying…',
+        'parsing': 'Parsing digests…',
+        'fetching_arbeitnow': 'Fetching job boards…',
+        'scoring': 'Scoring jobs…',
+        'scraping': 'Scraping…'
+    };
+    var POLL_INTERVAL_MS = 3000;
+    var syncPollTimer = null;
+    var lastHandledFinish = null;
 
     function setSyncInfo(text, className) {
         var info = document.getElementById('sync-info');
@@ -85,74 +96,132 @@
         }
     }
 
-    function pollScrapeProgress() {
-        fetch('/api/scrape/progress').then(r => r.json()).then(data => {
-            if (data.total > 0) {
-                var pct = Math.round((data.current / data.total) * 100);
-                setSyncInfo('Scraping ' + data.current + '/' + data.total + '…', 'sync-info syncing');
-                var fill = document.getElementById('progress-fill');
-                if (fill) fill.style.width = pct + '%';
-            }
-        }).catch(() => {});
-    }
-
-    document.body.addEventListener('htmx:beforeRequest', (e) => {
-        if (e.detail.pathInfo.requestPath !== '/api/sync') return;
+    function showSyncingUI() {
         var dot = document.getElementById('sync-dot');
         var btn = document.getElementById('sync-btn');
         var progress = document.getElementById('sync-progress');
-        var fill = document.getElementById('progress-fill');
-        if (!dot) return;
-
-        /* Switch to syncing state */
-        dot.classList.add('syncing');
+        if (dot) dot.classList.add('syncing');
         if (btn) btn.style.visibility = 'hidden';
         if (progress) progress.classList.add('active');
+    }
 
-        setSyncInfo('Syncing…', 'sync-info syncing');
-        if (fill) fill.style.width = '5%';
-
-        /* Poll for real scrape progress every 3 seconds */
-        progressPollTimer = setInterval(pollScrapeProgress, 3000);
-    });
-
-    document.body.addEventListener('htmx:afterRequest', (e) => {
-        if (e.detail.pathInfo.requestPath !== '/api/sync') return;
-        if (syncStepTimer) { clearInterval(syncStepTimer); syncStepTimer = null; }
-        if (progressPollTimer) { clearInterval(progressPollTimer); progressPollTimer = null; }
-
+    function resetSyncingUI() {
         var dot = document.getElementById('sync-dot');
         var btn = document.getElementById('sync-btn');
         var progress = document.getElementById('sync-progress');
         var fill = document.getElementById('progress-fill');
-
-        /* Reset syncing visuals */
-        if (dot) dot.classList.remove('syncing');
+        if (dot) { dot.classList.remove('syncing'); dot.style.background = ''; }
+        if (btn) btn.style.visibility = '';
         if (progress) progress.classList.remove('active');
         if (fill) fill.style.width = '0%';
-        if (btn) btn.style.visibility = '';
+    }
 
-        if (e.detail.successful) {
-            try {
-                var data = JSON.parse(e.detail.xhr.responseText);
-                if (data.status === 'ok') {
-                    setSyncInfoSuccess(data.new_emails || 0);
-                    /* Refresh the review queue and toolbar stats */
-                    htmx.ajax('GET', window.location.href, {target: '#review-queue', select: '#review-queue', swap: 'outerHTML'});
-                    htmx.ajax('GET', window.location.href, {target: '#toolbar-stats', select: '#toolbar-stats', swap: 'outerHTML'});
-                } else if (data.status === 'auth_required') {
-                    window.location.href = '/auth/login';
+    function stopPolling() {
+        if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+    }
+
+    function startPolling() {
+        stopPolling();
+        syncPollTimer = setInterval(pollSyncStatus, POLL_INTERVAL_MS);
+    }
+
+    var pollFailCount = 0;
+
+    function pollSyncStatus() {
+        fetch('/api/sync/status').then(function(r) { return r.json(); }).then(function(data) {
+            pollFailCount = 0;
+            var fill = document.getElementById('progress-fill');
+            if (data.running) {
+                var label = STEP_LABELS[data.step] || 'Syncing…';
+                if (data.step === 'scraping' && data.total > 0) {
+                    var pct = Math.round((data.current / data.total) * 100);
+                    setSyncInfo('Scraping ' + data.current + '/' + data.total + '…', 'sync-info syncing');
+                    if (fill) fill.style.width = pct + '%';
+                } else {
+                    setSyncInfo(label, 'sync-info syncing');
+                    if (fill) fill.style.width = '0%';
                 }
-            } catch (_) {
-                setSyncInfo('Sync failed', 'sync-info sync-error-text');
+                return;
             }
-        } else if (e.detail.xhr && e.detail.xhr.status === 401) {
-            window.location.href = '/auth/login';
-        } else {
+
+            /* Not running — check terminal states */
+            if (data.step === 'done' && data.finished_at && data.finished_at !== lastHandledFinish) {
+                lastHandledFinish = data.finished_at;
+                stopPolling();
+                resetSyncingUI();
+                setSyncInfoSuccess(data.new_emails || 0);
+                /* Refresh review queue and toolbar stats once (inbox only) */
+                if (document.getElementById('review-queue')) {
+                    htmx.ajax('GET', window.location.href, {target: '#review-queue', select: '#review-queue', swap: 'outerHTML'});
+                }
+                if (document.getElementById('toolbar-stats')) {
+                    htmx.ajax('GET', window.location.href, {target: '#toolbar-stats', select: '#toolbar-stats', swap: 'outerHTML'});
+                }
+            } else if (data.step === 'error') {
+                stopPolling();
+                resetSyncingUI();
+                if (data.error === 'auth_required') {
+                    window.location.href = '/auth/login';
+                } else {
+                    setSyncInfo('Sync failed — check server logs', 'sync-info sync-error-text');
+                    var dot = document.getElementById('sync-dot');
+                    if (dot) dot.style.background = 'var(--danger)';
+                }
+            } else {
+                /* Not running, not done/error — just stop polling */
+                stopPolling();
+            }
+        }).catch(function() {
+            pollFailCount++;
+            if (pollFailCount >= 3) {
+                stopPolling();
+                resetSyncingUI();
+                setSyncInfo('Lost connection to server', 'sync-info sync-error-text');
+            }
+        });
+    }
+
+    function startSync() {
+        var token = document.querySelector('meta[name="csrf-token"]');
+        showSyncingUI();
+        setSyncInfo('Starting sync…', 'sync-info syncing');
+        fetch('/api/sync', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': token ? token.content : '',
+                'Content-Type': 'application/json'
+            }
+        }).then(function(r) {
+            if (r.status === 429) {
+                resetSyncingUI();
+                setSyncInfo('Too many requests — wait a moment', 'sync-info sync-error-text');
+                return;
+            }
+            return r.json();
+        }).then(function(data) {
+            if (!data) return;
+            if (data.status === 'started' || data.status === 'already_running') {
+                startPolling();
+            }
+        }).catch(function() {
+            resetSyncingUI();
             setSyncInfo('Sync failed', 'sync-info sync-error-text');
-            if (dot) dot.style.background = 'var(--danger)';
-        }
-    });
+        });
+    }
+
+    /* On page load: check if a sync is already running */
+    (function() {
+        fetch('/api/sync/status').then(function(r) { return r.json(); }).then(function(data) {
+            if (data.running) {
+                showSyncingUI();
+                setSyncInfo(STEP_LABELS[data.step] || 'Syncing…', 'sync-info syncing');
+                startPolling();
+            } else if (data.step === 'done' && data.finished_at) {
+                lastHandledFinish = data.finished_at;
+                setSyncInfoSuccess(data.new_emails || 0);
+            }
+        }).catch(function() {});
+    })();
     </script>
     <script src="{{ url_for('static', filename='tracker.js') }}"></script>
     {% block scripts %}{% endblock %}

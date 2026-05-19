@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -18,6 +17,7 @@ from jobpilot.config import settings
 from jobpilot.scraper.constants import SCRAPABLE_DOMAINS, STRATEGY_REQUESTS_THEN_BROWSER
 from jobpilot.scraper.job_page import SCRAPE_EXPIRED, JobPageScraper
 from jobpilot.services.classification_service import ClassificationService
+from jobpilot.services.sync_state import sync_state
 from jobpilot.storage.models import ScrapedJob
 from jobpilot.storage.repository import Repository
 
@@ -28,39 +28,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SCRAPE_DELAY_SECONDS = 2
-
-
-@dataclass
-class ScrapeProgress:
-    """Thread-safe scrape progress tracker."""
-
-    current: int = 0
-    total: int = 0
-    step: str = ""
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-
-    def update(self, current: int, total: int, step: str) -> None:
-        """Update progress atomically."""
-        with self._lock:
-            self.current = current
-            self.total = total
-            self.step = step
-
-    def to_dict(self) -> dict:
-        """Return progress as a dict for JSON serialization."""
-        with self._lock:
-            return {"current": self.current, "total": self.total, "step": self.step}
-
-    def reset(self) -> None:
-        """Reset progress."""
-        with self._lock:
-            self.current = 0
-            self.total = 0
-            self.step = ""
-
-
-# Global progress instance — shared between sync service and routes
-scrape_progress = ScrapeProgress()
+_TITLE_DISPLAY_LEN = 60
+_TITLE_LOG_LEN = 80
 
 
 @dataclass
@@ -79,33 +48,58 @@ class SyncService:
 
     def run(self) -> SyncResult:
         """Execute full sync: fetch, classify, parse, score, scrape."""
+        new_emails = self._fetch_emails()
+
+        sync_state.update("classifying", "Classifying emails…")
+        self.classification.classify_unprocessed()
+        logger.info("[Sync] Classification complete")
+
+        sync_state.update("parsing", "Parsing digests…")
+        self.classification.parse_existing_digests()
+        logger.info("[Sync] Digest parsing complete")
+
+        arbeitnow_count = self._fetch_arbeitnow()
+
+        sync_state.update("scoring", "Scoring scraped jobs…")
+        self.classification.score_pending_jobs()
+        logger.info("[Sync] Scoring complete")
+
+        self._scrape_job_descriptions()
+
+        logger.info(
+            "[Sync] Pipeline complete: %d emails, %d arbeitnow jobs",
+            new_emails, arbeitnow_count,
+        )
+        return SyncResult(new_emails=new_emails, arbeitnow_jobs=arbeitnow_count)
+
+    def _fetch_emails(self) -> int:
+        """Fetch new emails from Gmail."""
         from jobpilot.gmail.auth import GmailAuth
         from jobpilot.gmail.client import GmailClient
         from jobpilot.gmail.fetcher import fetch_new_emails
 
+        sync_state.update("fetching", "Fetching emails from Gmail…")
         auth = GmailAuth(settings.gmail_credentials_path, settings.gmail_token_path)
         creds = auth.get_credentials()
-
         sync_days = int(self.repo.get_setting("sync_days", "7"))
         since = datetime.now() - timedelta(days=sync_days)
         client = GmailClient(creds)
         new_emails = fetch_new_emails(client, self.repo, since=since)
+        logger.info("[Sync] Fetched %d new emails", new_emails)
+        return new_emails
 
-        self.classification.classify_unprocessed()
-        self.classification.parse_existing_digests()
-
-        arbeitnow_count = 0
+    def _fetch_arbeitnow(self) -> int:
+        """Fetch jobs from ArbeitNow API."""
         try:
+            sync_state.update("fetching_arbeitnow", "Fetching ArbeitNow jobs…")
             from jobpilot.scraper.arbeitnow import ArbeitNowClient
             arbeitnow = ArbeitNowClient(self.repo)
-            arbeitnow_count = arbeitnow.fetch_and_store()
+            count = arbeitnow.fetch_and_store()
+            logger.info("[Sync] ArbeitNow: fetched %d jobs", count)
+            return count
         except (requests.RequestException, ValueError, sqlite3.OperationalError):
-            logger.exception("ArbeitNow fetch failed")
-
-        self.classification.score_pending_jobs()
-        self._scrape_job_descriptions()
-
-        return SyncResult(new_emails=new_emails, arbeitnow_jobs=arbeitnow_count)
+            logger.exception("[Sync] ArbeitNow fetch failed")
+            return 0
 
     def _scrape_job_descriptions(self) -> None:
         """Scrape descriptions for LinkedIn and Glassdoor jobs."""
@@ -119,7 +113,7 @@ class SyncService:
         scraper = JobPageScraper()
         scorer = self._build_scorer(config)
         success = self._run_scrape_batch(jobs, scraper, scorer, config)
-        logger.info("[Scrape] Batch complete: %d/%d descriptions fetched", success, len(jobs))
+        logger.info("[Sync] Scraping complete: %d/%d descriptions fetched", success, len(jobs))
 
     def _build_scorer(self, config: SignalConfig) -> RuleBasedScorer:
         """Create a RuleBasedScorer with the current score threshold."""
@@ -137,13 +131,16 @@ class SyncService:
         """Run scrape loop over jobs. Returns success count."""
         browser_scraper: BrowserScraper | None = None
         success_count = 0
-        logger.info("[Scrape] Scraping %d jobs...", len(jobs))
-        scrape_progress.update(0, len(jobs), "starting")
+        logger.info("[Sync] Scraping %d jobs…", len(jobs))
+        sync_state.update("scraping", "Starting scrape…", 0, len(jobs))
 
         try:
             for i, job in enumerate(jobs, 1):
-                scrape_progress.update(i, len(jobs), job.title[:50])
-                logger.info("[Scrape] [%d/%d] %s — %s", i, len(jobs), job.title, job.url[:80])
+                sync_state.update("scraping", job.title[:_TITLE_DISPLAY_LEN], i, len(jobs))
+                logger.info(
+                    "[Sync] [Scrape %d/%d] %s — %s",
+                    i, len(jobs), job.title[:_TITLE_LOG_LEN], job.url[:_TITLE_LOG_LEN],
+                )
                 desc, browser_scraper = self._scrape_single_job(
                     job, scraper, browser_scraper, scorer, config,
                 )
@@ -153,7 +150,6 @@ class SyncService:
         finally:
             if browser_scraper:
                 browser_scraper.close()
-            scrape_progress.reset()
         return success_count
 
     def _scrape_single_job(
@@ -167,7 +163,7 @@ class SyncService:
         """Scrape a single job, falling back to browser if needed."""
         domain = _get_scrapable_domain(job.url)
         if domain is None:
-            logger.warning("[Scrape] %s — unsupported domain, skipping: %s", job.title, job.url)
+            logger.warning("[Sync] %s — unsupported domain, skipping: %s", job.title, job.url)
             self.repo.mark_scrape_attempted(job.id)
             return None, browser_scraper
 
@@ -175,7 +171,7 @@ class SyncService:
         description = scraper.scrape(job.url)
 
         if description is None and strategy == STRATEGY_REQUESTS_THEN_BROWSER:
-            logger.info("[Scrape] %s — requests failed, falling back to browser", job.title)
+            logger.info("[Sync] %s — requests failed, falling back to browser", job.title)
             if browser_scraper is None:
                 from jobpilot.scraper.browser import BrowserScraper
                 browser_scraper = BrowserScraper()
@@ -191,10 +187,10 @@ class SyncService:
         if description:
             self._save_description(job, description, scorer, config)
             logger.info(
-                "[Scrape] %s — description saved (%d chars)", job.title, len(description),
+                "[Sync] %s — description saved (%d chars)", job.title, len(description),
             )
         else:
-            logger.info("[Scrape] %s — all methods failed, marking as attempted", job.title)
+            logger.info("[Sync] %s — all methods failed, marking as attempted", job.title)
         self.repo.mark_scrape_attempted(job.id)
         return description, browser_scraper
 

@@ -39,11 +39,11 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = settings.secret_key
     app.debug = settings.debug
 
-    # File logging for scrape operations
+    # File logging for sync pipeline
     log_dir = Path.home() / ".jobpilot"
     log_dir.mkdir(parents=True, exist_ok=True)
     fh = logging.handlers.RotatingFileHandler(
-        log_dir / "scrape.log", maxBytes=2_000_000, backupCount=3,
+        log_dir / "jobpilot.log", maxBytes=2_000_000, backupCount=3,
     )
     fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logging.getLogger("jobpilot").addHandler(fh)
@@ -73,9 +73,11 @@ def create_app() -> Flask:
     # Register routes
     from jobpilot.web.auth_routes import bp_auth
     from jobpilot.web.routes import bp
+    from jobpilot.web.sync_routes import bp_sync
     from jobpilot.web.tracker_routes import bp_tracker
     app.register_blueprint(bp)
     app.register_blueprint(bp_auth)
+    app.register_blueprint(bp_sync)
     app.register_blueprint(bp_tracker)
 
     # Auth gate: redirect unauthenticated users to login

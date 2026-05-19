@@ -3,10 +3,8 @@
 import json as json_module
 import logging
 import re
-import sqlite3
 from datetime import datetime
 
-import requests
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from jobpilot.config import settings
@@ -418,62 +416,6 @@ def update_arbeitnow():
     repo.set_setting("arbeitnow_visa_only", visa_only)
     return jsonify({"status": "ok"})
 
-
-@bp.route("/api/sync", methods=["POST"])
-@limiter.limit("2 per minute")
-def sync_emails():
-    """Fetch new emails from Gmail and run classification."""
-    from jobpilot.services.sync_service import SyncService
-
-    repo = _repo()
-
-    try:
-        result = SyncService(repo).run()
-        return jsonify({
-            "status": "ok", "new_emails": result.new_emails,
-            "arbeitnow_jobs": result.arbeitnow_jobs,
-        })
-    except (ValueError, FileNotFoundError, OSError):
-        logger.exception("Auth failed during sync")
-        return jsonify({"status": "auth_required"}), 401
-    except (requests.RequestException, sqlite3.OperationalError, RuntimeError):
-        logger.exception("Sync failed")
-        return jsonify({"status": "error", "message": "Sync failed, check server logs"}), 500
-
-
-@bp.route("/api/scrape/progress")
-def scrape_progress_api():
-    """Return current scrape progress for UI polling."""
-    from jobpilot.services.sync_service import scrape_progress
-    return jsonify(scrape_progress.to_dict())
-
-
-@bp.route("/api/scraper/login", methods=["POST"])
-def scraper_login():
-    """Open a visible browser for manual login to a job site."""
-    import threading
-
-    site = request.form.get("site", "").strip().lower()
-    if site not in ALLOWED_SITES:
-        return jsonify({"status": "error", "message": "Invalid site"}), 400
-
-    repo = _repo()
-
-    def _run_login(site_name: str) -> None:
-        from playwright.sync_api import Error as PlaywrightError
-
-        from jobpilot.scraper.browser import BrowserScraper
-        try:
-            scraper = BrowserScraper(headless=False)
-            scraper.login(site_name)
-            scraper.close()
-            repo.set_setting(f"browser_session_{site_name}", "1")
-            logger.info("[Scrape] browser: %s session saved", site_name)
-        except (OSError, ImportError, ValueError, PlaywrightError):
-            logger.exception("Browser login failed for %s", site_name)
-
-    threading.Thread(target=_run_login, args=(site,), daemon=True).start()
-    return jsonify({"status": "ok", "site": site})
 
 
 def _maybe_auto_retrain(repo) -> None:
