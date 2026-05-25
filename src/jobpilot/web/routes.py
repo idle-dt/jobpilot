@@ -379,14 +379,7 @@ def update_score_threshold():
 def drop_scores():
     """Reset all scores so jobs are re-classified on next sync."""
     repo = _repo()
-    cursor = repo.conn.execute(
-        "UPDATE scraped_jobs "
-        "SET score = NULL, ml_score = NULL, "
-        "classification = 'pending', matched_signals = NULL "
-        "WHERE user_label IS NULL"
-    )
-    repo.conn.commit()
-    count = cursor.rowcount
+    count = repo.jobs.drop_all_scores()
     repo.invalidate_active_models()
     return jsonify({"status": "ok", "count": count})
 

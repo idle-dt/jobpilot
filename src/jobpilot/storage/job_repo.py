@@ -5,6 +5,13 @@ from datetime import datetime
 
 from jobpilot.storage.models import ScrapedJob
 
+DROP_SCORES_SQL = (
+    "UPDATE scraped_jobs "
+    "SET score = NULL, ml_score = NULL, "
+    "classification = 'pending', matched_signals = NULL "
+    "WHERE user_label IS NULL"
+)
+
 
 class JobRepository:
     """CRUD operations for scraped jobs."""
@@ -61,6 +68,12 @@ class JobRepository:
                 (job_id,),
             )
         self.conn.commit()
+
+    def drop_all_scores(self) -> int:
+        """Reset scores on all jobs without user labels. Returns count of affected rows."""
+        cursor = self.conn.execute(DROP_SCORES_SQL)
+        self.conn.commit()
+        return cursor.rowcount
 
     def update_scraped_job_scores(
         self,

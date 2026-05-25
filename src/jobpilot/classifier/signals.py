@@ -124,6 +124,8 @@ LOCATION_PATTERNS = {
 
 # --- Job Titles ---
 
+JOB_TITLE_SECONDARY_WEIGHT = 0.4
+
 TARGET_JOB_TITLES = {
     "senior mobile engineer": {"weight": 1.0, "category": "primary"},
     "mobile team lead": {"weight": 1.0, "category": "primary"},
@@ -139,7 +141,7 @@ TARGET_JOB_TITLES = {
     "mobile developer": {"weight": 0.8, "category": "primary"},
     "mobile engineer": {"weight": 0.8, "category": "primary"},
     "cross-platform developer": {"weight": 0.7, "category": "primary"},
-    "software engineer": {"weight": 0.4, "category": "secondary"},
+    "software engineer": {"weight": JOB_TITLE_SECONDARY_WEIGHT, "category": "secondary"},
 }
 
 # --- Seniority ---

@@ -48,7 +48,8 @@ _BOILERPLATE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-# CTA / button text that digest parsers can mistake for a job title
+# CTA / button text that digest parsers can mistake for a job title.
+# All entries are lowercase — compared via stripped.lower().
 _CTA_PHRASES = frozenset({
     "learn more", "apply now", "apply", "view job", "view jobs",
     "view all jobs", "see job", "see all jobs", "see more",
@@ -61,7 +62,7 @@ _CTA_PHRASES = frozenset({
 _SENTENCE_WORDS = re.compile(r"\b(you|your|when|that|will|we'll|you'll)\b", re.IGNORECASE)
 
 # Abbreviations that legitimately end job titles with a period (e.g. "Sr.", "Jr.")
-_TITLE_ABBREV_RE = re.compile(r"\b(Sr|Jr|Inc|Ltd|Corp|Co|Dr|Mr|Mrs|Ms)\.\s*$", re.IGNORECASE)
+_TITLE_ABBREV_RE = re.compile(r"\b(Sr|Jr|Inc|Ltd|Corp|Co|Dr|Mr|Mrs|Ms)\.$", re.IGNORECASE)
 
 # Digest parsing thresholds
 MAX_BOILERPLATE_LINE_LENGTH = 80
@@ -92,7 +93,7 @@ def _is_boilerplate_line(line: str) -> bool:
         _SENTENCE_WORDS.search(stripped) or len(stripped) > MIN_SENTENCE_LINE_LENGTH
     ):
         return True
-    # Ends with period but not a known abbreviation (e.g. "Sr.")
+    # Ends with period but not a known abbreviation (e.g. "Sr.", "...Inc.")
     if stripped.endswith(".") and not _TITLE_ABBREV_RE.search(stripped):
         return True
     return False

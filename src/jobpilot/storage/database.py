@@ -3,6 +3,8 @@
 import sqlite3
 from pathlib import Path
 
+from jobpilot.storage.job_repo import DROP_SCORES_SQL
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS emails (
     id TEXT PRIMARY KEY,
@@ -263,12 +265,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             "UPDATE user_preferences SET category = 'job_title_primary' "
             "WHERE category = 'job_title'"
         )
-        conn.execute(
-            "UPDATE scraped_jobs "
-            "SET score = NULL, ml_score = NULL, "
-            "classification = 'pending', matched_signals = NULL "
-            "WHERE user_label IS NULL"
-        )
+        conn.execute(DROP_SCORES_SQL)
         conn.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("_migration_job_title_tiers", "1"),
