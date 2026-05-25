@@ -83,7 +83,7 @@ def test_job_title_exact():
 
 
 def test_job_title_weak():
-    assert score_job_title("Software Engineer") == 0.3
+    assert score_job_title("Software Engineer") == 0.4
 
 
 def test_job_title_no_match():

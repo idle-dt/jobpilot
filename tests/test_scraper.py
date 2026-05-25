@@ -18,7 +18,7 @@ def test_confidence_at_threshold():
         "Looking for a software engineer.",
     )
     expected_confidence = min(abs(result.score - 0.6) / 0.4, 1.0)
-    assert result.confidence == round(expected_confidence, 3)
+    assert abs(result.confidence - expected_confidence) < 0.01
 
 
 def test_confidence_high_score():

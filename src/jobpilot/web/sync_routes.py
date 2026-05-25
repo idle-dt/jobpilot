@@ -4,6 +4,7 @@ import logging
 import sqlite3
 import threading
 
+import google.auth.exceptions
 import requests
 from flask import Blueprint, jsonify, request
 
@@ -93,6 +94,9 @@ def _run_sync_background() -> None:
     except (ValueError, FileNotFoundError, OSError):
         logger.exception("[Sync] Auth failed")
         sync_state.fail("auth_required")
+    except google.auth.exceptions.RefreshError:
+        logger.exception("[Sync] Gmail token expired or revoked")
+        sync_state.fail("auth_expired")
     except (requests.RequestException, sqlite3.OperationalError, RuntimeError, KeyError):
         logger.exception("[Sync] Pipeline failed")
         sync_state.fail("sync_error")

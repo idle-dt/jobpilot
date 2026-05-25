@@ -43,8 +43,10 @@ def load_signal_config(repo) -> SignalConfig:
         tech_keywords[p.value] = {"weight": 0.5, "category": "secondary"}
 
     job_titles: dict[str, dict] = {}
-    for p in prefs.get("job_title", []):
+    for p in prefs.get("job_title_primary", []):
         job_titles[p.value] = {"weight": 1.0}
+    for p in prefs.get("job_title_secondary", []):
+        job_titles[p.value] = {"weight": 0.4}
 
     locations: dict[str, dict] = {}
     for p in prefs.get("location_primary", []):

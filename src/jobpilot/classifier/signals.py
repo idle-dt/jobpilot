@@ -125,21 +125,21 @@ LOCATION_PATTERNS = {
 # --- Job Titles ---
 
 TARGET_JOB_TITLES = {
-    "senior mobile engineer": {"weight": 1.0},
-    "mobile team lead": {"weight": 1.0},
-    "mobile engineering lead": {"weight": 1.0},
-    "flutter developer": {"weight": 1.0},
-    "senior flutter developer": {"weight": 1.0},
-    "flutter engineer": {"weight": 1.0},
-    "senior flutter engineer": {"weight": 1.0},
-    "flutter team lead": {"weight": 1.0},
-    "mobile lead": {"weight": 0.9},
-    "mobile engineering manager": {"weight": 0.8},
-    "head of mobile": {"weight": 0.8},
-    "mobile developer": {"weight": 0.8},
-    "mobile engineer": {"weight": 0.8},
-    "cross-platform developer": {"weight": 0.7},
-    "software engineer": {"weight": 0.3},
+    "senior mobile engineer": {"weight": 1.0, "category": "primary"},
+    "mobile team lead": {"weight": 1.0, "category": "primary"},
+    "mobile engineering lead": {"weight": 1.0, "category": "primary"},
+    "flutter developer": {"weight": 1.0, "category": "primary"},
+    "senior flutter developer": {"weight": 1.0, "category": "primary"},
+    "flutter engineer": {"weight": 1.0, "category": "primary"},
+    "senior flutter engineer": {"weight": 1.0, "category": "primary"},
+    "flutter team lead": {"weight": 1.0, "category": "primary"},
+    "mobile lead": {"weight": 0.9, "category": "primary"},
+    "mobile engineering manager": {"weight": 0.8, "category": "primary"},
+    "head of mobile": {"weight": 0.8, "category": "primary"},
+    "mobile developer": {"weight": 0.8, "category": "primary"},
+    "mobile engineer": {"weight": 0.8, "category": "primary"},
+    "cross-platform developer": {"weight": 0.7, "category": "primary"},
+    "software engineer": {"weight": 0.4, "category": "secondary"},
 }
 
 # --- Seniority ---
