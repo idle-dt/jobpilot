@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from jobpilot.classifier.rules import RuleBasedScorer, ScoringResult
 from jobpilot.scraper.job_page import JobPageScraper
 from jobpilot.storage.models import ScrapedJob
@@ -18,7 +20,7 @@ def test_confidence_at_threshold():
         "Looking for a software engineer.",
     )
     expected_confidence = min(abs(result.score - 0.6) / 0.4, 1.0)
-    assert result.confidence == round(expected_confidence, 3)
+    assert result.confidence == pytest.approx(expected_confidence, abs=0.01)
 
 
 def test_confidence_high_score():

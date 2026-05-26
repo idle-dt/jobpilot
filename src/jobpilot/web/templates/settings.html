@@ -45,7 +45,10 @@
        'Must-have skills — jobs are filtered to match at least one') }}
     {{ tag_input('tech_keyword_secondary', 'Tech Keywords — Secondary', 'Nice-to-have skills…',
        'Nice-to-have — boosts score but not required') }}
-    {{ tag_input('job_title', 'Job Titles', 'Type a job title and press Enter…') }}
+    {{ tag_input('job_title_primary', 'Job Titles — Primary', 'Direct role matches…',
+       'Exact roles you want — strongest score signal') }}
+    {{ tag_input('job_title_secondary', 'Job Titles — Secondary', 'Generic titles that might fit…',
+       'Generic titles that could be relevant — moderate score boost') }}
     {{ tag_input('seniority_wanted', 'Seniority — Wanted', 'e.g., senior, lead…') }}
     {{ tag_input('seniority_unwanted', 'Seniority — Unwanted', 'e.g., junior, intern…') }}
     {{ tag_input('location_primary', 'Locations — Primary', 'Top-priority countries/cities…',
@@ -142,6 +145,14 @@
         <small>Jobs scoring above this are classified "worth checking" (0.0–1.0).</small>
     </form>
 
+    <div class="setting-row" style="margin-top: 1rem;">
+        <button class="btn-save" hx-post="/api/settings/drop-scores" hx-swap="none"
+                hx-confirm="Reset all scores? Jobs will be re-classified on next sync."
+                id="drop-scores-btn">Drop All Scores</button>
+        <span id="drop-scores-result" class="setting-result"></span>
+    </div>
+    <small>Resets scores for all jobs without user labels. Next sync will rescore them.</small>
+
 </section>
 
 {# ── Appearance ── #}
@@ -174,13 +185,21 @@ const settingsMap = {
     '/api/settings/sync_days': 'sync-days-result',
     '/api/settings/score_threshold': 'score-threshold-result',
     '/api/settings/salary': 'salary-result',
+    '/api/settings/drop-scores': 'drop-scores-result',
 };
 document.body.addEventListener('htmx:afterRequest', (e) => {
     const resultId = settingsMap[e.detail.pathInfo.requestPath];
     if (!resultId) return;
     const result = document.getElementById(resultId);
     if (e.detail.successful) {
-        result.textContent = 'Saved!';
+        if (resultId === 'drop-scores-result') {
+            try {
+                const data = JSON.parse(e.detail.xhr.responseText);
+                result.textContent = 'Reset ' + data.count + ' jobs';
+            } catch { result.textContent = 'Done!'; }
+        } else {
+            result.textContent = 'Saved!';
+        }
         result.className = 'setting-result setting-success';
     } else {
         try {
@@ -221,9 +240,10 @@ document.querySelectorAll('.tag-input').forEach(input => {
                 ? {domain: value, active: 'true'}
                 : {category, value};
 
+            var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
             fetch(url, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken},
                 body: new URLSearchParams(params).toString(),
             }).then(resp => {
                 if (!resp.ok) throw new Error('failed');

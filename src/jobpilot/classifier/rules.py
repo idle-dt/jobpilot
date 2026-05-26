@@ -13,6 +13,7 @@ from jobpilot.classifier.features import (
     score_tech_stack,
 )
 from jobpilot.classifier.geo import expand_locations
+from jobpilot.classifier.signals import JOB_TITLE_SECONDARY_WEIGHT
 from jobpilot.config import settings
 
 FEATURE_NAMES = [
@@ -43,8 +44,10 @@ def load_signal_config(repo) -> SignalConfig:
         tech_keywords[p.value] = {"weight": 0.5, "category": "secondary"}
 
     job_titles: dict[str, dict] = {}
-    for p in prefs.get("job_title", []):
+    for p in prefs.get("job_title_primary", []):
         job_titles[p.value] = {"weight": 1.0}
+    for p in prefs.get("job_title_secondary", []):
+        job_titles[p.value] = {"weight": JOB_TITLE_SECONDARY_WEIGHT}
 
     locations: dict[str, dict] = {}
     for p in prefs.get("location_primary", []):

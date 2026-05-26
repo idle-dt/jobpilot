@@ -162,6 +162,8 @@
                 resetSyncingUI();
                 if (data.error === 'auth_required') {
                     window.location.href = '/auth/login';
+                } else if (data.error === 'auth_expired') {
+                    setSyncInfo('Gmail token expired — please re-login', 'sync-info sync-error-text');
                 } else {
                     setSyncInfo('Sync failed — check server logs', 'sync-info sync-error-text');
                     var dot = document.getElementById('sync-dot');

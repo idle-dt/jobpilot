@@ -288,7 +288,8 @@ def update_sync_days():
 
 
 ALLOWED_CATEGORIES = {
-    "tech_keyword_primary", "tech_keyword_secondary", "job_title",
+    "tech_keyword_primary", "tech_keyword_secondary",
+    "job_title_primary", "job_title_secondary",
     "seniority_wanted", "seniority_unwanted",
     "location_primary", "location_secondary", "location_negative",
     "negative_signal", "monitored_domain",
@@ -372,6 +373,15 @@ def update_score_threshold():
 
     repo.set_setting("score_threshold", str(threshold))
     return jsonify({"status": "ok", "value": threshold})
+
+
+@bp.route("/api/settings/drop-scores", methods=["POST"])
+def drop_scores():
+    """Reset all scores so jobs are re-classified on next sync."""
+    repo = _repo()
+    count = repo.jobs.drop_all_scores()
+    repo.invalidate_active_models()
+    return jsonify({"status": "ok", "count": count})
 
 
 @bp.route("/api/settings/salary", methods=["POST"])

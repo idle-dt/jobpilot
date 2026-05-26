@@ -41,14 +41,28 @@ _LINKEDIN_SKIP_LINES = re.compile(
 
 # Known boilerplate phrases that appear in LinkedIn "alert created" emails
 _BOILERPLATE_PATTERNS = re.compile(
-    r"(you'll receive notifications|match your search preferences|"
-    r"job alert has been created|new jobs are posted|"
+    r"(you'll receive notifications|match(es)? your (search )?preferences|"
+    r"job alert has been created|new jobs? (are |is )?posted|"
+    r"a new job matches|new job match|"
     r"based on your profile|jobs for you)",
     re.IGNORECASE,
 )
 
+# CTA / button text that digest parsers can mistake for a job title.
+# All entries are lowercase — compared via stripped.lower().
+_CTA_PHRASES = frozenset({
+    "learn more", "apply now", "apply", "view job", "view jobs",
+    "view all jobs", "see job", "see all jobs", "see more",
+    "read more", "click here", "sign in", "sign up", "subscribe",
+    "unsubscribe", "manage alerts", "view details", "more info",
+    "get started", "create alert", "update preferences",
+})
+
 # Words that indicate a line is a sentence, not a job title
 _SENTENCE_WORDS = re.compile(r"\b(you|your|when|that|will|we'll|you'll)\b", re.IGNORECASE)
+
+# Abbreviations that legitimately end job titles with a period (e.g. "Sr.", "Jr.")
+_TITLE_ABBREV_RE = re.compile(r"\b(Sr|Jr|Inc|Ltd|Corp|Co|Dr|Mr|Mrs|Ms)\.$", re.IGNORECASE)
 
 # Digest parsing thresholds
 MAX_BOILERPLATE_LINE_LENGTH = 80
@@ -64,11 +78,23 @@ GENERIC_URL_CONTEXT_LINES = 5
 
 def _is_boilerplate_line(line: str) -> bool:
     """Check if a line is boilerplate intro text rather than a job title."""
-    if _BOILERPLATE_PATTERNS.search(line):
+    stripped = line.strip()
+    if stripped.lower() in _CTA_PHRASES:
         return True
-    if len(line) > MAX_BOILERPLATE_LINE_LENGTH:
+    if _BOILERPLATE_PATTERNS.search(stripped):
         return True
-    if len(line) > MIN_SENTENCE_LINE_LENGTH and _SENTENCE_WORDS.search(line):
+    if len(stripped) > MAX_BOILERPLATE_LINE_LENGTH:
+        return True
+    if len(stripped) > MIN_SENTENCE_LINE_LENGTH and _SENTENCE_WORDS.search(stripped):
+        return True
+    # Sentence fragments: starts lowercase + contains sentence words or is long
+    # (allows "iOS Developer", "eBay Engineer" etc.)
+    if stripped and stripped[0].islower() and (
+        _SENTENCE_WORDS.search(stripped) or len(stripped) > MIN_SENTENCE_LINE_LENGTH
+    ):
+        return True
+    # Ends with period but not a known abbreviation (e.g. "Sr.", "...Inc.")
+    if stripped.endswith(".") and not _TITLE_ABBREV_RE.search(stripped):
         return True
     return False
 
@@ -116,7 +142,7 @@ def parse_digest(email: Email) -> list[ScrapedJob]:
             email_id=email.id,
         )
         for j in jobs
-        if j.get("url")
+        if j.get("url") and j.get("title") and not _is_boilerplate_line(j["title"])
     ]
 
 
@@ -265,7 +291,7 @@ def _parse_indeed_digest(body: str) -> list[dict]:
         content_lines = [
             line for line in lines
             if not line.startswith("http") and "indeed.com" not in line.lower()
-            and len(line) > 2
+            and len(line) > 2 and not _is_boilerplate_line(line)
         ]
 
         title = content_lines[0] if content_lines else None
@@ -404,7 +430,9 @@ def _parse_generic_digest(body: str) -> list[dict]:
         context_lines = []
         for i in range(max(0, url_line_idx - GENERIC_URL_CONTEXT_LINES), url_line_idx):
             line = lines[i].strip()
-            if line and len(line) > 2 and not line.startswith("http"):
+            if (line and len(line) > 2
+                    and not line.startswith("http")
+                    and not _is_boilerplate_line(line)):
                 context_lines.append(line)
 
         title = context_lines[-1] if context_lines else None

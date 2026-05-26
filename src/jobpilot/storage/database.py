@@ -3,6 +3,8 @@
 import sqlite3
 from pathlib import Path
 
+from jobpilot.storage.job_repo import DROP_SCORES_SQL
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS emails (
     id TEXT PRIMARY KEY,
@@ -250,6 +252,26 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    # Migrate job_title -> job_title_primary + drop scores for rescore
+    try:
+        ran_jt = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("_migration_job_title_tiers",),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ran_jt = None
+    if not ran_jt:
+        conn.execute(
+            "UPDATE user_preferences SET category = 'job_title_primary' "
+            "WHERE category = 'job_title'"
+        )
+        conn.execute(DROP_SCORES_SQL)
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            ("_migration_job_title_tiers", "1"),
+        )
+        conn.commit()
+
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
     """Create a database connection with WAL mode and foreign keys enabled."""
@@ -288,8 +310,12 @@ def _seed_default_preferences(conn: sqlite3.Connection) -> None:
             rows.append(("tech_keyword_secondary", keyword, None))
 
     # Job titles
-    for title in TARGET_JOB_TITLES:
-        rows.append(("job_title", title, None))
+    for title, info in TARGET_JOB_TITLES.items():
+        cat = info.get("category", "secondary")
+        if cat == "primary":
+            rows.append(("job_title_primary", title, None))
+        else:
+            rows.append(("job_title_secondary", title, None))
 
     # Seniority
     for pattern, info in SENIORITY_PATTERNS.items():
