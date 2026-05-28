@@ -123,7 +123,10 @@ def inbox():
             for p in item["predictions"]
         )
 
-    review_total = len(items)
+    review_total = (
+        repo.count_emails_for_review()
+        + repo.count_scraped_jobs_for_review()
+    )
     worth_checking_count = sum(
         1 for item in items
         if (

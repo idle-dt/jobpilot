@@ -4,9 +4,7 @@
 {% block content %}
 <div class="toolbar-card" id="toolbar-card">
     <div class="toolbar-left">
-        <span class="toolbar-stats" id="toolbar-stats"
-              hx-get="/" hx-trigger="reviewCountChanged from:body"
-              hx-select="#toolbar-stats" hx-swap="outerHTML">
+        <span class="toolbar-stats" id="toolbar-stats">
             {% if review_total == 0 %}
                 <strong>All caught up!</strong>
             {% else %}
