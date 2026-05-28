@@ -48,6 +48,11 @@ class Repository:
     def get_emails_for_review(self, limit: int = 20) -> list[Email]:
         return self.emails.get_emails_for_review(limit)
 
+    def count_emails_for_review(
+        self, classification: str | None = None,
+    ) -> int:
+        return self.emails.count_emails_for_review(classification)
+
     def get_emails_classified(
         self, classification: str | None = None,
         limit: int = 50, offset: int = 0,
@@ -121,6 +126,11 @@ class Repository:
         self, limit: int = 20,
     ) -> list[ScrapedJob]:
         return self.jobs.get_scraped_jobs_for_review(limit)
+
+    def count_scraped_jobs_for_review(
+        self, classification: str | None = None,
+    ) -> int:
+        return self.jobs.count_scraped_jobs_for_review(classification)
 
     def update_scraped_job_label(
         self, job_id: int, label: str | None,

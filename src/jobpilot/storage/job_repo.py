@@ -55,6 +55,21 @@ class JobRepository:
         ).fetchall()
         return [self._row_to_scraped_job(r) for r in rows]
 
+    def count_scraped_jobs_for_review(
+        self, classification: str | None = None,
+    ) -> int:
+        """Count scraped jobs needing review, optionally by classification."""
+        base = """SELECT COUNT(*) as cnt FROM scraped_jobs
+            WHERE user_label IS NULL AND classification != 'skip'"""
+        if classification:
+            row = self.conn.execute(
+                base + " AND classification = ?",
+                (classification,),
+            ).fetchone()
+        else:
+            row = self.conn.execute(base).fetchone()
+        return row["cnt"]
+
     def update_scraped_job_label(self, job_id: int, label: str | None) -> None:
         """Set or clear the user label on a scraped job."""
         if label:

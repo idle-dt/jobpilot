@@ -1,49 +1,19 @@
 # JobPilot — Improvement Prompts Tracker
 
-## Implemented
+## Implemented (prompt files removed)
 
-- [x] **Web Auth & Sync** — [PROMPT_web_auth_and_sync.md](PROMPT_web_auth_and_sync.md) — OAuth login flow, Sync button, auth gate
-- [x] **Sync Days Setting** — [PROMPT_sync_days_setting.md](PROMPT_sync_days_setting.md) — Configurable sync period in Settings UI
-- [x] **Digest Parsing** — [PROMPT_digest_parsing.md](PROMPT_digest_parsing.md) — Parse LinkedIn digests into individual job cards, boilerplate filtering
-- [x] **Job vs Noise Filter** — [PROMPT_job_vs_noise_filter.md](PROMPT_job_vs_noise_filter.md) — Whitelist + "Not a Job" button + ML (future)
-- [x] **Open Origin & Source** — [PROMPT_open_origin_and_source.md](PROMPT_open_origin_and_source.md) — Two buttons: Open Origin (job link) + Open Source (Gmail email)
-
-- [x] **Inbox UI Redesign** — Compact row cards, warm charcoal + dark bronze theme, semantic color system, inline sync, signal cap at 5 with expand/collapse, right-aligned action buttons with spacer, security fixes (XSS, error leak, JSON parse)
-- [x] **Confidence-Based Scraping** — [PROMPT_confidence_scraping.md](PROMPT_confidence_scraping.md) — Scrape full job descriptions only for ambiguous scores (0.3-0.8), re-score with full text, platform-specific parsers, SSRF protection, configurable threshold
-- [x] **Dashboard Stats Expansion** — [PROMPT_dashboard_stats.md](PROMPT_dashboard_stats.md) — Chart.js dashboard: sources donut, classification/labels, score/confidence histograms, ML readiness progress, trend line, top locations, labels-vs-rules agreement
-- [x] **ML Training Pipeline** — [PROMPT_ml_training.md](PROMPT_ml_training.md) — Train 4 scikit-learn algorithms (LR, RF, GBC, SVM) for both noise and scoring models; per-job prediction badges on cards; ML Experiment Lab on stats page; export model data; auto-train + manual retrain
-- [x] **Pill Toggle Component** — [PROMPT_pill_toggle_component.md](PROMPT_pill_toggle_component.md) — Ink black pill toggle switch for boolean settings; CSS-only with native checkbox; light/dark theme; update DESIGN.md
-
-- [x] **Configurable Signals & Preferences** — [PROMPT_configurable_signals.md](PROMPT_configurable_signals.md) — Settings UI for search preferences (tech keywords, job titles, seniority, locations, salary), monitored platforms checklist, score threshold slider; dedicated `user_preferences` table; ML model invalidation on preference change; ArbeitNow API integration
-- [x] **Noise Model Feature Expansion** — [PROMPT_noise_model_features.md](PROMPT_noise_model_features.md) — Progressive structural features for noise model (digest_job_count, url_count, body_length + 4 more at 60 labels); tier system, overfit detection, auto-retrain on tier transition
-- [x] **Description Improvements** — [PROMPT_description_improvements.md](PROMPT_description_improvements.md) — Preserve formatting, strip "show more" artifacts, highlight matched signals (green/red) in description text
-- [x] **Signal Matching Accuracy** — [PROMPT_signal_matching_accuracy.md](PROMPT_signal_matching_accuracy.md) — Word boundary matching to prevent substring false positives (intern/internet), title-scoped seniority to avoid context-blind negatives
-
-- [x] **Security & Critical Fixes** — [PROMPT_security_critical_fixes.md](PROMPT_security_critical_fixes.md) — SQL parameterization, inline HTML→partials, OAUTHLIB guard, narrow exception catches, ruff fixes, debug default
-- [x] **Architecture Refactor** — [PROMPT_architecture_refactor.md](PROMPT_architecture_refactor.md) — Split repository.py into focused repos, extract services from routes, remove direct conn.execute, fix email._signals hack, type hints, docstrings
-- [x] **README & License** — [PROMPT_readme.md](PROMPT_readme.md) — Portfolio-quality README with screenshots, badges, architecture overview, getting started guide, MIT license
-- [x] **Security Hardening** — [PROMPT_security_hardening.md](PROMPT_security_hardening.md) — CSRF protection (Flask-WTF), Chart.js SRI hash, email_id validation, sync rate limiting (Flask-Limiter)
-- [x] **Noise Predictions Table** — [PROMPT_noise_predictions_table.md](PROMPT_noise_predictions_table.md) — Predictions comparison table for noise model on stats dashboard
-- [x] **ML Retrain Crash Fix** — [PROMPT_ml_retrain_crash.md](PROMPT_ml_retrain_crash.md) — Run auto-retrain in subprocess to survive segfaults, add class imbalance guards, zero_division scoring
-
-- [x] **GBC Calibration** — [PROMPT_gbc_calibration.md](PROMPT_gbc_calibration.md) — Wrap GBC in CalibratedClassifierCV for realistic probabilities instead of 0/100%
-
-- [x] **Browser Scraper** — [PROMPT_browser_scraper.md](PROMPT_browser_scraper.md) — (superseded by Scraper Refactor)
+Web Auth & Sync, Sync Days Setting, Digest Parsing, Job vs Noise Filter, Open Origin & Source, Inbox UI Redesign, Confidence-Based Scraping, Dashboard Stats Expansion, ML Training Pipeline, Pill Toggle Component, Configurable Signals & Preferences, Noise Model Feature Expansion, Description Improvements, Signal Matching Accuracy, Security & Critical Fixes, Architecture Refactor, README & License, Security Hardening, Noise Predictions Table, ML Retrain Crash Fix, GBC Calibration, Browser Scraper (superseded by Scraper Refactor), Scraper Refactor, Application Tracker, Review Queue Counts.
 
 ## Not Yet Implemented
 
-- [ ] **Application Tracker** — [PROMPT_application_tracker.md](PROMPT_application_tracker.md) — Tracker tab with list view, inline status dropdown, detail modal with offer/contact/history, schema cleanup
-- [ ] **Scraper Refactor** — [PROMPT_scraper_refactor.md](PROMPT_scraper_refactor.md) — Simplify scraping to LinkedIn-only (always scrape, requests+browser) with Glassdoor requests fallback, remove dead domain sets and confidence filter
 - [ ] **Job Title Tiers** — [PROMPT_job_title_tiers.md](PROMPT_job_title_tiers.md) — Split job_title into primary/secondary categories (like tech keywords), with weighted scoring and Settings UI
-- [ ] **Async Sync** — [PROMPT_async_sync.md](PROMPT_async_sync.md) — Background thread sync pipeline with live per-step progress, survives page refresh, comprehensive logging
-- [ ] **Bugfixes Batch 1** — [PROMPT_bugfixes_batch_1.md](PROMPT_bugfixes_batch_1.md) — LinkedIn digest separator regex, Last Sync stale time, orphan email cards, non-job LinkedIn email filter
+- [ ] **Async Sync** — [PROMPT_async_sync.md](PROMPT_async_sync.md) — Background thread sync pipeline with live per-step progress, survives page refresh, comprehensive logging, tech debt cleanup
+- [ ] **Bugfixes Batch 1** — [PROMPT_bugfixes_batch_1.md](PROMPT_bugfixes_batch_1.md) — LinkedIn digest separator regex, Last Sync stale time, orphan email cards, non-job filter, ML class imbalance, tracker UX
 
 ## Future / Ideas
 
+- Negation-aware signal matching (detect "Remote is NOT available", "no Flutter experience needed")
 - Expired job auto-detection (manual toggle implemented, auto-detection via URL scraping or date heuristic deferred)
-- Web scrapers for job boards (Phase 4 of main plan)
-- Application tracker / kanban (Phase 4 of main plan)
-- CSRF protection across all POST endpoints (Flask-WTF)
-- Settings input field styling broken — "Locations — Secondary" label/input visual issue
 - Description block expand/collapse animation (smooth slide-in/slide-out)
 - CDN scripts SRI hashes or vendoring
+- Dockerize the app (Dockerfile, docker-compose, gunicorn)

@@ -43,16 +43,47 @@ class EmailRepository:
         return self._row_to_email(row)
 
     def get_emails_for_review(self, limit: int = 20) -> list[Email]:
-        """Get processed job emails that haven't received feedback yet."""
+        """Get processed job emails that haven't received feedback yet.
+
+        Excludes digested emails (those with extracted scraped jobs).
+        """
         rows = self.conn.execute(
             """SELECT * FROM emails
             WHERE processed = TRUE AND final_classification IS NOT NULL
             AND is_job_related = TRUE
             AND id NOT IN (SELECT email_id FROM user_feedback)
+            AND id NOT IN (
+                SELECT DISTINCT email_id FROM scraped_jobs
+                WHERE email_id IS NOT NULL
+            )
             ORDER BY received_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
         return [self._row_to_email(r) for r in rows]
+
+    def count_emails_for_review(
+        self, classification: str | None = None,
+    ) -> int:
+        """Count emails needing review, optionally filtered by classification.
+
+        Excludes digested emails (those with extracted scraped jobs).
+        """
+        base = """SELECT COUNT(*) as cnt FROM emails
+            WHERE processed = TRUE AND final_classification IS NOT NULL
+            AND is_job_related = TRUE
+            AND id NOT IN (SELECT email_id FROM user_feedback)
+            AND id NOT IN (
+                SELECT DISTINCT email_id FROM scraped_jobs
+                WHERE email_id IS NOT NULL
+            )"""
+        if classification:
+            row = self.conn.execute(
+                base + " AND final_classification = ?",
+                (classification,),
+            ).fetchone()
+        else:
+            row = self.conn.execute(base).fetchone()
+        return row["cnt"]
 
     def get_emails_classified(
         self, classification: str | None = None, limit: int = 50, offset: int = 0
