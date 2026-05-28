@@ -75,10 +75,6 @@ def inbox():
     # Also get scraped jobs for review
     scraped = repo.get_scraped_jobs_for_review(limit=INBOX_REVIEW_LIMIT)
 
-    # Filter out emails whose jobs were extracted into scraped_jobs
-    digested_ids = repo.get_email_ids_with_extracted_jobs()
-    emails = [e for e in emails if e.id not in digested_ids]
-
     # Attach signals to each email, sorted by priority
     for email in emails:
         email.signals = _sort_signals(repo.get_signals_for_email(email.id))

@@ -43,12 +43,19 @@ class EmailRepository:
         return self._row_to_email(row)
 
     def get_emails_for_review(self, limit: int = 20) -> list[Email]:
-        """Get processed job emails that haven't received feedback yet."""
+        """Get processed job emails that haven't received feedback yet.
+
+        Excludes digested emails (those with extracted scraped jobs).
+        """
         rows = self.conn.execute(
             """SELECT * FROM emails
             WHERE processed = TRUE AND final_classification IS NOT NULL
             AND is_job_related = TRUE
             AND id NOT IN (SELECT email_id FROM user_feedback)
+            AND id NOT IN (
+                SELECT DISTINCT email_id FROM scraped_jobs
+                WHERE email_id IS NOT NULL
+            )
             ORDER BY received_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
