@@ -23,20 +23,6 @@
             var token = document.querySelector('meta[name="csrf-token"]');
             if (token) { event.detail.headers['X-CSRFToken'] = token.content; }
         });
-        document.body.addEventListener('htmx:afterRequest', function(event) {
-            var xhr = event.detail.xhr;
-            if (xhr && xhr.getResponseHeader('HX-Trigger')
-                && xhr.getResponseHeader('HX-Trigger').indexOf('reviewCountChanged') !== -1) {
-                var stats = document.getElementById('toolbar-stats');
-                if (stats) {
-                    htmx.ajax('GET', window.location.href, {
-                        target: '#toolbar-stats',
-                        select: '#toolbar-stats',
-                        swap: 'outerHTML'
-                    });
-                }
-            }
-        });
     });
     </script>
 </head>

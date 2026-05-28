@@ -126,10 +126,12 @@ def inbox():
     review_total = len(items)
     worth_checking_count = sum(
         1 for item in items
-        if (item["type"] == "email"
-            and item["obj"].final_classification == "worth_checking")
-        or (item["type"] == "scraped"
-            and item["obj"].classification == "worth_checking")
+        if (
+            (item["type"] == "email"
+             and item["obj"].final_classification == "worth_checking")
+            or (item["type"] == "scraped"
+                and item["obj"].classification == "worth_checking")
+        )
     )
     skip_count = review_total - worth_checking_count
 
