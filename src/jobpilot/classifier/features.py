@@ -95,22 +95,35 @@ def _extract_max_salary(match: re.Match) -> int | None:
     """Extract the maximum salary value from a regex match.
 
     Handles full numbers (60,000) and k-notation (60k).
+    Reconstructs numbers from paired regex groups (integer + thousands).
     Returns the higher end of the range, or None if parsing fails.
     """
-    groups = [g for g in match.groups() if g is not None]
-    numbers = []
-    for g in groups:
+    groups = match.groups()
+    numbers: list[int] = []
+    i = 0
+    while i < len(groups):
+        g = groups[i]
+        if g is None:
+            i += 1
+            continue
         cleaned = g.replace(",", "").replace(".", "")
-        if cleaned.isdigit():
-            numbers.append(int(cleaned))
-
-    if not numbers:
-        return None
-
-    max_val = max(numbers)
-    if max_val < 1000:
-        max_val *= 1000
-    return max_val
+        if not cleaned.isdigit():
+            i += 1
+            continue
+        val = int(cleaned)
+        # Check if next group is the thousands part of this number
+        if i + 1 < len(groups) and groups[i + 1] is not None:
+            next_cleaned = groups[i + 1].replace(",", "").replace(".", "")
+            if next_cleaned.isdigit() and len(next_cleaned) == 3:
+                val = val * 1000 + int(next_cleaned)
+                i += 2
+                numbers.append(val)
+                continue
+        if val < 1000:
+            val *= 1000
+        numbers.append(val)
+        i += 1
+    return max(numbers) if numbers else None
 
 
 def score_salary(

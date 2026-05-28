@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from jobpilot.classifier.features import (
@@ -15,6 +16,8 @@ from jobpilot.classifier.features import (
 from jobpilot.classifier.geo import expand_locations
 from jobpilot.classifier.signals import JOB_TITLE_SECONDARY_WEIGHT
 from jobpilot.config import settings
+
+logger = logging.getLogger(__name__)
 
 FEATURE_NAMES = [
     "tech_match", "job_title", "location_match",
@@ -71,12 +74,19 @@ def load_signal_config(repo) -> SignalConfig:
     salary_min_str = repo.get_setting("salary_min")
     salary_currency = repo.get_setting("salary_currency", "EUR")
 
+    salary_min: int | None = None
+    if salary_min_str:
+        try:
+            salary_min = int(salary_min_str)
+        except ValueError:
+            logger.warning("Invalid salary_min setting: %s", salary_min_str)
+
     return SignalConfig(
         tech_keywords=tech_keywords or None,
         job_titles=job_titles or None,
         locations=locations or None,
         seniority_patterns=seniority or None,
-        salary_min=int(salary_min_str) if salary_min_str else None,
+        salary_min=salary_min,
         salary_currency=salary_currency,
         negatives=neg_list or None,
     )

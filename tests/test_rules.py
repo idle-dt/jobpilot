@@ -98,6 +98,18 @@ def test_extract_max_salary_k_notation():
     assert _extract_max_salary(match) == 80000
 
 
+def test_extract_max_salary_non_round_thousands():
+    """Non-round thousands like €80,500 must reconstruct correctly."""
+    match = re.search(SALARY_PATTERNS[0], "€80,500 - €110,000")
+    assert match is not None
+    assert _extract_max_salary(match) == 110000
+
+
+def test_salary_at_boundary():
+    """Salary exactly at min * 0.75 should score as match (not low)."""
+    assert score_salary("Salary: €40,000 - €45,000", salary_min=60000) == 0.8
+
+
 def test_negatives_none():
     assert score_negatives("Great Flutter role in Amsterdam") == 1.0
 
