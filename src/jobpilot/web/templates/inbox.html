@@ -4,7 +4,14 @@
 {% block content %}
 <div class="toolbar-card" id="toolbar-card">
     <div class="toolbar-left">
-        <span class="toolbar-stats" id="toolbar-stats"><strong>{{ email_count }}</strong> emails + <strong>{{ scraped_count }}</strong> scraped jobs</span>
+        <span class="toolbar-stats" id="toolbar-stats">
+            {% if review_total == 0 %}
+                <strong>All caught up!</strong>
+            {% else %}
+                <strong>{{ review_total }}</strong> to review
+                <span class="toolbar-stats-detail">({{ worth_checking_count }} worth checking + {{ skip_count }} skip)</span>
+            {% endif %}
+        </span>
         <div class="toolbar-sep"></div>
         <span class="sync-dot" id="sync-dot"></span>
         <span class="sync-info" id="sync-info">{% if last_sync %}Synced <strong>{{ last_sync.strftime('%b %d, %H:%M') }}</strong>{% else %}Not synced yet{% endif %}</span>

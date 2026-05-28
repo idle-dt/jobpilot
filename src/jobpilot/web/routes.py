@@ -5,7 +5,14 @@ import logging
 import re
 from datetime import datetime
 
-from flask import Blueprint, current_app, jsonify, render_template, request
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    make_response,
+    render_template,
+    request,
+)
 
 from jobpilot.config import settings
 from jobpilot.scraper.browser import ALLOWED_SITES
@@ -116,8 +123,22 @@ def inbox():
             for p in item["predictions"]
         )
 
-    return render_template("inbox.html", items=items, sort=sort,
-                           email_count=len(emails), scraped_count=len(scraped))
+    review_total = len(items)
+    worth_checking_count = sum(
+        1 for item in items
+        if (item["type"] == "email"
+            and item["obj"].final_classification == "worth_checking")
+        or (item["type"] == "scraped"
+            and item["obj"].classification == "worth_checking")
+    )
+    skip_count = review_total - worth_checking_count
+
+    return render_template(
+        "inbox.html", items=items, sort=sort,
+        review_total=review_total,
+        worth_checking_count=worth_checking_count,
+        skip_count=skip_count,
+    )
 
 
 @bp.route("/emails")
@@ -159,10 +180,12 @@ def submit_feedback(email_id: str):
     repo.insert_feedback(feedback)
 
     _maybe_auto_retrain(repo)
-    return render_template(
+    response = make_response(render_template(
         "partials/feedback_done.html",
         undo_url=f"/api/feedback/{email_id}/undo",
-    )
+    ))
+    response.headers["HX-Trigger"] = "reviewCountChanged"
+    return response
 
 
 @bp.route("/api/feedback/<email_id>/undo", methods=["POST"])
@@ -172,7 +195,9 @@ def undo_feedback(email_id: str):
         return "Invalid email ID", 400
     repo = _repo()
     repo.delete_feedback(email_id)
-    return render_template("partials/feedback_undone.html")
+    response = make_response(render_template("partials/feedback_undone.html"))
+    response.headers["HX-Trigger"] = "reviewCountChanged"
+    return response
 
 
 @bp.route("/api/feedback/scraped/<int:job_id>", methods=["POST"])
@@ -191,10 +216,12 @@ def submit_scraped_feedback(job_id: int):
         TrackerService(repo).auto_track_scraped_job(job_id)
 
     _maybe_auto_retrain(repo)
-    return render_template(
+    response = make_response(render_template(
         "partials/feedback_done.html",
         undo_url=f"/api/feedback/scraped/{job_id}/undo",
-    )
+    ))
+    response.headers["HX-Trigger"] = "reviewCountChanged"
+    return response
 
 
 @bp.route("/api/feedback/scraped/<int:job_id>/undo", methods=["POST"])
@@ -202,7 +229,9 @@ def undo_scraped_feedback(job_id: int):
     """Revert user feedback on a scraped job."""
     repo = _repo()
     repo.update_scraped_job_label(job_id, None)
-    return render_template("partials/feedback_undone.html")
+    response = make_response(render_template("partials/feedback_undone.html"))
+    response.headers["HX-Trigger"] = "reviewCountChanged"
+    return response
 
 
 @bp.route("/api/scraped/<int:job_id>/expired", methods=["POST"])

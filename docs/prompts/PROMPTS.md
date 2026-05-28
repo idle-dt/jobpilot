@@ -36,7 +36,8 @@
 - [ ] **Scraper Refactor** — [PROMPT_scraper_refactor.md](PROMPT_scraper_refactor.md) — Simplify scraping to LinkedIn-only (always scrape, requests+browser) with Glassdoor requests fallback, remove dead domain sets and confidence filter
 - [ ] **Job Title Tiers** — [PROMPT_job_title_tiers.md](PROMPT_job_title_tiers.md) — Split job_title into primary/secondary categories (like tech keywords), with weighted scoring and Settings UI
 - [ ] **Async Sync** — [PROMPT_async_sync.md](PROMPT_async_sync.md) — Background thread sync pipeline with live per-step progress, survives page refresh, comprehensive logging
-- [ ] **Bugfixes Batch 1** — [PROMPT_bugfixes_batch_1.md](PROMPT_bugfixes_batch_1.md) — LinkedIn digest separator regex, Last Sync stale time, orphan email cards, non-job LinkedIn email filter
+- [ ] **Bugfixes Batch 1** — [PROMPT_bugfixes_batch_1.md](PROMPT_bugfixes_batch_1.md) — LinkedIn digest separator regex, Last Sync stale time, orphan email cards, non-job filter, ML class imbalance, tracker UX
+- [ ] **Review Queue Counts** — [PROMPT_review_queue_counts.md](PROMPT_review_queue_counts.md) — Replace "N emails + M scraped jobs" with "7 to review (5 worth checking + 2 skip)", live updates on label
 
 ## Future / Ideas
 

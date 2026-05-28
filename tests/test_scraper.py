@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from jobpilot.classifier.rules import RuleBasedScorer, ScoringResult
 from jobpilot.scraper.job_page import JobPageScraper
 from jobpilot.storage.models import ScrapedJob

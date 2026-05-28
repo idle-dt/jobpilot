@@ -591,6 +591,12 @@ table {
     font-weight: 500;
 }
 
+.toolbar-stats-detail {
+    font-weight: 400;
+    color: var(--slate);
+    font-size: 0.82em;
+}
+
 .toolbar-sep {
     width: 1px;
     height: 16px;
