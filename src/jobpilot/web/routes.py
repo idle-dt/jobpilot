@@ -127,14 +127,9 @@ def inbox():
         repo.count_emails_for_review()
         + repo.count_scraped_jobs_for_review()
     )
-    worth_checking_count = sum(
-        1 for item in items
-        if (
-            (item["type"] == "email"
-             and item["obj"].final_classification == "worth_checking")
-            or (item["type"] == "scraped"
-                and item["obj"].classification == "worth_checking")
-        )
+    worth_checking_count = (
+        repo.count_emails_for_review("worth_checking")
+        + repo.count_scraped_jobs_for_review("worth_checking")
     )
     skip_count = review_total - worth_checking_count
 

@@ -54,10 +54,14 @@ class EmailRepository:
         ).fetchall()
         return [self._row_to_email(r) for r in rows]
 
-    def count_emails_for_review(self) -> int:
-        """Count processed job emails needing review (excludes digested)."""
-        row = self.conn.execute(
-            """SELECT COUNT(*) as cnt FROM emails
+    def count_emails_for_review(
+        self, classification: str | None = None,
+    ) -> int:
+        """Count emails needing review, optionally filtered by classification.
+
+        Excludes digested emails (those with extracted scraped jobs).
+        """
+        base = """SELECT COUNT(*) as cnt FROM emails
             WHERE processed = TRUE AND final_classification IS NOT NULL
             AND is_job_related = TRUE
             AND id NOT IN (SELECT email_id FROM user_feedback)
@@ -65,7 +69,13 @@ class EmailRepository:
                 SELECT DISTINCT email_id FROM scraped_jobs
                 WHERE email_id IS NOT NULL
             )"""
-        ).fetchone()
+        if classification:
+            row = self.conn.execute(
+                base + " AND final_classification = ?",
+                (classification,),
+            ).fetchone()
+        else:
+            row = self.conn.execute(base).fetchone()
         return row["cnt"]
 
     def get_emails_classified(
