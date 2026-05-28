@@ -24,6 +24,8 @@ TOP_KEYWORD_MATCHES = 3
 NEUTRAL_SCORE = 0.5
 SENIORITY_POSITIVE_BLEND = 0.5
 SALARY_MATCH_SCORE = 0.8
+SALARY_LOW_SCORE = 0.3
+SALARY_LOW_MARGIN = 0.75
 NEGATIVES_ONE_SCORE = 0.4
 NEGATIVES_MANY_SCORE = 0.1
 
@@ -89,8 +91,40 @@ def score_seniority(text: str, patterns: dict[str, dict] | None = None) -> float
     return NEUTRAL_SCORE
 
 
-def score_salary(text: str, salary_patterns: list[str] | None = None) -> float:
-    """Score 0.0-1.0 based on salary information."""
+def _extract_max_salary(match: re.Match) -> int | None:
+    """Extract the maximum salary value from a regex match.
+
+    Handles full numbers (60,000) and k-notation (60k).
+    Returns the higher end of the range, or None if parsing fails.
+    """
+    groups = [g for g in match.groups() if g is not None]
+    numbers = []
+    for g in groups:
+        cleaned = g.replace(",", "").replace(".", "")
+        if cleaned.isdigit():
+            numbers.append(int(cleaned))
+
+    if not numbers:
+        return None
+
+    max_val = max(numbers)
+    if max_val < 1000:
+        max_val *= 1000
+    return max_val
+
+
+def score_salary(
+    text: str,
+    salary_patterns: list[str] | None = None,
+    salary_min: int | None = None,
+) -> float:
+    """Score 0.0-1.0 based on salary information.
+
+    Returns:
+        0.5 — no salary mentioned (neutral)
+        0.3 — salary found but below min * 0.75 (too low)
+        0.8 — salary found and meets or exceeds threshold
+    """
     if not text:
         return NEUTRAL_SCORE
     if salary_patterns is None:
@@ -101,6 +135,13 @@ def score_salary(text: str, salary_patterns: list[str] | None = None) -> float:
     for pattern in salary_patterns:
         match = re.search(pattern, text_lower)
         if match:
+            if salary_min is None:
+                return SALARY_MATCH_SCORE
+            max_salary = _extract_max_salary(match)
+            if max_salary is None:
+                return SALARY_MATCH_SCORE
+            if max_salary < salary_min * SALARY_LOW_MARGIN:
+                return SALARY_LOW_SCORE
             return SALARY_MATCH_SCORE
 
     return NEUTRAL_SCORE

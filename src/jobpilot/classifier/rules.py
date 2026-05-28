@@ -30,6 +30,8 @@ class SignalConfig:
     locations: dict[str, dict] | None = None
     seniority_patterns: dict[str, dict] | None = None
     salary_patterns: list[str] | None = None
+    salary_min: int | None = None
+    salary_currency: str | None = None
     negatives: list[str] | None = None
 
 
@@ -66,11 +68,16 @@ def load_signal_config(repo) -> SignalConfig:
 
     neg_list = [p.value for p in prefs.get("negative_signal", [])]
 
+    salary_min_str = repo.get_setting("salary_min")
+    salary_currency = repo.get_setting("salary_currency", "EUR")
+
     return SignalConfig(
         tech_keywords=tech_keywords or None,
         job_titles=job_titles or None,
         locations=locations or None,
         seniority_patterns=seniority or None,
+        salary_min=int(salary_min_str) if salary_min_str else None,
+        salary_currency=salary_currency,
         negatives=neg_list or None,
     )
 
@@ -90,7 +97,7 @@ def compute_features(
         score_job_title(text, cfg.job_titles),
         score_location(text, cfg.locations),
         score_seniority(subject, cfg.seniority_patterns),
-        score_salary(text, cfg.salary_patterns),
+        score_salary(text, cfg.salary_patterns, cfg.salary_min),
         score_negatives(text, cfg.negatives),
     ]
 
