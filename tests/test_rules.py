@@ -1,6 +1,9 @@
 """Tests for the rule-based scoring engine."""
 
+import re
+
 from jobpilot.classifier.features import (
+    _extract_max_salary,
     score_job_title,
     score_location,
     score_negatives,
@@ -9,6 +12,7 @@ from jobpilot.classifier.features import (
     score_tech_stack,
 )
 from jobpilot.classifier.rules import RuleBasedScorer
+from jobpilot.classifier.signals import SALARY_PATTERNS
 
 # --- Feature Scoring ---
 
@@ -63,6 +67,47 @@ def test_salary_present():
 
 def test_salary_absent():
     assert score_salary("Great opportunity") == 0.5
+
+
+def test_salary_above_threshold():
+    assert score_salary("Salary: €80,000 - €110,000", salary_min=60000) == 0.8
+
+
+def test_salary_below_threshold():
+    assert score_salary("Salary: €10,000 - €14,000", salary_min=60000) == 0.3
+
+
+def test_salary_k_notation_above():
+    assert score_salary("60k-80k EUR", salary_min=60000) == 0.8
+
+
+def test_salary_no_min_still_matches():
+    """Without salary_min, any salary mention scores 0.8."""
+    assert score_salary("Salary: €12,000 - €14,000") == 0.8
+
+
+def test_extract_max_salary_range():
+    match = re.search(SALARY_PATTERNS[0], "€80,000 - €110,000")
+    assert match is not None
+    assert _extract_max_salary(match) == 110000
+
+
+def test_extract_max_salary_k_notation():
+    match = re.search(SALARY_PATTERNS[4], "60k-80k eur")
+    assert match is not None
+    assert _extract_max_salary(match) == 80000
+
+
+def test_extract_max_salary_non_round_thousands():
+    """Non-round thousands like €80,500 must reconstruct correctly."""
+    match = re.search(SALARY_PATTERNS[0], "€80,500 - €110,000")
+    assert match is not None
+    assert _extract_max_salary(match) == 110000
+
+
+def test_salary_at_boundary():
+    """Salary exactly at min * 0.75 should score as match (not low)."""
+    assert score_salary("Salary: €40,000 - €45,000", salary_min=60000) == 0.8
 
 
 def test_negatives_none():
