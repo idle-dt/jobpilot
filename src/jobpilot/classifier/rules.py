@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 
 from jobpilot.classifier.features import (
+    find_negated_keywords,
     score_job_title,
     score_location,
     score_negatives,
@@ -36,6 +37,7 @@ class SignalConfig:
     salary_min: int | None = None
     salary_currency: str | None = None
     negatives: list[str] | None = None
+    negation_phrases: list[str] | None = None
 
 
 def load_signal_config(repo) -> SignalConfig:
@@ -70,6 +72,7 @@ def load_signal_config(repo) -> SignalConfig:
         seniority[p.value] = {"weight": -0.5, "level": p.value}
 
     neg_list = [p.value for p in prefs.get("negative_signal", [])]
+    negation_list = [p.value for p in prefs.get("negation_phrase", [])]
 
     salary_min_str = repo.get_setting("salary_min")
     salary_currency = repo.get_setting("salary_currency", "EUR")
@@ -89,7 +92,39 @@ def load_signal_config(repo) -> SignalConfig:
         salary_min=salary_min,
         salary_currency=salary_currency,
         negatives=neg_list or None,
+        negation_phrases=negation_list or None,
     )
+
+
+def _collect_positive_keywords(cfg: SignalConfig) -> list[str]:
+    """Gather all positive keyword strings from config for negation check."""
+    keywords: list[str] = []
+    if cfg.tech_keywords:
+        keywords.extend(cfg.tech_keywords)
+    if cfg.job_titles:
+        keywords.extend(cfg.job_titles)
+    if cfg.locations:
+        keywords.extend(
+            k for k, info in cfg.locations.items() if info["weight"] >= 0
+        )
+    if cfg.seniority_patterns:
+        keywords.extend(
+            k for k, info in cfg.seniority_patterns.items() if info["weight"] >= 0
+        )
+    return keywords
+
+
+def _filter_dict(
+    d: dict[str, dict] | None, suppressed: set[str],
+) -> dict[str, dict] | None:
+    """Return a copy of *d* with suppressed keys removed.
+
+    Returns None only if *d* was None. If *d* had entries but all were
+    suppressed, returns an empty dict so callers don't fall back to defaults.
+    """
+    if d is None or not suppressed:
+        return d
+    return {k: v for k, v in d.items() if k.lower() not in suppressed}
 
 
 def compute_features(
@@ -102,13 +137,26 @@ def compute_features(
     """
     text = f"{subject}\n{body}"
     cfg = config or SignalConfig()
+
+    suppressed: set[str] = set()
+    if cfg.negation_phrases:
+        all_positive = _collect_positive_keywords(cfg)
+        suppressed = find_negated_keywords(
+            text, cfg.negation_phrases, all_positive,
+        )
+
+    tech_kw = _filter_dict(cfg.tech_keywords, suppressed)
+    titles = _filter_dict(cfg.job_titles, suppressed)
+    locations = _filter_dict(cfg.locations, suppressed)
+    seniority = _filter_dict(cfg.seniority_patterns, suppressed)
+
     return [
-        score_tech_stack(text, cfg.tech_keywords),
-        score_job_title(text, cfg.job_titles),
-        score_location(text, cfg.locations),
-        score_seniority(subject, cfg.seniority_patterns),
+        score_tech_stack(text, tech_kw),
+        score_job_title(text, titles),
+        score_location(text, locations),
+        score_seniority(subject, seniority),
         score_salary(text, cfg.salary_patterns, cfg.salary_min),
-        score_negatives(text, cfg.negatives),
+        score_negatives(text, cfg.negatives, cfg.negation_phrases),
     ]
 
 

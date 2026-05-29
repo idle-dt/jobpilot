@@ -317,7 +317,7 @@ ALLOWED_CATEGORIES = {
     "job_title_primary", "job_title_secondary",
     "seniority_wanted", "seniority_unwanted",
     "location_primary", "location_secondary", "location_negative",
-    "negative_signal", "monitored_domain",
+    "negative_signal", "negation_phrase", "monitored_domain",
 }
 SCORING_CATEGORIES = ALLOWED_CATEGORIES - {"monitored_domain"}
 ALLOWED_CURRENCIES = {"EUR", "USD", "GBP", "CHF", "SEK", "NOK", "DKK"}

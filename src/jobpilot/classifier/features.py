@@ -19,6 +19,26 @@ def _word_match(keyword: str, text: str) -> bool:
     return bool(re.search(pattern, text))
 
 
+def find_negated_keywords(
+    text: str,
+    negation_phrases: list[str],
+    positive_keywords: list[str],
+) -> set[str]:
+    """Find positive keywords that appear inside matched negation phrases.
+
+    Returns the set of keywords that should be suppressed from positive scoring.
+    """
+    text_lower = text.lower()
+    suppressed: set[str] = set()
+    for phrase in negation_phrases:
+        if _word_match(phrase, text_lower):
+            phrase_lower = phrase.lower()
+            for keyword in positive_keywords:
+                if keyword.lower() in phrase_lower:
+                    suppressed.add(keyword.lower())
+    return suppressed
+
+
 # --- Scoring constants ---
 TOP_KEYWORD_MATCHES = 3
 NEUTRAL_SCORE = 0.5
@@ -160,7 +180,11 @@ def score_salary(
     return NEUTRAL_SCORE
 
 
-def score_negatives(text: str, negatives: list[str] | None = None) -> float:
+def score_negatives(
+    text: str,
+    negatives: list[str] | None = None,
+    negation_phrases: list[str] | None = None,
+) -> float:
     """Score 0.0-1.0 where 1.0 means NO negative signals (good)."""
     if not text:
         return 1.0
@@ -170,6 +194,9 @@ def score_negatives(text: str, negatives: list[str] | None = None) -> float:
     text_lower = text.lower()
 
     count = sum(1 for neg in negatives if _word_match(neg, text_lower))
+    if negation_phrases:
+        count += sum(1 for p in negation_phrases if _word_match(p, text_lower))
+
     if count == 0:
         return 1.0
     if count == 1:
@@ -253,6 +280,16 @@ def extract_matched_keywords(
         for neg in config.negatives:
             if _word_match(neg, text_lower):
                 negative.append(neg)
+
+    # Negation phrases — add to negatives and suppress overlapping positives
+    if config.negation_phrases:
+        for phrase in config.negation_phrases:
+            if _word_match(phrase, text_lower):
+                negative.append(phrase)
+                phrase_lower = phrase.lower()
+                positive = [
+                    kw for kw in positive if kw.lower() not in phrase_lower
+                ]
 
     return {"positive": sorted(set(positive)), "negative": sorted(set(negative))}
 

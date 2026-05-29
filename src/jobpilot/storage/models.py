@@ -172,10 +172,11 @@ class Application:
 class UserPreference:
     """A user preference tag in a specific category.
 
-    Categories: 'tech_keyword_primary', 'tech_keyword_secondary', 'job_title',
+    Categories: 'tech_keyword_primary', 'tech_keyword_secondary',
+    'job_title_primary', 'job_title_secondary',
     'seniority_wanted', 'seniority_unwanted', 'location_primary',
     'location_secondary', 'location_negative', 'negative_signal',
-    'monitored_domain'.
+    'negation_phrase', 'monitored_domain'.
     """
     id: int | None
     category: str
