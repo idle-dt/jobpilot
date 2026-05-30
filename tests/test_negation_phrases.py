@@ -46,6 +46,16 @@ def test_find_negated_keywords_multiple_phrases():
     assert result == {"remote", "flutter"}
 
 
+def test_find_negated_keywords_no_false_substring_suppression():
+    """Keywords that are substrings of words in a phrase must not be suppressed."""
+    result = find_negated_keywords(
+        "no startup experience needed",
+        ["no startup experience needed"],
+        ["art", "start", "react"],
+    )
+    assert result == set()
+
+
 def test_find_negated_keywords_empty_phrases():
     result = find_negated_keywords("some text", [], ["keyword"])
     assert result == set()
