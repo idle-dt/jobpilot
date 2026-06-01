@@ -5,16 +5,11 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## Bugs
 
-- **Sync dot color after sync**: Sync dot stays red/orange instead of turning green after a successful sync — likely the `.syncing` class or color isn't being reset
-- **False "Sync failed"**: Sync completes successfully (data fetched) but UI shows "Sync failed" — page refresh shows correct "Synced" state. Likely a JS timeout or response parsing issue
-- **Dashboard Last Sync stale time**: Last Sync timestamp uses `received_at` (email date) instead of actual sync time, so it shows a stale value
-- **Settings input field styling**: "Locations — Secondary" label/input visual layout is broken
+- **ML scoring model collapse**: GBC/SVM/LR predict majority class only (0% precision/recall) — code fix applied (`class_weight="balanced"`), needs retrain via ML Experiment Lab
 
 ## In Progress
 
-- **Application Tracker** — UI for existing `applications` table (branch: `feat/application-tracker`)
-
-See `docs/prompts/PROMPTS.md` for prompt implementation status.
+See `docs/specs/SPECS.md` for spec implementation status.
 
 ## UI Improvements
 
@@ -22,17 +17,17 @@ See `docs/prompts/PROMPTS.md` for prompt implementation status.
 
 ## Planned Features
 
+### Classification
+- Salary threshold scoring — penalize jobs with salary below user's minimum
+- Negation-aware signal matching — detect "Remote is NOT available", "no Flutter experience needed"
+
+### Expired Job Auto-Detection
+- Auto-detect expired jobs via URL scraping (404/redirect) or date heuristic
+- Title mismatch detection on re-scrape — if the scraped title no longer matches the stored title, the listing was recycled/reposted
+- Manual toggle already implemented
+
 ### Deployment & Hosting
 - Dockerize the app (Dockerfile, docker-compose)
 - Add production WSGI server (gunicorn)
 - CI/CD pipeline for automated testing and deployment
 - Environment-based configuration (dev / staging / production)
-
-### Automated Email Fetching
-- Replace manual "Sync" button with scheduled background fetching (APScheduler is already a dependency)
-- Configurable fetch interval per user
-- Notification when new jobs are found
-
-### Expired Job Auto-Detection
-- Auto-detect expired jobs via URL scraping (404/redirect) or date heuristic
-- Manual toggle already implemented

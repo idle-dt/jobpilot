@@ -13,12 +13,12 @@ from sklearn.metrics import f1_score, make_scorer, precision_score, recall_score
 from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.svm import LinearSVC
 
-from jobpilot.classifier.features import (
+from jobpilot.classifier.rules import FEATURE_NAMES, compute_features
+from jobpilot.classifier.structural_features import (
     STRUCTURAL_FEATURE_NAMES_TIER1,
     STRUCTURAL_FEATURE_NAMES_TIER2,
     compute_structural_features,
 )
-from jobpilot.classifier.rules import FEATURE_NAMES, compute_features
 from jobpilot.config import settings
 from jobpilot.storage.models import MLPrediction, ModelVersion
 from jobpilot.storage.repository import Repository
