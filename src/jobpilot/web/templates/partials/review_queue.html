@@ -20,12 +20,22 @@
                     {{ "%.0f"|format((email.raw_score or 0) * 100) }}%
                 </span>
                 {% endif %}
+                {% if item.description %}
+                <span class="badge badge-fetched">Details fetched</span>
+                {% endif %}
             </div>
         </div>
         <div class="card-aside">
             <small class="row-date">{{ email.received_at.strftime('%b %d') if email.received_at else '' }}</small>
         </div>
     </div>
+
+    {% if item.description %}
+    <details class="description-preview">
+        <summary>Show fetched description</summary>
+        <div class="description-text">{{ item.description|highlight_signals(item.matched_signals) }}</div>
+    </details>
+    {% endif %}
 
     <div class="row-actions" hx-target="#email-{{ email.id }}" hx-swap="outerHTML">
         {% if email.origin_url and email.origin_url.startswith(('http://', 'https://')) %}
