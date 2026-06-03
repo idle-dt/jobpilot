@@ -272,6 +272,30 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    # One-time retry for Glassdoor jobs after switching to browser-only strategy
+    try:
+        ran_gd = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("_migration_glassdoor_browser_retry",),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ran_gd = None
+    if not ran_gd:
+        conn.execute(
+            "UPDATE scraped_jobs SET scrape_attempted = 0 "
+            "WHERE (url LIKE 'https://glassdoor.com/%' "
+            "       OR url LIKE 'https://%.glassdoor.com/%' "
+            "       OR url LIKE 'http://glassdoor.com/%' "
+            "       OR url LIKE 'http://%.glassdoor.com/%') "
+            "  AND description IS NULL "
+            "  AND scrape_attempted = 1"
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            ("_migration_glassdoor_browser_retry", "1"),
+        )
+        conn.commit()
+
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
     """Create a database connection with WAL mode and foreign keys enabled."""

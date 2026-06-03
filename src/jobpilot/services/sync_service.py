@@ -14,7 +14,11 @@ from urllib.parse import urlparse
 import requests
 
 from jobpilot.config import settings
-from jobpilot.scraper.constants import SCRAPABLE_DOMAINS, STRATEGY_REQUESTS_THEN_BROWSER
+from jobpilot.scraper.constants import (
+    SCRAPABLE_DOMAINS,
+    STRATEGY_BROWSER_ONLY,
+    STRATEGY_REQUESTS_THEN_BROWSER,
+)
 from jobpilot.scraper.job_page import SCRAPE_EXPIRED, JobPageScraper
 from jobpilot.services.classification_service import ClassificationService
 from jobpilot.services.sync_state import sync_state
@@ -170,14 +174,21 @@ class SyncService:
             return None, browser_scraper
 
         strategy = SCRAPABLE_DOMAINS[domain]
-        description = scraper.scrape(job.url)
 
-        if description is None and strategy == STRATEGY_REQUESTS_THEN_BROWSER:
-            logger.info("[Sync] %s — requests failed, falling back to browser", job.title)
+        if strategy == STRATEGY_BROWSER_ONLY:
+            logger.info("[Sync] %s — browser-only strategy, skipping requests", job.title)
             if browser_scraper is None:
                 from jobpilot.scraper.browser import BrowserScraper
                 browser_scraper = BrowserScraper()
             description = browser_scraper.scrape(job.url)
+        else:
+            description = scraper.scrape(job.url)
+            if description is None and strategy == STRATEGY_REQUESTS_THEN_BROWSER:
+                logger.info("[Sync] %s — requests failed, falling back to browser", job.title)
+                if browser_scraper is None:
+                    from jobpilot.scraper.browser import BrowserScraper
+                    browser_scraper = BrowserScraper()
+                description = browser_scraper.scrape(job.url)
 
         # SCRAPE_EXPIRED is a non-None string, so the browser fallback above
         # (which checks `description is None`) is skipped when requests detects expiry.

@@ -37,17 +37,26 @@ _PROFILE_DIR = Path.home() / ".jobpilot" / "browser-profile"
 
 _LOGIN_URLS: dict[str, str] = {
     "linkedin": "https://www.linkedin.com/login",
+    "glassdoor": "https://www.glassdoor.com/",
 }
 
 ALLOWED_SITES: set[str] = set(_LOGIN_URLS.keys())
 
 _NAVIGATION_TIMEOUT_MS = 30_000
+_LOGIN_NAV_TIMEOUT_MS = 60_000
 _MIN_HUMAN_DELAY = 3.0
 _MAX_HUMAN_DELAY = 6.0
 
 _BROWSER_ARGS = [
     "--disable-blink-features=AutomationControlled",
 ]
+
+_CLOUDFLARE_SIGNALS: tuple[str, ...] = (
+    "Just a moment",
+    "Checking your browser",
+    "cf-challenge",
+    "Verify you are human",
+)
 
 
 def _launch_context(pw: Playwright, *, headless: bool) -> BrowserContext:
@@ -89,13 +98,25 @@ class BrowserScraper:
         if site not in ALLOWED_SITES:
             raise ValueError(f"Unknown site: {site}. Allowed: {ALLOWED_SITES}")
 
+        lock_file = _PROFILE_DIR / "SingletonLock"
+        if lock_file.exists():
+            lock_file.unlink(missing_ok=True)
+
         pw = sync_playwright().start()
         ctx = None
         try:
             ctx = _launch_context(pw, headless=False)
             page = ctx.new_page()
-            page.goto(_LOGIN_URLS[site], timeout=30_000)
-            logger.info("[Scrape] browser: opened %s login — waiting for user", site)
+            login_url = _LOGIN_URLS[site]
+            try:
+                page.goto(login_url, wait_until="domcontentloaded", timeout=_LOGIN_NAV_TIMEOUT_MS)
+                logger.info("[Scrape] browser: opened %s login — waiting for user", site)
+            except (PlaywrightTimeout, PlaywrightError) as exc:
+                logger.warning(
+                    "[Scrape] browser: %s — navigation to %s failed (%s); "
+                    "leaving browser open for manual navigation",
+                    site, login_url, exc.__class__.__name__,
+                )
             page.wait_for_event("close", timeout=300_000)
         except PlaywrightTimeout:
             logger.info("[Scrape] browser: login window timed out for %s", site)
@@ -134,6 +155,12 @@ class BrowserScraper:
         page.wait_for_load_state("load", timeout=_NAVIGATION_TIMEOUT_MS)
         time.sleep(random.uniform(_MIN_HUMAN_DELAY, _MAX_HUMAN_DELAY))
 
+        if self._is_cloudflare_challenge(page):
+            logger.warning(
+                "[Scrape] browser: %s — Cloudflare challenge detected, skipping", url,
+            )
+            return None
+
         hostname = urlparse(url).hostname or ""
         description = self._extract_for_domain(page, hostname)
 
@@ -154,6 +181,8 @@ class BrowserScraper:
         """Route to site-specific extractor based on hostname."""
         if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
             return self._extract_linkedin(page)
+        if hostname == "glassdoor.com" or hostname.endswith(".glassdoor.com"):
+            return self._extract_glassdoor(page)
         return self._extract_generic(page)
 
     def _extract_linkedin(self, page: Page) -> str | None:
@@ -164,6 +193,25 @@ class BrowserScraper:
             "section.description",
         ]
         return self._try_selectors(page, selectors)
+
+    def _extract_glassdoor(self, page: Page) -> str | None:
+        """Extract job description from Glassdoor."""
+        selectors = [
+            'div[class*="JobDetails_jobDescription"]',
+            'div[class*="jobDescriptionContent"]',
+            "div.desc",
+            'div[class*="description"]',
+        ]
+        return self._try_selectors(page, selectors)
+
+    def _is_cloudflare_challenge(self, page: Page) -> bool:
+        """Return True if the current page looks like a Cloudflare interstitial."""
+        try:
+            title = page.title()
+            content = page.content()
+        except PlaywrightError:
+            return False
+        return any(sig in title or sig in content for sig in _CLOUDFLARE_SIGNALS)
 
     def _extract_generic(self, page: Page) -> str | None:
         """Extract job description using generic heuristics."""
