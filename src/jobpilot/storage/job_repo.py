@@ -186,6 +186,22 @@ class JobRepository:
         ).fetchone()
         return row["cnt"] if row else 0
 
+    def get_descriptions_for_emails(
+        self, email_ids: list[str],
+    ) -> dict[str, tuple[str, str | None]]:
+        """Return {email_id: (description, matched_signals)} for emails with descriptions."""
+        if not email_ids:
+            return {}
+        placeholders = ",".join("?" * len(email_ids))
+        rows = self.conn.execute(
+            f"""SELECT email_id, description, matched_signals
+            FROM scraped_jobs
+            WHERE email_id IN ({placeholders})
+            AND description IS NOT NULL""",
+            email_ids,
+        ).fetchall()
+        return {r["email_id"]: (r["description"], r["matched_signals"]) for r in rows}
+
     def get_pending_scraped_jobs(self) -> list[dict]:
         """Get scraped jobs with pending classification."""
         rows = self.conn.execute(

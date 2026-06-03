@@ -172,6 +172,12 @@ class Repository:
     def count_scraped_jobs_for_email(self, email_id: str | int) -> int:
         return self.jobs.count_scraped_jobs_for_email(email_id)
 
+    def get_descriptions_for_emails(
+        self, email_ids: list[str],
+    ) -> dict[str, tuple[str, str | None]]:
+        """Return {email_id: (description, matched_signals)} for emails with descriptions."""
+        return self.jobs.get_descriptions_for_emails(email_ids)
+
     def get_pending_scraped_jobs(self) -> list[dict]:
         return self.jobs.get_pending_scraped_jobs()
 
