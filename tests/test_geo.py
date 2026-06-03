@@ -14,7 +14,7 @@ def test_distributed_team_matches_remote_text():
     """'globally distributed team' is a positive remote signal."""
     locations = expand_locations({"remote": {"weight": 1.0, "target": True}})
     assert "distributed team" in locations
-    assert score_location("Join our globally distributed team", locations) > 0.0
+    assert score_location("Join our globally distributed team", locations) == 1.0
 
 
 def test_distributed_systems_is_not_a_remote_signal():

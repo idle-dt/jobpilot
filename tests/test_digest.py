@@ -289,6 +289,21 @@ def test_linkedin_ios_title_parsed_correctly():
     assert blocks[0]["location"] == "Amsterdam"
 
 
+def test_parse_digest_keeps_ios_title_end_to_end():
+    """End-to-end: an iOS title survives parse_digest's final boilerplate filter."""
+    body = (
+        "iOS Developer - Native Mobile Platforms (KMP)\n"
+        "iO\n"
+        "Amsterdam\n"
+        "View job: https://www.linkedin.com/comm/jobs/view/4410029616/\n"
+    )
+    email = _make_email(body)
+    jobs = parse_digest(email)
+    assert len(jobs) == 1
+    assert jobs[0].title == "iOS Developer - Native Mobile Platforms (KMP)"
+    assert jobs[0].company == "iO"
+
+
 # --- Glassdoor: rating and star on separate lines ---
 
 GLASSDOOR_SEPARATE_RATING_HTML = """\
