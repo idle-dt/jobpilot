@@ -9,7 +9,8 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## In Progress
 
-See `docs/specs/SPECS.md` for spec implementation status.
+- Duplicate Email Deduplication → `docs/specs/SPEC_DUPLICATE_EMAIL_DEDUP.md`
+- Wellfound Digest Parsing & Description Scraping → `docs/specs/SPEC_WELLFOUND_SUPPORT.md`
 
 ## UI Improvements
 
@@ -19,7 +20,7 @@ See `docs/specs/SPECS.md` for spec implementation status.
 
 ### Classification
 - ~~Salary threshold scoring~~ — shipped
-- ~~Negation-aware signal matching~~ — specced → `docs/specs/SPEC_NEGATION_PHRASES.md`
+- ~~Negation-aware signal matching~~ — shipped
 
 ### Expired Job Auto-Detection
 - Auto-detect expired jobs via URL scraping (404/redirect) or date heuristic

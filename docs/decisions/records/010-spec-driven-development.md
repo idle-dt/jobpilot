@@ -23,8 +23,7 @@ Adopt a **spec-driven workflow** centered on `docs/specs/`.
   **Implementation Report** filled in on completion.
 - **Verification > Logic Verification** is the most important section: each item is a
   concrete "input X produces output Y" scenario, not a vague "verify it works".
-- `docs/specs/SPECS.md` indexes specs and tracks status (Implemented vs Not Yet
-  Implemented).
+- Active specs are tracked in `docs/TODO.md` under "In Progress".
 - The `CLAUDE.md` Implementation Workflow (Plan → Implement → Verify → Report) and
   the `/ship` flow operationalize the process: tests, lint, logic verification, and a
   code-review audit run before merge.
@@ -46,7 +45,7 @@ Adopt a **spec-driven workflow** centered on `docs/specs/`.
 
 ### Negative / Tradeoffs
 - Up-front spec-writing overhead for every change, including small ones.
-- Specs can drift from code if not maintained (mitigated by the Implementation Report + SPECS.md tracker).
+- Specs can drift from code if not maintained (mitigated by the Implementation Report + TODO.md tracking).
 
 ### Risks
 - Skipping the Logic Verification rigor undermines the whole process's value.
@@ -54,5 +53,5 @@ Adopt a **spec-driven workflow** centered on `docs/specs/`.
 ## Related
 
 - ADRs: this ADR system itself extends the documentation workflow.
-- Specs: `docs/specs/SPEC_TEMPLATE.md`, `docs/specs/SPECS.md`
+- Specs: `docs/specs/SPEC_TEMPLATE.md`
 - Docs: `CLAUDE.md` (Implementation Workflow, Writing Specs, /ship Command)
