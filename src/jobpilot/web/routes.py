@@ -108,9 +108,9 @@ def inbox():
     desc_map = repo.get_descriptions_for_emails(email_ids) if email_ids else {}
     for item in items:
         if item["type"] == "email":
-            desc_data = desc_map.get(item["obj"].id)
-            item["description"] = desc_data[0] if desc_data else None
-            item["matched_signals"] = desc_data[1] if desc_data else None
+            desc, signals = desc_map.get(item["obj"].id, (None, None))
+            item["description"] = desc
+            item["matched_signals"] = signals
             item["predictions"] = email_preds.get(item["obj"].id, [])
         else:
             item["predictions"] = job_preds.get(str(item["obj"].id), [])

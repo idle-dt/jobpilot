@@ -189,7 +189,11 @@ class JobRepository:
     def get_descriptions_for_emails(
         self, email_ids: list[str],
     ) -> dict[str, tuple[str, str | None]]:
-        """Return {email_id: (description, matched_signals)} for emails with descriptions."""
+        """Return {email_id: (description, matched_signals)} for emails with descriptions.
+
+        When an email has multiple scraped jobs (digest splits), returns the
+        highest-scored one. First-seen email_id wins due to dict insertion order.
+        """
         if not email_ids:
             return {}
         placeholders = ",".join("?" * len(email_ids))
@@ -197,10 +201,15 @@ class JobRepository:
             f"""SELECT email_id, description, matched_signals
             FROM scraped_jobs
             WHERE email_id IN ({placeholders})
-            AND description IS NOT NULL""",
+            AND description IS NOT NULL
+            ORDER BY score DESC, id ASC""",
             email_ids,
         ).fetchall()
-        return {r["email_id"]: (r["description"], r["matched_signals"]) for r in rows}
+        result: dict[str, tuple[str, str | None]] = {}
+        for r in rows:
+            if r["email_id"] not in result:
+                result[r["email_id"]] = (r["description"], r["matched_signals"])
+        return result
 
     def get_pending_scraped_jobs(self) -> list[dict]:
         """Get scraped jobs with pending classification."""
