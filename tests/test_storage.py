@@ -255,6 +255,15 @@ def test_count_matches_review_list_with_duplicate(repo: Repository):
     assert repo.count_emails_for_review() == len(repo.get_emails_for_review())
 
 
+def test_count_with_classification_filter_excludes_duplicate(repo: Repository):
+    """The classification-filtered count also excludes duplicate-origin emails."""
+    _scraped_job(repo, _JOB_URL)
+    _review_email(repo, "dup", origin_url=_JOB_URL, final_classification="worth_checking")
+    _review_email(repo, "plain", final_classification="worth_checking")
+
+    assert repo.count_emails_for_review(classification="worth_checking") == 1
+
+
 def test_descriptions_resolved_by_origin_url(repo: Repository):
     """A duplicate email with no scraped row gets its description via origin_url join."""
     job_id = _scraped_job(repo, _JOB_URL)
