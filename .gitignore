@@ -47,11 +47,10 @@ poetry.lock
 .superpowers/
 CLAUDE.md
 
-# Internal docs — track decisions, todos, and the specs tracker/template; ignore the rest
+# Internal docs — track decisions, todos, and the specs template; ignore the rest
 docs/*
 !docs/decisions/
 !docs/todos/
 !docs/specs/
 docs/specs/*
-!docs/specs/SPECS.md
 !docs/specs/SPEC_TEMPLATE.md
