@@ -47,5 +47,7 @@ poetry.lock
 .superpowers/
 CLAUDE.md
 
-# Internal docs
-docs/
+# Internal docs (keep docs/decisions/ and docs/todos/ tracked)
+docs/*
+!docs/decisions/
+!docs/todos/
