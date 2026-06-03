@@ -317,6 +317,29 @@ def test_glassdoor_separate_rating_and_star_filtered():
         assert value not in ("3.9", "★")
 
 
+GLASSDOOR_DECIMAL_TITLE_HTML = """\
+<html><body>
+<table><tr><td>
+  <div>Acme Corp</div>
+  <div>4.2</div>
+  <div>★</div>
+  <a href="https://www.glassdoor.com/partner/jobListing.htm?jl=9">3.0 to 5.0 yrs - Backend Engineer</a>
+  <div>Berlin</div>
+</td></tr></table>
+</body></html>
+"""
+
+
+def test_glassdoor_decimal_prefixed_title_not_dropped():
+    """A title that merely starts with a decimal must not be filtered as a rating."""
+    jobs = _parse_glassdoor_digest(GLASSDOOR_DECIMAL_TITLE_HTML, "")
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job["title"] == "3.0 to 5.0 yrs - Backend Engineer"
+    assert job["company"] == "Acme Corp"
+    assert job["location"] == "Berlin"
+
+
 # --- Internal LinkedIn Parser ---
 
 def test_linkedin_parser_skips_header_block():

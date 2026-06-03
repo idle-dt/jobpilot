@@ -319,7 +319,7 @@ _GLASSDOOR_NOISE_RE = re.compile(
     r"Want more listings|Similar jobs|Create|Looking for|You can edit|"
     r"Sent Daily|Edit|This message was sent|Privacy Policy|Manage Settings|"
     r"Unsubscribe|Glassdoor|Copyright|\(|\)|operations analyst|systems analyst|"
-    r"engineering documentation|★|\d+\.\d+|Highly Rated)",
+    r"engineering documentation|Highly Rated)",
     re.IGNORECASE,
 )
 
