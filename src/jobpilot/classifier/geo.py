@@ -264,7 +264,7 @@ REMOTE_SYNONYMS = [
     "work from anywhere",
     "work from home",
     "wfh",
-    "distributed",
+    "distributed team",
     "location independent",
     "work remotely",
     "anywhere",

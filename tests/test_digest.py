@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 from jobpilot.gmail.digest import (
     _clean_job_url,
+    _is_boilerplate_line,
+    _parse_glassdoor_digest,
     _parse_linkedin_digest,
     extract_single_job_url,
     parse_digest,
@@ -233,6 +235,124 @@ def test_extract_single_job_url_none_for_no_urls():
     body = "No job links here, just plain text."
     url = extract_single_job_url(body, "linkedin")
     assert url is None
+
+
+# --- Boilerplate detection: lowercase tech prefixes ---
+
+def test_lowercase_tech_prefix_titles_not_boilerplate():
+    """Titles starting with iOS/iPad/eBay etc. must not be filtered."""
+    assert not _is_boilerplate_line(
+        "iOS Developer - Native Mobile Platforms (Kotlin Multiplatform)"
+    )
+    assert not _is_boilerplate_line("iPad App Engineer - Consumer Products")
+    assert not _is_boilerplate_line("eBay Senior Backend Engineer")
+
+
+def test_long_title_with_parentheticals_not_boilerplate():
+    """An 82-char title with tech stack and gender marker must not be filtered."""
+    title = (
+        "Lead Developer Mobile Apps (iOS, Android, Web) / "
+        "Digital Health Excellence Center (w/m/d)"
+    )
+    assert not _is_boilerplate_line(title)
+
+
+def test_cta_sentence_still_filtered():
+    """Real boilerplate CTA lines must still be filtered."""
+    assert _is_boilerplate_line(
+        "you'll receive notifications when new jobs are posted"
+    )
+
+
+def test_very_long_sentence_still_filtered():
+    """A line longer than the 120-char limit must still be filtered."""
+    long_line = (
+        "Principal Distinguished Staff Architect Engineer Lead Manager Director "
+        "of Platform Infrastructure and Reliability Systems Group Worldwide"
+    )
+    assert len(long_line) > 120
+    assert _is_boilerplate_line(long_line)
+
+
+def test_linkedin_ios_title_parsed_correctly():
+    """LinkedIn block with an iOS title parses title/company/location correctly."""
+    body = (
+        "iOS Developer - Native Mobile Platforms (KMP)\n"
+        "iO\n"
+        "Amsterdam\n"
+        "View job: https://www.linkedin.com/comm/jobs/view/123456789/\n"
+    )
+    blocks = _parse_linkedin_digest(body)
+    assert len(blocks) == 1
+    assert blocks[0]["title"] == "iOS Developer - Native Mobile Platforms (KMP)"
+    assert blocks[0]["company"] == "iO"
+    assert blocks[0]["location"] == "Amsterdam"
+
+
+def test_parse_digest_keeps_ios_title_end_to_end():
+    """End-to-end: an iOS title survives parse_digest's final boilerplate filter."""
+    body = (
+        "iOS Developer - Native Mobile Platforms (KMP)\n"
+        "iO\n"
+        "Amsterdam\n"
+        "View job: https://www.linkedin.com/comm/jobs/view/4410029616/\n"
+    )
+    email = _make_email(body)
+    jobs = parse_digest(email)
+    assert len(jobs) == 1
+    assert jobs[0].title == "iOS Developer - Native Mobile Platforms (KMP)"
+    assert jobs[0].company == "iO"
+
+
+# --- Glassdoor: rating and star on separate lines ---
+
+GLASSDOOR_SEPARATE_RATING_HTML = """\
+<html><body>
+<table><tr><td>
+  <div>Visa Inc.</div>
+  <div>3.9</div>
+  <div>★</div>
+  <a href="https://www.glassdoor.com/partner/jobListing.htm?pos=101&jl=123">Software Engineer</a>
+  <div>Stockholm</div>
+</td></tr></table>
+</body></html>
+"""
+
+
+def test_glassdoor_separate_rating_and_star_filtered():
+    """Standalone rating and star lines are filtered; fields extracted correctly."""
+    jobs = _parse_glassdoor_digest(GLASSDOOR_SEPARATE_RATING_HTML, "")
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job["title"] == "Software Engineer"
+    assert job["company"] == "Visa Inc."
+    assert job["location"] == "Stockholm"
+    # The rating and star must not leak into any field
+    for value in (job["title"], job["company"], job["location"]):
+        assert value not in ("3.9", "★")
+
+
+GLASSDOOR_DECIMAL_TITLE_HTML = """\
+<html><body>
+<table><tr><td>
+  <div>Acme Corp</div>
+  <div>4.2</div>
+  <div>★</div>
+  <a href="https://www.glassdoor.com/partner/jobListing.htm?jl=9">3.0 to 5.0 yrs - Backend Engineer</a>
+  <div>Berlin</div>
+</td></tr></table>
+</body></html>
+"""
+
+
+def test_glassdoor_decimal_prefixed_title_not_dropped():
+    """A title that merely starts with a decimal must not be filtered as a rating."""
+    jobs = _parse_glassdoor_digest(GLASSDOOR_DECIMAL_TITLE_HTML, "")
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job["title"] == "3.0 to 5.0 yrs - Backend Engineer"
+    assert job["company"] == "Acme Corp"
+    assert job["location"] == "Berlin"
 
 
 # --- Internal LinkedIn Parser ---
