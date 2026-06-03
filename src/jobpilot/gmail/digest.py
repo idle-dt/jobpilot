@@ -64,8 +64,11 @@ _SENTENCE_WORDS = re.compile(r"\b(you|your|when|that|will|we'll|you'll)\b", re.I
 # Abbreviations that legitimately end job titles with a period (e.g. "Sr.", "Jr.")
 _TITLE_ABBREV_RE = re.compile(r"\b(Sr|Jr|Inc|Ltd|Corp|Co|Dr|Mr|Mrs|Ms)\.$", re.IGNORECASE)
 
+# Known lowercase-start tech prefixes that are valid title starts, not sentences
+_LOWERCASE_TITLE_PREFIXES = ("iOS", "iPad", "iPhone", "eBay", "eCommerce", "eLearning")
+
 # Digest parsing thresholds
-MAX_BOILERPLATE_LINE_LENGTH = 80
+MAX_BOILERPLATE_LINE_LENGTH = 120
 MIN_SENTENCE_LINE_LENGTH = 40
 MIN_DIGEST_JOBS_FOR_GENERIC = 2
 GLASSDOOR_MAX_PARENT_DEPTH = 12
@@ -92,7 +95,8 @@ def _is_boilerplate_line(line: str) -> bool:
     if stripped and stripped[0].islower() and (
         _SENTENCE_WORDS.search(stripped) or len(stripped) > MIN_SENTENCE_LINE_LENGTH
     ):
-        return True
+        if not any(stripped.startswith(prefix) for prefix in _LOWERCASE_TITLE_PREFIXES):
+            return True
     # Ends with period but not a known abbreviation (e.g. "Sr.", "...Inc.")
     if stripped.endswith(".") and not _TITLE_ABBREV_RE.search(stripped):
         return True
@@ -309,13 +313,13 @@ def _parse_indeed_digest(body: str) -> list[dict]:
     return jobs
 
 
-_GLASSDOOR_RATING_RE = re.compile(r"^\d+\.\d+\s*★$")
+_GLASSDOOR_RATING_RE = re.compile(r"^(\d+\.\d+\s*★?|★)$")
 _GLASSDOOR_NOISE_RE = re.compile(
     r"^(Glassdoor est\.|Employer est\.|Easy Apply|\d+d|See more jobs|"
     r"Want more listings|Similar jobs|Create|Looking for|You can edit|"
     r"Sent Daily|Edit|This message was sent|Privacy Policy|Manage Settings|"
     r"Unsubscribe|Glassdoor|Copyright|\(|\)|operations analyst|systems analyst|"
-    r"engineering documentation)",
+    r"engineering documentation|★|\d+\.\d+|Highly Rated)",
     re.IGNORECASE,
 )
 
