@@ -56,6 +56,10 @@ class EmailRepository:
                 SELECT DISTINCT email_id FROM scraped_jobs
                 WHERE email_id IS NOT NULL
             )
+            AND (origin_url IS NULL OR origin_url NOT IN (
+                SELECT DISTINCT url FROM scraped_jobs
+                WHERE url IS NOT NULL
+            ))
             ORDER BY received_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
@@ -75,7 +79,11 @@ class EmailRepository:
             AND id NOT IN (
                 SELECT DISTINCT email_id FROM scraped_jobs
                 WHERE email_id IS NOT NULL
-            )"""
+            )
+            AND (origin_url IS NULL OR origin_url NOT IN (
+                SELECT DISTINCT url FROM scraped_jobs
+                WHERE url IS NOT NULL
+            ))"""
         if classification:
             row = self.conn.execute(
                 base + " AND final_classification = ?",
