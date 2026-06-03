@@ -161,6 +161,33 @@ def test_get_jobs_needing_scrape_requires_score(repo):
     assert len(needing) == 0
 
 
+def test_get_jobs_needing_scrape_excludes_labeled(repo):
+    """Jobs the user has already labeled should not be re-scraped."""
+    labeled = ScrapedJob(
+        id=None, source="glassdoor", title="Labeled",
+        url="https://www.glassdoor.com/job/labeled",
+    )
+    unlabeled = ScrapedJob(
+        id=None, source="glassdoor", title="Unlabeled",
+        url="https://www.glassdoor.com/job/unlabeled",
+    )
+    repo.insert_scraped_job(labeled)
+    repo.insert_scraped_job(unlabeled)
+
+    rows = {r["url"]: r["id"] for r in repo.conn.execute("SELECT id, url FROM scraped_jobs")}
+    labeled_id = rows["https://www.glassdoor.com/job/labeled"]
+    unlabeled_id = rows["https://www.glassdoor.com/job/unlabeled"]
+
+    repo.update_scraped_job_scores(labeled_id, 0.7, None, "worth_checking")
+    repo.update_scraped_job_scores(unlabeled_id, 0.7, None, "worth_checking")
+    repo.update_scraped_job_label(labeled_id, "skip")
+
+    needing = repo.get_jobs_needing_scrape()
+    urls = {j.url for j in needing}
+    assert "https://www.glassdoor.com/job/unlabeled" in urls
+    assert "https://www.glassdoor.com/job/labeled" not in urls
+
+
 def test_toggle_scraped_job_expired(repo):
     """toggle_scraped_job_expired should flip the expired flag."""
     job = ScrapedJob(
@@ -354,14 +381,106 @@ def test_browser_extract_for_domain_routes_linkedin():
     mock_li.assert_called_once_with(mock_page)
 
 
+def test_browser_extract_for_domain_routes_glassdoor():
+    """_extract_for_domain should route glassdoor.com to _extract_glassdoor."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    mock_page = MagicMock()
+
+    with patch.object(scraper, "_extract_glassdoor", return_value="Glassdoor desc") as mock_gd:
+        result = scraper._extract_for_domain(mock_page, "www.glassdoor.com")
+    assert result == "Glassdoor desc"
+    mock_gd.assert_called_once_with(mock_page)
+
+
 def test_browser_extract_for_domain_routes_generic():
-    """_extract_for_domain should route non-LinkedIn to _extract_generic."""
+    """_extract_for_domain should fall through to _extract_generic for unknown hosts."""
     from jobpilot.scraper.browser import BrowserScraper
 
     scraper = BrowserScraper()
     mock_page = MagicMock()
 
     with patch.object(scraper, "_extract_generic", return_value="Generic desc") as mock_gen:
-        result = scraper._extract_for_domain(mock_page, "www.glassdoor.com")
+        result = scraper._extract_for_domain(mock_page, "www.indeed.com")
     assert result == "Generic desc"
     mock_gen.assert_called_once_with(mock_page)
+
+
+def test_is_cloudflare_challenge_detects_signal_in_title():
+    """_is_cloudflare_challenge should return True when title contains a CF signal."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    mock_page = MagicMock()
+    mock_page.title.return_value = "Just a moment..."
+    mock_page.content.return_value = "<html><body>checking...</body></html>"
+    assert scraper._is_cloudflare_challenge(mock_page) is True
+
+
+def test_is_cloudflare_challenge_detects_marker_in_content():
+    """_is_cloudflare_challenge should return True when content contains a CF marker."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    mock_page = MagicMock()
+    mock_page.title.return_value = "Job listing"
+    mock_page.content.return_value = '<html><body><div id="cf-challenge-stage"></div></body></html>'
+    assert scraper._is_cloudflare_challenge(mock_page) is True
+
+
+def test_is_cloudflare_challenge_false_on_normal_page():
+    """_is_cloudflare_challenge should return False for a normal job page."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    mock_page = MagicMock()
+    mock_page.title.return_value = "Senior Flutter Developer | Glassdoor"
+    mock_page.content.return_value = "<html><body>Job description here.</body></html>"
+    assert scraper._is_cloudflare_challenge(mock_page) is False
+
+
+def test_is_cloudflare_challenge_false_on_human_phrase_in_description():
+    """A legitimate job description mentioning 'verify you are human' must not false-positive."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    mock_page = MagicMock()
+    mock_page.title.return_value = "Trust & Safety Engineer"
+    mock_page.content.return_value = (
+        "<html><body>You will build systems to verify you are human "
+        "via behavioral signals.</body></html>"
+    )
+    assert scraper._is_cloudflare_challenge(mock_page) is False
+
+
+def test_browser_only_strategy_skips_requests_scraper():
+    """_scrape_single_job with BROWSER_ONLY should not call the requests scraper."""
+    from jobpilot.services.sync_service import SyncService
+
+    requests_scraper = MagicMock()
+    browser_scraper = MagicMock()
+    browser_scraper.scrape.return_value = "Browser-rendered Glassdoor job text " * 10
+
+    job = ScrapedJob(
+        id=42,
+        source="glassdoor",
+        title="Test",
+        url="https://www.glassdoor.com/job/1",
+        score=0.5,
+        classification="worth_checking",
+    )
+
+    svc = SyncService.__new__(SyncService)
+    svc.repo = MagicMock()
+    svc._save_description = MagicMock()  # noqa: SLF001
+
+    result, returned_browser = svc._scrape_single_job(  # noqa: SLF001
+        job, requests_scraper, browser_scraper, MagicMock(), MagicMock(),
+    )
+
+    requests_scraper.scrape.assert_not_called()
+    browser_scraper.scrape.assert_called_once_with(job.url)
+    svc.repo.mark_scrape_attempted.assert_called_once_with(job.id)
+    assert returned_browser is browser_scraper
+    assert result is not None

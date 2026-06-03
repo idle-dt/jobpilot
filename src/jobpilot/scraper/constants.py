@@ -19,11 +19,13 @@ LOGIN_WALL_SIGNALS: list[str] = [
 # Scrape strategies
 STRATEGY_REQUESTS_THEN_BROWSER = "requests_then_browser"
 STRATEGY_REQUESTS_ONLY = "requests_only"
+STRATEGY_BROWSER_ONLY = "browser_only"
 
 # Domains where we attempt to scrape full job descriptions.
-# LinkedIn: requests first, browser fallback.
-# Glassdoor: requests only (login walls block browser too).
+# LinkedIn: requests first (cheap, ~98% success), browser fallback if blocked.
+# Glassdoor: browser only — Cloudflare blocks plain HTTP every time, so
+# skipping requests avoids wasted round-trips and 403/503 log noise.
 SCRAPABLE_DOMAINS: dict[str, str] = {
     "linkedin.com": STRATEGY_REQUESTS_THEN_BROWSER,
-    "glassdoor.com": STRATEGY_REQUESTS_ONLY,
+    "glassdoor.com": STRATEGY_BROWSER_ONLY,
 }

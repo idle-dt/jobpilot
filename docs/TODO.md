@@ -5,7 +5,7 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## Bugs
 
-- **ML scoring model collapse**: GBC/SVM/LR predict majority class only (0% precision/recall) — code fix applied (`class_weight="balanced"`), needs retrain via ML Experiment Lab
+(none)
 
 ## In Progress
 
@@ -18,8 +18,8 @@ See `docs/specs/SPECS.md` for spec implementation status.
 ## Planned Features
 
 ### Classification
-- Salary threshold scoring — penalize jobs with salary below user's minimum
-- Negation-aware signal matching — detect "Remote is NOT available", "no Flutter experience needed"
+- ~~Salary threshold scoring~~ — shipped
+- ~~Negation-aware signal matching~~ — specced → `docs/specs/SPEC_NEGATION_PHRASES.md`
 
 ### Expired Job Auto-Detection
 - Auto-detect expired jobs via URL scraping (404/redirect) or date heuristic

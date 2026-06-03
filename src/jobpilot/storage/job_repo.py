@@ -126,6 +126,9 @@ class JobRepository:
     def get_jobs_needing_scrape(self) -> list[ScrapedJob]:
         """Return jobs with LinkedIn or Glassdoor URLs that haven't been scraped yet.
 
+        Labeled jobs (user_label IS NOT NULL) are excluded — the user has
+        already decided, so scraping a description for them is wasted work.
+
         NOTE: The domain list here must stay in sync with SCRAPABLE_DOMAINS
         in scraper/constants.py. If a new domain is added there, add matching
         LIKE patterns below.
@@ -134,6 +137,7 @@ class JobRepository:
             """SELECT * FROM scraped_jobs
             WHERE scrape_attempted = FALSE
             AND score IS NOT NULL
+            AND user_label IS NULL
             AND (
                 url LIKE 'https://linkedin.com/%'
                 OR url LIKE 'https://%.linkedin.com/%'

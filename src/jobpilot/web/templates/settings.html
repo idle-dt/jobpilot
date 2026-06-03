@@ -114,9 +114,9 @@
     <h3>Browser Sessions</h3>
     <small>Log in to job sites that require authentication. Opens a browser window for manual login.</small>
     <div style="margin-top: 0.5rem;">
-        {% for site in ['LinkedIn'] %}
-        {% set key = site|lower %}
-        {% set logged_in = browser_sessions.get(key, false) %}
+        {% set display_names = {'linkedin': 'LinkedIn', 'glassdoor': 'Glassdoor'} %}
+        {% for key, logged_in in browser_sessions.items()|sort %}
+        {% set site = display_names.get(key, key|capitalize) %}
         <div class="setting-row" style="margin-bottom: 0.5rem;">
             <span>{{ site }}</span>
             {% if logged_in %}
