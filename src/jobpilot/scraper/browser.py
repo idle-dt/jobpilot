@@ -51,12 +51,23 @@ _BROWSER_ARGS = [
     "--disable-blink-features=AutomationControlled",
 ]
 
-_CLOUDFLARE_SIGNALS: tuple[str, ...] = (
+_CLOUDFLARE_TITLE_SIGNALS: tuple[str, ...] = (
     "Just a moment",
     "Checking your browser",
-    "cf-challenge",
-    "Verify you are human",
 )
+_CLOUDFLARE_CONTENT_MARKERS: tuple[str, ...] = (
+    "cf-browser-verification",
+    "cf-challenge-stage",
+    "challenge-platform",
+    "__cf_chl_",
+)
+
+
+def _clear_stale_singleton_lock() -> None:
+    """Remove Chrome's SingletonLock if a prior Playwright run left it behind."""
+    lock_file = _PROFILE_DIR / "SingletonLock"
+    if lock_file.exists():
+        lock_file.unlink(missing_ok=True)
 
 
 def _launch_context(pw: Playwright, *, headless: bool) -> BrowserContext:
@@ -86,37 +97,39 @@ class BrowserScraper:
         if self._context is not None:
             return self._context
 
-        lock_file = _PROFILE_DIR / "SingletonLock"
-        if lock_file.exists():
-            lock_file.unlink(missing_ok=True)
+        _clear_stale_singleton_lock()
         self._playwright = sync_playwright().start()
         self._context = _launch_context(self._playwright, headless=self._headless)
         return self._context
+
+    def _open_login_page(self, ctx: BrowserContext, site: str) -> Page:
+        """Open a new page and navigate to the site's login URL."""
+        page = ctx.new_page()
+        login_url = _LOGIN_URLS[site]
+        try:
+            page.goto(login_url, wait_until="domcontentloaded", timeout=_LOGIN_NAV_TIMEOUT_MS)
+            logger.info("[Scrape] browser: opened %s login — waiting for user", site)
+        except (PlaywrightTimeout, PlaywrightError) as exc:
+            logger.warning(
+                "[Scrape] browser: %s — navigation to %s failed (%s); "
+                "leaving browser open for manual navigation",
+                site, login_url, exc.__class__.__name__,
+            )
+        return page
 
     def login(self, site: str) -> None:
         """Open a visible browser window for manual login to a job site."""
         if site not in ALLOWED_SITES:
             raise ValueError(f"Unknown site: {site}. Allowed: {ALLOWED_SITES}")
 
-        lock_file = _PROFILE_DIR / "SingletonLock"
-        if lock_file.exists():
-            lock_file.unlink(missing_ok=True)
+        _clear_stale_singleton_lock()
 
-        pw = sync_playwright().start()
-        ctx = None
+        pw: Playwright | None = None
+        ctx: BrowserContext | None = None
         try:
+            pw = sync_playwright().start()
             ctx = _launch_context(pw, headless=False)
-            page = ctx.new_page()
-            login_url = _LOGIN_URLS[site]
-            try:
-                page.goto(login_url, wait_until="domcontentloaded", timeout=_LOGIN_NAV_TIMEOUT_MS)
-                logger.info("[Scrape] browser: opened %s login — waiting for user", site)
-            except (PlaywrightTimeout, PlaywrightError) as exc:
-                logger.warning(
-                    "[Scrape] browser: %s — navigation to %s failed (%s); "
-                    "leaving browser open for manual navigation",
-                    site, login_url, exc.__class__.__name__,
-                )
+            page = self._open_login_page(ctx, site)
             page.wait_for_event("close", timeout=300_000)
         except PlaywrightTimeout:
             logger.info("[Scrape] browser: login window timed out for %s", site)
@@ -128,7 +141,8 @@ class BrowserScraper:
                     ctx.close()
             except (PlaywrightError, OSError):
                 pass
-            pw.stop()
+            if pw is not None:
+                pw.stop()
 
     def scrape(self, url: str) -> str | None:
         """Open URL in browser, wait for content, extract description."""
@@ -205,13 +219,23 @@ class BrowserScraper:
         return self._try_selectors(page, selectors)
 
     def _is_cloudflare_challenge(self, page: Page) -> bool:
-        """Return True if the current page looks like a Cloudflare interstitial."""
+        """Return True if the current page looks like a Cloudflare interstitial.
+
+        Title signals are the primary detector. Content markers are narrowly
+        scoped to CF-internal CSS classes / cookie names so legitimate job
+        descriptions that mention "verify you are human" don't false-positive.
+        """
         try:
             title = page.title()
+        except PlaywrightError:
+            return False
+        if any(sig in title for sig in _CLOUDFLARE_TITLE_SIGNALS):
+            return True
+        try:
             content = page.content()
         except PlaywrightError:
             return False
-        return any(sig in title or sig in content for sig in _CLOUDFLARE_SIGNALS)
+        return any(marker in content for marker in _CLOUDFLARE_CONTENT_MARKERS)
 
     def _extract_generic(self, page: Page) -> str | None:
         """Extract job description using generic heuristics."""

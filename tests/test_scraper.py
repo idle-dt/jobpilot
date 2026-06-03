@@ -418,14 +418,14 @@ def test_is_cloudflare_challenge_detects_signal_in_title():
     assert scraper._is_cloudflare_challenge(mock_page) is True
 
 
-def test_is_cloudflare_challenge_detects_signal_in_content():
-    """_is_cloudflare_challenge should return True when content contains a CF signal."""
+def test_is_cloudflare_challenge_detects_marker_in_content():
+    """_is_cloudflare_challenge should return True when content contains a CF marker."""
     from jobpilot.scraper.browser import BrowserScraper
 
     scraper = BrowserScraper()
     mock_page = MagicMock()
     mock_page.title.return_value = "Job listing"
-    mock_page.content.return_value = "<html><body>Verify you are human</body></html>"
+    mock_page.content.return_value = '<html><body><div id="cf-challenge-stage"></div></body></html>'
     assert scraper._is_cloudflare_challenge(mock_page) is True
 
 
@@ -437,6 +437,20 @@ def test_is_cloudflare_challenge_false_on_normal_page():
     mock_page = MagicMock()
     mock_page.title.return_value = "Senior Flutter Developer | Glassdoor"
     mock_page.content.return_value = "<html><body>Job description here.</body></html>"
+    assert scraper._is_cloudflare_challenge(mock_page) is False
+
+
+def test_is_cloudflare_challenge_false_on_human_phrase_in_description():
+    """A legitimate job description mentioning 'verify you are human' must not false-positive."""
+    from jobpilot.scraper.browser import BrowserScraper
+
+    scraper = BrowserScraper()
+    mock_page = MagicMock()
+    mock_page.title.return_value = "Trust & Safety Engineer"
+    mock_page.content.return_value = (
+        "<html><body>You will build systems to verify you are human "
+        "via behavioral signals.</body></html>"
+    )
     assert scraper._is_cloudflare_challenge(mock_page) is False
 
 
@@ -467,5 +481,6 @@ def test_browser_only_strategy_skips_requests_scraper():
 
     requests_scraper.scrape.assert_not_called()
     browser_scraper.scrape.assert_called_once_with(job.url)
+    svc.repo.mark_scrape_attempted.assert_called_once_with(job.id)
     assert returned_browser is browser_scraper
     assert result is not None
