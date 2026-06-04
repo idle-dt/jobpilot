@@ -9,7 +9,6 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## In Progress
 
-- Duplicate Email Deduplication → `docs/specs/SPEC_DUPLICATE_EMAIL_DEDUP.md`
 - Wellfound Digest Parsing & Description Scraping → `docs/specs/SPEC_WELLFOUND_SUPPORT.md`
 
 ## UI Improvements

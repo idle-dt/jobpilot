@@ -213,6 +213,34 @@ class JobRepository:
         for r in rows:
             if r["email_id"] not in result:
                 result[r["email_id"]] = (r["description"], r["matched_signals"])
+        missing = [eid for eid in email_ids if eid not in result]
+        if missing:
+            for eid, val in self._descriptions_by_origin_url(missing).items():
+                result.setdefault(eid, val)
+        return result
+
+    def _descriptions_by_origin_url(
+        self, email_ids: list[str],
+    ) -> dict[str, tuple[str, str | None]]:
+        """Resolve descriptions for duplicate emails via origin_url -> scraped_jobs.url.
+
+        Handles emails that were linked to an already-scraped job (origin_url set)
+        but have no scraped_jobs row of their own (no email_id match).
+        """
+        placeholders = ",".join("?" * len(email_ids))
+        rows = self.conn.execute(
+            f"""SELECT e.id AS email_id, sj.description, sj.matched_signals
+            FROM emails e
+            JOIN scraped_jobs sj ON e.origin_url = sj.url
+            WHERE e.id IN ({placeholders})
+            AND sj.description IS NOT NULL
+            ORDER BY sj.score DESC, sj.id ASC""",
+            email_ids,
+        ).fetchall()
+        result: dict[str, tuple[str, str | None]] = {}
+        for r in rows:
+            if r["email_id"] not in result:
+                result[r["email_id"]] = (r["description"], r["matched_signals"])
         return result
 
     def get_pending_scraped_jobs(self) -> list[dict]:

@@ -181,3 +181,106 @@ def test_email_stats(repo: Repository):
     assert stats["total"] == 1
     assert stats["processed"] == 1
     assert stats["by_platform"]["linkedin"] == 1
+
+
+# --- Duplicate email deduplication ---
+
+_JOB_URL = "https://www.linkedin.com/jobs/view/123"
+
+
+def _review_email(repo: Repository, email_id: str, **overrides) -> Email:
+    """Insert a processed, job-related email eligible for the review queue."""
+    fields = dict(
+        id=email_id,
+        thread_id=f"thread_{email_id}",
+        sender="jobs@linkedin.com",
+        sender_domain="linkedin.com",
+        subject="New job for you",
+        received_at=datetime(2024, 5, 1, 9, 0),
+        platform="linkedin",
+        processed=True,
+        is_job_related=True,
+        final_classification="worth_checking",
+    )
+    fields.update(overrides)
+    email = Email(**fields)
+    repo.insert_email(email)
+    return email
+
+
+def _scraped_job(repo: Repository, url: str, email_id: str | None = None) -> int:
+    """Insert a scraped job and return its row id."""
+    repo.insert_scraped_job(
+        ScrapedJob(id=None, source="email", title="Engineer", url=url, email_id=email_id)
+    )
+    row = repo.conn.execute(
+        "SELECT id FROM scraped_jobs WHERE url = ?", (url,)
+    ).fetchone()
+    return row["id"]
+
+
+def test_review_excludes_email_matched_by_origin_url(repo: Repository):
+    """A duplicate email (origin_url -> existing scraped job) is excluded from review."""
+    _scraped_job(repo, _JOB_URL)
+    _review_email(repo, "dup", origin_url=_JOB_URL)
+
+    review_ids = {e.id for e in repo.get_emails_for_review()}
+    assert "dup" not in review_ids
+    assert repo.count_emails_for_review() == len(repo.get_emails_for_review())
+
+
+def test_review_keeps_email_with_null_origin_url(repo: Repository):
+    """An email with no origin_url is unaffected and appears in the review queue."""
+    _review_email(repo, "plain")
+
+    review_ids = {e.id for e in repo.get_emails_for_review()}
+    assert "plain" in review_ids
+
+
+def test_review_excludes_email_with_scraped_email_id(repo: Repository):
+    """Existing behavior preserved: email with its own scraped job is excluded."""
+    _review_email(repo, "digested")
+    _scraped_job(repo, _JOB_URL, email_id="digested")
+
+    review_ids = {e.id for e in repo.get_emails_for_review()}
+    assert "digested" not in review_ids
+
+
+def test_count_matches_review_list_with_duplicate(repo: Repository):
+    """count_emails_for_review stays consistent when a duplicate-origin email exists."""
+    _scraped_job(repo, _JOB_URL)
+    _review_email(repo, "dup", origin_url=_JOB_URL)
+    _review_email(repo, "plain")
+
+    assert repo.count_emails_for_review() == len(repo.get_emails_for_review())
+
+
+def test_count_with_classification_filter_excludes_duplicate(repo: Repository):
+    """The classification-filtered count also excludes duplicate-origin emails."""
+    _scraped_job(repo, _JOB_URL)
+    _review_email(repo, "dup", origin_url=_JOB_URL, final_classification="worth_checking")
+    _review_email(repo, "plain", final_classification="worth_checking")
+
+    assert repo.count_emails_for_review(classification="worth_checking") == 1
+
+
+def test_descriptions_resolved_by_origin_url(repo: Repository):
+    """A duplicate email with no scraped row gets its description via origin_url join."""
+    job_id = _scraped_job(repo, _JOB_URL)
+    repo.update_scraped_job_description(job_id, "Build great things.")
+    _review_email(repo, "dup", origin_url=_JOB_URL)
+
+    descriptions = repo.get_descriptions_for_emails(["dup"])
+    assert descriptions["dup"][0] == "Build great things."
+
+
+def test_descriptions_email_id_takes_precedence_over_origin_url(repo: Repository):
+    """When both match, the email_id-linked description wins."""
+    _review_email(repo, "dup", origin_url=_JOB_URL)
+    own = _scraped_job(repo, "https://www.linkedin.com/jobs/view/own", email_id="dup")
+    repo.update_scraped_job_description(own, "Own description.")
+    other = _scraped_job(repo, _JOB_URL)
+    repo.update_scraped_job_description(other, "Origin description.")
+
+    descriptions = repo.get_descriptions_for_emails(["dup"])
+    assert descriptions["dup"][0] == "Own description."
