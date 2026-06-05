@@ -326,9 +326,10 @@ _STATUS_RANK = {
 
 _URL_ALIVE_TIMEOUT = 3.0
 _HTTP_ERROR_STATUS = 400
-# Cap how many live URL probes the one-time migration may perform so a backlog
+# Soft ceiling on live URL probes the one-time migration may perform so a backlog
 # of dead application URLs cannot stall app startup (init_db runs migrations
-# synchronously). Beyond the budget, surviving rows keep their original URL.
+# synchronously). Checked between groups, so the true worst case is this budget
+# plus one group's probes. Beyond the budget, surviving rows keep their original URL.
 _MAX_URL_PROBES = 40
 
 # Pull every application with a case-insensitive, NULL-safe content key so
