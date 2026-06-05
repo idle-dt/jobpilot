@@ -186,6 +186,186 @@ def test_dedup_glassdoor_repoints_applications_to_survivor(db_conn):
     assert [r["id"] for r in remaining] == [survivor_id]
 
 
+def _insert_app(
+    db_conn,
+    *,
+    status="saved",
+    job_url=None,
+    scraped_job_id=None,
+    created_at="2024-01-01T00:00:00",
+    company="Cognizant",
+    role_title="Sr. Flutter Developer",
+    location="Warrensville, OH",
+):
+    """Insert an application with explicit dedup-relevant fields; return its id."""
+    cur = db_conn.execute(
+        "INSERT INTO applications (company, role_title, location, status, job_url, "
+        "scraped_job_id, created_at) VALUES (?,?,?,?,?,?,?)",
+        (company, role_title, location, status, job_url, scraped_job_id, created_at),
+    )
+    return cur.lastrowid
+
+
+def test_dedup_collapses_identical_applications_and_reroutes_history(db_conn):
+    """Same (title, company, location): newest survives, dupe deleted, history rerouted."""
+    from jobpilot.storage.database import _dedup_tracked_applications
+
+    dupe_id = _insert_app(db_conn, created_at="2024-01-01T00:00:00")
+    survivor_id = _insert_app(db_conn, created_at="2024-02-01T00:00:00")
+    db_conn.execute(
+        "INSERT INTO application_status_history (application_id, to_status) VALUES (?, 'saved')",
+        (dupe_id,),
+    )
+    db_conn.commit()
+
+    removed = _dedup_tracked_applications(db_conn)
+
+    assert removed == 1
+    ids = [r["id"] for r in db_conn.execute("SELECT id FROM applications").fetchall()]
+    assert ids == [survivor_id]
+    history_ref = db_conn.execute(
+        "SELECT application_id FROM application_status_history"
+    ).fetchone()["application_id"]
+    assert history_ref == survivor_id
+
+
+def test_dedup_keeps_higher_status_survivor(db_conn):
+    """'applied' outranks 'saved' even when the saved row is newer."""
+    from jobpilot.storage.database import _dedup_tracked_applications
+
+    applied_id = _insert_app(db_conn, status="applied", created_at="2024-01-01T00:00:00")
+    _insert_app(db_conn, status="saved", created_at="2024-02-01T00:00:00")
+    db_conn.commit()
+
+    removed = _dedup_tracked_applications(db_conn)
+
+    assert removed == 1
+    rows = db_conn.execute("SELECT id, status FROM applications").fetchall()
+    assert [r["id"] for r in rows] == [applied_id]
+    assert rows[0]["status"] == "applied"
+
+
+def test_dedup_swaps_dead_survivor_url_for_alive_duplicate(db_conn):
+    """Survivor URL dead, duplicate URL alive: survivor's job_url is swapped in."""
+    from unittest.mock import patch
+
+    from jobpilot.storage.database import _dedup_tracked_applications
+
+    alive_url = "https://alive.example/job"
+    _insert_app(db_conn, job_url=alive_url, created_at="2024-01-01T00:00:00")
+    survivor_id = _insert_app(
+        db_conn, job_url="https://dead.example/job", created_at="2024-02-01T00:00:00"
+    )
+    db_conn.commit()
+
+    with patch(
+        "jobpilot.storage.database._is_url_alive",
+        side_effect=lambda url, *a, **k: url == alive_url,
+    ):
+        removed = _dedup_tracked_applications(db_conn)
+
+    assert removed == 1
+    survivor_url = db_conn.execute(
+        "SELECT job_url FROM applications WHERE id = ?", (survivor_id,)
+    ).fetchone()["job_url"]
+    assert survivor_url == alive_url
+
+
+def test_dedup_keeps_survivor_url_when_all_dead(db_conn):
+    """No reachable URL in the group: the survivor keeps its original job_url."""
+    from unittest.mock import patch
+
+    from jobpilot.storage.database import _dedup_tracked_applications
+
+    _insert_app(db_conn, job_url="https://a.example/job", created_at="2024-01-01T00:00:00")
+    survivor_id = _insert_app(
+        db_conn, job_url="https://b.example/job", created_at="2024-02-01T00:00:00"
+    )
+    db_conn.commit()
+
+    with patch("jobpilot.storage.database._is_url_alive", return_value=False):
+        removed = _dedup_tracked_applications(db_conn)
+
+    assert removed == 1
+    survivor_url = db_conn.execute(
+        "SELECT job_url FROM applications WHERE id = ?", (survivor_id,)
+    ).fetchone()["job_url"]
+    assert survivor_url == "https://b.example/job"
+
+
+def test_dedup_deletes_orphaned_scraped_job(db_conn):
+    """The deleted duplicate's scraped_job is removed when nothing else references it."""
+    from jobpilot.storage.database import _dedup_tracked_applications
+
+    orphan_id = db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url) VALUES ('email', 'Sr. Flutter Developer', "
+        "'https://x.example/1')"
+    ).lastrowid
+    _insert_app(db_conn, scraped_job_id=orphan_id, created_at="2024-01-01T00:00:00")
+    _insert_app(db_conn, created_at="2024-02-01T00:00:00")
+    db_conn.commit()
+
+    removed = _dedup_tracked_applications(db_conn)
+
+    assert removed == 1
+    assert db_conn.execute(
+        "SELECT 1 FROM scraped_jobs WHERE id = ?", (orphan_id,)
+    ).fetchone() is None
+
+
+def test_dedup_keeps_shared_scraped_job(db_conn):
+    """A scraped_job still referenced by the survivor is kept after the duplicate is removed."""
+    from jobpilot.storage.database import _dedup_tracked_applications
+
+    shared_id = db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url) VALUES ('email', 'Sr. Flutter Developer', "
+        "'https://x.example/2')"
+    ).lastrowid
+    _insert_app(db_conn, scraped_job_id=shared_id, created_at="2024-01-01T00:00:00")
+    _insert_app(db_conn, scraped_job_id=shared_id, created_at="2024-02-01T00:00:00")
+    db_conn.commit()
+
+    removed = _dedup_tracked_applications(db_conn)
+
+    assert removed == 1
+    assert db_conn.execute(
+        "SELECT 1 FROM scraped_jobs WHERE id = ?", (shared_id,)
+    ).fetchone() is not None
+
+
+def test_dedup_leaves_unique_application_untouched(db_conn):
+    """An application with no content-duplicate is left alone."""
+    from jobpilot.storage.database import _dedup_tracked_applications
+
+    app_id = _insert_app(db_conn)
+    db_conn.commit()
+
+    removed = _dedup_tracked_applications(db_conn)
+
+    assert removed == 0
+    ids = [r["id"] for r in db_conn.execute("SELECT id FROM applications").fetchall()]
+    assert ids == [app_id]
+
+
+def test_dedup_runs_only_once(db_conn):
+    """_run_once guards the migration: duplicates added after the first run are not collapsed."""
+    from jobpilot.storage.database import _dedup_tracked_applications, _run_once
+
+    _insert_app(db_conn, created_at="2024-01-01T00:00:00")
+    _insert_app(db_conn, created_at="2024-02-01T00:00:00")
+    key = "_migration_dedup_tracked_applications"
+    db_conn.execute("DELETE FROM settings WHERE key = ?", (key,))  # init_db already ran it
+    db_conn.commit()
+
+    _run_once(db_conn, key, _dedup_tracked_applications)
+    assert db_conn.execute("SELECT COUNT(*) c FROM applications").fetchone()["c"] == 1
+
+    _insert_app(db_conn, created_at="2024-03-01T00:00:00")
+    db_conn.commit()
+    _run_once(db_conn, key, _dedup_tracked_applications)  # key already set -> no-op
+    assert db_conn.execute("SELECT COUNT(*) c FROM applications").fetchone()["c"] == 2
+
+
 def test_init_db_creates_tables(db_conn):
     """Verify all expected tables are created."""
     cursor = db_conn.execute(
