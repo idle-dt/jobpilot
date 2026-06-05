@@ -39,6 +39,33 @@ def test_cleanup_corrupted_wellfound_jobs_deletes_unlabeled(db_conn):
     assert deleted == 1
 
 
+def test_cleanup_corrupted_glassdoor_jobs_deletes_unlabeled(db_conn):
+    """Unlabeled Glassdoor jobs are deleted for re-parsing; labeled ones survive."""
+    from jobpilot.storage.database import _cleanup_corrupted_glassdoor_jobs
+
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url, user_label) VALUES (?,?,?,?)",
+        ("glassdoor", "Philadelphia, PA", "https://www.glassdoor.com/partner/jobListing.htm?jobListingId=1", None),
+    )
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url, user_label) VALUES (?,?,?,?)",
+        ("glassdoor", "Staff Engineer", "https://www.glassdoor.com/partner/jobListing.htm?jobListingId=2", "skip"),
+    )
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url) VALUES (?,?,?)",
+        ("linkedin", "iOS Dev", "https://linkedin.com/jobs/view/9"),
+    )
+    db_conn.commit()
+
+    deleted = _cleanup_corrupted_glassdoor_jobs(db_conn)
+
+    titles = {r["title"] for r in db_conn.execute("SELECT title FROM scraped_jobs")}
+    assert "Philadelphia, PA" not in titles
+    assert "Staff Engineer" in titles
+    assert "iOS Dev" in titles
+    assert deleted == 1
+
+
 def test_init_db_creates_tables(db_conn):
     """Verify all expected tables are created."""
     cursor = db_conn.execute(

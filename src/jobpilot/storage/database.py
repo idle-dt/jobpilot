@@ -231,6 +231,23 @@ def _cleanup_corrupted_wellfound_jobs(conn: sqlite3.Connection) -> int:
     return cursor.rowcount
 
 
+# Glassdoor jobs predating the parsing fixes have corrupted fields (titles eaten
+# as salary, hour-durations leaking into location) and duplicate rows from
+# per-digest tracking URLs. Deleting the unlabeled ones lets the next sync
+# re-parse the source emails with the fixed parser and normalized URLs. Labeled
+# jobs are preserved — the user already acted on them.
+_CLEANUP_GLASSDOOR_SQL = (
+    "DELETE FROM scraped_jobs WHERE source = 'glassdoor' AND user_label IS NULL"
+)
+
+
+def _cleanup_corrupted_glassdoor_jobs(conn: sqlite3.Connection) -> int:
+    """Delete unlabeled Glassdoor jobs so they can be re-parsed. Returns count."""
+    cursor = conn.execute(_CLEANUP_GLASSDOOR_SQL)
+    conn.commit()
+    return cursor.rowcount
+
+
 def _run_migrations(conn: sqlite3.Connection) -> None:
     """Apply incremental schema changes idempotently."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(model_versions)").fetchall()}
@@ -331,6 +348,22 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("_migration_wellfound_cleanup", "1"),
+        )
+        conn.commit()
+
+    # One-time cleanup of corrupted/duplicated Glassdoor jobs after parsing fixes
+    try:
+        ran_gd_parse = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("_migration_glassdoor_parsing_cleanup",),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ran_gd_parse = None
+    if not ran_gd_parse:
+        _cleanup_corrupted_glassdoor_jobs(conn)
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            ("_migration_glassdoor_parsing_cleanup", "1"),
         )
         conn.commit()
 
