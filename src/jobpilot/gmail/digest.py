@@ -4,6 +4,7 @@ import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
+from bs4.element import Tag
 
 from jobpilot.storage.models import Email, ScrapedJob
 
@@ -86,6 +87,8 @@ GENERIC_URL_CONTEXT_LINES = 5
 # span inside the same table cell.
 _WELLFOUND_TITLE_STYLE_PARTS = ("font-size: 14px", "font-weight: 700", "color: #000")
 _WELLFOUND_COMPANY_COLOR = "#541142"
+_WELLFOUND_URL_HOST = "wellfound.com"
+_SAFE_URL_SCHEMES = ("http://", "https://")
 
 
 def _is_boilerplate_line(line: str) -> bool:
@@ -447,20 +450,35 @@ def _parse_wellfound_digest(html: str, body_text: str) -> list[dict]:
         company = _wellfound_company(cell)
         if (title, company) in seen:
             continue
-        table = cell.find_parent("table")
-        link = table.find("a", href=True) if table else None
-        if link is None:
+        # Prefer a link scoped to the card cell; fall back to the enclosing table.
+        url = _wellfound_job_url(cell) or _wellfound_job_url(cell.find_parent("table"))
+        if url is None:
             continue
         seen.add((title, company))
-        jobs.append({"title": title, "company": company, "url": link["href"]})
+        jobs.append({"title": title, "company": company, "url": url})
 
     return jobs
 
 
-def _wellfound_company(cell) -> str | None:  # type: ignore[no-untyped-def]
+def _wellfound_company(cell: Tag) -> str | None:
     """Extract the company name from a Wellfound job card's table cell."""
     span = cell.find("span", style=lambda s: s and _WELLFOUND_COMPANY_COLOR in s)
     return span.get_text(strip=True) if span else None
+
+
+def _wellfound_job_url(container: Tag | None) -> str | None:
+    """Return the first safe http(s) Wellfound link in a container, or None.
+
+    The href comes from untrusted email HTML, so reject non-HTTP schemes
+    (e.g. ``javascript:``) and links that don't point at Wellfound.
+    """
+    if container is None:
+        return None
+    for anchor in container.find_all("a", href=True):
+        href = anchor["href"]
+        if href.startswith(_SAFE_URL_SCHEMES) and _WELLFOUND_URL_HOST in href:
+            return href
+    return None
 
 
 def _parse_generic_digest(body: str) -> list[dict]:

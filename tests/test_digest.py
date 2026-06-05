@@ -414,6 +414,33 @@ def test_parse_wellfound_digest_urls_point_to_wellfound():
         assert "wellfound.com" in job["url"]
 
 
+def test_parse_wellfound_digest_rejects_unsafe_href():
+    """A card whose only link is a javascript: scheme yields no job."""
+    html = """\
+<table><tr><td>
+  <div style="font-size: 14px; font-weight: 700; color: #000;">Evil Role</div>
+  <span style="color: #541142;">Sketchy Inc</span>
+  <a href="javascript:alert(1)">Learn more</a>
+</td></tr></table>
+"""
+    assert _parse_wellfound_digest(html, "") == []
+
+
+def test_parse_wellfound_digest_skips_non_wellfound_links():
+    """An unsubscribe/footer link before the job link must not be captured."""
+    html = """\
+<table><tr><td>
+  <div style="font-size: 14px; font-weight: 700; color: #000;">React Native Engineer</div>
+  <span style="color: #541142;">Acme</span>
+  <a href="https://example.com/unsubscribe">Unsubscribe</a>
+  <a href="https://links.wellfound.com/s/c/realjob">Learn more</a>
+</td></tr></table>
+"""
+    jobs = _parse_wellfound_digest(html, "")
+    assert len(jobs) == 1
+    assert jobs[0]["url"] == "https://links.wellfound.com/s/c/realjob"
+
+
 def test_parse_wellfound_digest_no_html_falls_back_to_generic():
     """With no HTML body, fall back to the generic text parser."""
     body = "Check this role: https://wellfound.com/jobs/12345-mobile-developer"
