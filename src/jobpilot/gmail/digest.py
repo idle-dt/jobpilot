@@ -363,7 +363,9 @@ _GLASSDOOR_RATING_RE = re.compile(r"^(\d+\.\d+\s*★?|★)$")
 # "Sr Engineer ($150-$220k) AI") are NOT mistaken for a salary value.
 _GLASSDOOR_SALARY_RE = re.compile(r"^\$[\d,.]+[KkMm]?\s*[-–]\s*\$[\d,.]+[KkMm]?$")
 _GLASSDOOR_NOISE_RE = re.compile(
-    r"^(Glassdoor est\.|Employer est\.|Easy Apply|\d+[dh]|See more jobs|"
+    # \d+[dh]$ is end-anchored so only standalone age tokens ("22h", "3d") match,
+    # not real content that merely starts with them ("3D Artist", "24h support").
+    r"^(Glassdoor est\.|Employer est\.|Easy Apply|\d+[dh]$|See more jobs|"
     r"Want more listings|Similar jobs|Create|Looking for|You can edit|"
     r"Sent Daily|Edit|This message was sent|Privacy Policy|Manage Settings|"
     r"Unsubscribe|Glassdoor|Copyright|\(|\)|operations analyst|systems analyst|"

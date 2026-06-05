@@ -380,6 +380,13 @@ def test_glassdoor_noise_re_filters_hours_and_days():
     assert _GLASSDOOR_NOISE_RE.match("3d")
 
 
+def test_glassdoor_noise_re_keeps_content_starting_with_duration():
+    """Real parts that merely start with a digit+d/h are not filtered as noise."""
+    assert _GLASSDOOR_NOISE_RE.match("3D Artist") is None
+    assert _GLASSDOOR_NOISE_RE.match("24h support engineer") is None
+    assert _GLASSDOOR_NOISE_RE.match("3d printing specialist") is None
+
+
 GLASSDOOR_EVERFORTH_HTML = """\
 <html><body>
 <table><tr><td>
