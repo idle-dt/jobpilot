@@ -28,3 +28,4 @@ The decision records live in [`records/`](records/). The template for new ADRs i
 | 010 | [Spec-driven development workflow](records/010-spec-driven-development.md) | accepted | process, workflow |
 | 011 | [Digest parsing for multi-job emails](records/011-digest-parsing.md) | accepted | email, parsing |
 | 012 | [Pydantic Settings for configuration](records/012-pydantic-settings.md) | accepted | infrastructure, config |
+| 013 | [Per-platform email parsing and scraping strategy](records/013-per-platform-parsing-scraping.md) | accepted | scraping, email, parsing, integration |

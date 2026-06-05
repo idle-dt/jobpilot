@@ -9,7 +9,7 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## In Progress
 
-- Wellfound Digest Parsing & Description Scraping → `docs/specs/SPEC_WELLFOUND_SUPPORT.md`
+(none)
 
 ## UI Improvements
 
