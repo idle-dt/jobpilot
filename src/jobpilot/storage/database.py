@@ -105,6 +105,8 @@ CREATE TABLE IF NOT EXISTS applications (
     salary_range TEXT,
     job_url TEXT,
     platform TEXT,
+    -- Mirror of APPLICATION_STATUSES (services/tracker_service.py). Keep in sync;
+    -- test_schema_sql_check_matches_statuses (tests/test_storage.py) guards drift.
     status TEXT NOT NULL DEFAULT 'applied' CHECK(status IN (
         'saved', 'applied', 'screening', 'technical',
         'onsite', 'offer', 'accepted', 'rejected',
@@ -535,6 +537,8 @@ CREATE TABLE applications_new (
     salary_range TEXT,
     job_url TEXT,
     platform TEXT,
+    -- Mirror of APPLICATION_STATUSES (services/tracker_service.py). Keep in sync;
+    -- test_rebuild_sql_check_matches_statuses (tests/test_storage.py) guards drift.
     status TEXT NOT NULL DEFAULT 'applied' CHECK(status IN (
         'saved', 'applied', 'screening', 'technical',
         'onsite', 'offer', 'accepted', 'rejected',
