@@ -1,5 +1,6 @@
 """Parse digest emails into individual job listings."""
 
+import logging
 import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -7,6 +8,8 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from jobpilot.storage.models import Email, ScrapedJob
+
+logger = logging.getLogger(__name__)
 
 # URL patterns for known job platforms
 JOB_URL_PATTERNS = [
@@ -447,7 +450,8 @@ def _parse_wellfound_digest(html: str, body_text: str) -> list[dict]:
     jobs: list[dict] = []
     seen: set[tuple[str, str | None]] = set()
 
-    for title_div in soup.find_all("div", style=_is_wellfound_title_style):
+    title_divs = soup.find_all("div", style=_is_wellfound_title_style)
+    for title_div in title_divs:
         title = title_div.get_text(strip=True)
         cell = title_div.find_parent("td")
         if not title or cell is None:
@@ -460,6 +464,16 @@ def _parse_wellfound_digest(html: str, body_text: str) -> list[dict]:
             continue
         seen.add((title, company))
         jobs.append({"title": title, "company": company, "url": url})
+
+    # Job-title divs present but nothing extracted means the markup changed
+    # (e.g. the link/company structure). Non-job emails have no title divs and
+    # legitimately yield zero jobs, so only warn when candidates were found.
+    if title_divs and not jobs:
+        logger.warning(
+            "Wellfound digest: %d job-title div(s) found but no jobs extracted — "
+            "email markup may have changed",
+            len(title_divs),
+        )
 
     return jobs
 
