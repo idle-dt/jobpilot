@@ -235,9 +235,12 @@ def _cleanup_corrupted_wellfound_jobs(conn: sqlite3.Connection) -> int:
 # as salary, hour-durations leaking into location) and duplicate rows from
 # per-digest tracking URLs. Deleting the unlabeled ones lets the next sync
 # re-parse the source emails with the fixed parser and normalized URLs. Labeled
-# jobs are preserved — the user already acted on them.
+# jobs are preserved — the user already acted on them — as are any with an
+# application attached (deleting them would break the applications FK).
 _CLEANUP_GLASSDOOR_SQL = (
-    "DELETE FROM scraped_jobs WHERE source = 'glassdoor' AND user_label IS NULL"
+    "DELETE FROM scraped_jobs WHERE source = 'glassdoor' AND user_label IS NULL "
+    "AND id NOT IN (SELECT scraped_job_id FROM applications "
+    "WHERE scraped_job_id IS NOT NULL)"
 )
 
 
@@ -246,6 +249,56 @@ def _cleanup_corrupted_glassdoor_jobs(conn: sqlite3.Connection) -> int:
     cursor = conn.execute(_CLEANUP_GLASSDOOR_SQL)
     conn.commit()
     return cursor.rowcount
+
+
+# Collapse existing Glassdoor content-duplicates (same posting recurring across
+# daily digests with a fresh jobListingId each time). Per (title, company,
+# location) group: keep one row — preferring a labeled row so the user's
+# skip/keep decisions survive, then the lowest id — refresh its link to the
+# newest sibling's URL, and delete the rest.
+#
+# Per Glassdoor row: keep_id is its group's survivor (labeled-first, then lowest
+# id); fresh_url is the group's newest link (highest id).
+_GLASSDOOR_DEDUP_KEYS_SQL = """
+SELECT
+  id,
+  FIRST_VALUE(id) OVER (PARTITION BY k ORDER BY (user_label IS NULL), id) AS keep_id,
+  FIRST_VALUE(url) OVER (PARTITION BY k ORDER BY id DESC) AS fresh_url
+FROM (
+  SELECT id, url, user_label,
+         title || '|' || IFNULL(company, '') || '|' || IFNULL(location, '') AS k
+  FROM scraped_jobs WHERE source = 'glassdoor'
+)
+"""
+
+
+def _dedup_glassdoor_jobs_by_content(conn: sqlite3.Connection) -> int:
+    """Collapse Glassdoor content-duplicates to one row each. Returns deleted count.
+
+    For each duplicate row: repoint any applications referencing it to the
+    survivor (so the FK holds and the user's application tracking is preserved),
+    then delete it. Finally refresh each survivor's link to its freshest sibling
+    (done after the deletes so it can't collide with the sibling's UNIQUE url).
+    """
+    rows = conn.execute(_GLASSDOOR_DEDUP_KEYS_SQL).fetchall()
+    survivors: dict[int, str] = {}
+    duplicates: list[tuple[int, int]] = []
+    for row in rows:
+        survivors[row["keep_id"]] = row["fresh_url"]
+        if row["id"] != row["keep_id"]:
+            duplicates.append((row["id"], row["keep_id"]))
+    for dupe_id, keep_id in duplicates:
+        conn.execute(
+            "UPDATE applications SET scraped_job_id = ? WHERE scraped_job_id = ?",
+            (keep_id, dupe_id),
+        )
+        conn.execute("DELETE FROM scraped_jobs WHERE id = ?", (dupe_id,))
+    for keep_id, fresh_url in survivors.items():
+        conn.execute(
+            "UPDATE scraped_jobs SET url = ? WHERE id = ?", (fresh_url, keep_id)
+        )
+    conn.commit()
+    return len(duplicates)
 
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -364,6 +417,22 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("_migration_glassdoor_parsing_cleanup", "1"),
+        )
+        conn.commit()
+
+    # One-time dedup of Glassdoor content-duplicates (same posting across digests)
+    try:
+        ran_gd_dedup = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("_migration_glassdoor_content_dedup",),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ran_gd_dedup = None
+    if not ran_gd_dedup:
+        _dedup_glassdoor_jobs_by_content(conn)
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            ("_migration_glassdoor_content_dedup", "1"),
         )
         conn.commit()
 

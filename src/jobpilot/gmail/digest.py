@@ -383,6 +383,9 @@ def _parse_glassdoor_digest(html: str, body_text: str) -> list[dict]:
 
     soup = BeautifulSoup(html, "lxml")
     jobs = []
+    # A single digest lists the same posting multiple times with different
+    # jobListingId links, so dedup within the email by (title, company, location).
+    seen: set[tuple[str, str | None, str | None]] = set()
 
     for link in soup.find_all("a", href=True):
         href = link["href"]
@@ -436,6 +439,11 @@ def _parse_glassdoor_digest(html: str, body_text: str) -> list[dict]:
 
         if not title:
             continue
+
+        key = (title, company, location)
+        if key in seen:
+            continue
+        seen.add(key)
 
         jobs.append({
             "title": title,

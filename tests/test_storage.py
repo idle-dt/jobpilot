@@ -66,6 +66,126 @@ def test_cleanup_corrupted_glassdoor_jobs_deletes_unlabeled(db_conn):
     assert deleted == 1
 
 
+def _glassdoor_job(url: str, label: str | None = None) -> ScrapedJob:
+    """Build a Glassdoor ScrapedJob for the same posting at a given URL."""
+    return ScrapedJob(
+        id=None,
+        source="glassdoor",
+        title="Software Engineer - AI Trainer",
+        company="DataAnnotation",
+        location="Stockholm",
+        url=url,
+        user_label=label,
+    )
+
+
+_GD_URL_1 = "https://www.glassdoor.com/partner/jobListing.htm?jobListingId=1010123850169"
+_GD_URL_2 = "https://www.glassdoor.com/partner/jobListing.htm?jobListingId=1010123850111"
+
+
+def test_insert_glassdoor_duplicate_refreshes_link(repo: Repository, db_conn):
+    """A same-content Glassdoor insert refreshes the link instead of adding a row."""
+    assert repo.insert_scraped_job(_glassdoor_job(_GD_URL_1)) is True
+    # Label the stored job so we can confirm the label survives the refresh.
+    job_id = db_conn.execute("SELECT id FROM scraped_jobs").fetchone()["id"]
+    repo.update_scraped_job_label(job_id, "skip")
+
+    assert repo.insert_scraped_job(_glassdoor_job(_GD_URL_2)) is False
+
+    rows = db_conn.execute(
+        "SELECT url, user_label FROM scraped_jobs WHERE source = 'glassdoor'"
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["url"] == _GD_URL_2  # link refreshed to the newer digest URL
+    assert rows[0]["user_label"] == "skip"  # user's label preserved
+
+
+def test_insert_glassdoor_duplicate_link_clash_does_not_raise(repo: Repository, db_conn):
+    """Refreshing a link must not trip the UNIQUE url constraint when it's taken."""
+    assert repo.insert_scraped_job(_glassdoor_job(_GD_URL_1)) is True
+    other = _glassdoor_job(_GD_URL_2)
+    other.location = "Berlin"  # distinct content, owns _GD_URL_2
+    assert repo.insert_scraped_job(other) is True
+    # Same content as the first job, but carrying a URL already owned by `other`.
+    clash = _glassdoor_job(_GD_URL_2)
+    assert repo.insert_scraped_job(clash) is False  # handled, no row added, no raise
+
+    rows = db_conn.execute(
+        "SELECT url FROM scraped_jobs WHERE source='glassdoor' ORDER BY id"
+    ).fetchall()
+    assert [r["url"] for r in rows] == [_GD_URL_1, _GD_URL_2]  # links unchanged
+
+
+def test_insert_glassdoor_distinct_content_still_inserts(repo: Repository, db_conn):
+    """Different content (and a non-Glassdoor row with same content) still inserts."""
+    assert repo.insert_scraped_job(_glassdoor_job(_GD_URL_1)) is True
+    other = _glassdoor_job(_GD_URL_2)
+    other.location = "Berlin"
+    assert repo.insert_scraped_job(other) is True
+    linkedin = _glassdoor_job("https://linkedin.com/jobs/view/9")
+    linkedin.source = "linkedin"
+    assert repo.insert_scraped_job(linkedin) is True
+    assert db_conn.execute("SELECT COUNT(*) c FROM scraped_jobs").fetchone()["c"] == 3
+
+
+def test_dedup_glassdoor_jobs_by_content_keeps_labeled_and_freshest_link(db_conn):
+    """Migration collapses a content group: keep the labeled row, refresh its link."""
+    from jobpilot.storage.database import _dedup_glassdoor_jobs_by_content
+
+    for url, label in ((_GD_URL_1, "skip"), (_GD_URL_2, None), (_GD_URL_2 + "x", None)):
+        db_conn.execute(
+            "INSERT INTO scraped_jobs (source, title, company, location, url, user_label) "
+            "VALUES ('glassdoor', 'SWE', 'DataAnnotation', 'Stockholm', ?, ?)",
+            (url, label),
+        )
+    db_conn.commit()
+
+    deleted = _dedup_glassdoor_jobs_by_content(db_conn)
+
+    rows = db_conn.execute(
+        "SELECT url, user_label FROM scraped_jobs WHERE source = 'glassdoor'"
+    ).fetchall()
+    assert deleted == 2
+    assert len(rows) == 1
+    assert rows[0]["user_label"] == "skip"  # labeled survivor kept
+    assert rows[0]["url"] == _GD_URL_2 + "x"  # link refreshed to newest sibling
+
+
+def test_dedup_glassdoor_repoints_applications_to_survivor(db_conn):
+    """An application on a duplicate row is repointed to the survivor, FK intact."""
+    from jobpilot.storage.database import _dedup_glassdoor_jobs_by_content
+
+    cur = db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, company, location, url, user_label) "
+        "VALUES ('glassdoor', 'SWE', 'DataAnnotation', 'Stockholm', ?, 'skip')",
+        (_GD_URL_1,),
+    )
+    survivor_id = cur.lastrowid
+    cur = db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, company, location, url) "
+        "VALUES ('glassdoor', 'SWE', 'DataAnnotation', 'Stockholm', ?)",
+        (_GD_URL_2,),
+    )
+    dupe_id = cur.lastrowid
+    db_conn.execute(
+        "INSERT INTO applications (company, role_title, scraped_job_id) VALUES (?,?,?)",
+        ("DataAnnotation", "SWE", dupe_id),
+    )
+    db_conn.commit()
+
+    deleted = _dedup_glassdoor_jobs_by_content(db_conn)  # must not raise on FK
+
+    assert deleted == 1
+    app_ref = db_conn.execute(
+        "SELECT scraped_job_id FROM applications"
+    ).fetchone()["scraped_job_id"]
+    assert app_ref == survivor_id  # application now points at the survivor
+    remaining = db_conn.execute(
+        "SELECT id FROM scraped_jobs WHERE source='glassdoor'"
+    ).fetchall()
+    assert [r["id"] for r in remaining] == [survivor_id]
+
+
 def test_init_db_creates_tables(db_conn):
     """Verify all expected tables are created."""
     cursor = db_conn.execute(

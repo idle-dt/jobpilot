@@ -433,6 +433,34 @@ def test_clean_glassdoor_url_dedups_across_digests():
     assert _clean_job_url(url_a) == _clean_job_url(url_b)
 
 
+# --- Glassdoor: in-email content dedup ---
+
+# A single digest lists the same posting twice with different jobListingId links.
+GLASSDOOR_DUPLICATE_CARDS_HTML = """\
+<html><body>
+<table><tr><td>
+  <div>DataAnnotation</div>
+  <a href="https://www.glassdoor.com/partner/jobListing.htm?jobListingId=1010123850169">Software Engineer - AI Trainer</a>
+  <div>Stockholm</div>
+</td></tr></table>
+<table><tr><td>
+  <div>DataAnnotation</div>
+  <a href="https://www.glassdoor.com/partner/jobListing.htm?jobListingId=1010123850111">Software Engineer - AI Trainer</a>
+  <div>Stockholm</div>
+</td></tr></table>
+</body></html>
+"""
+
+
+def test_glassdoor_duplicate_cards_collapse_to_one():
+    """Two cards with the same title/company/location collapse to a single job."""
+    jobs = _parse_glassdoor_digest(GLASSDOOR_DUPLICATE_CARDS_HTML, "")
+    assert len(jobs) == 1
+    assert jobs[0]["title"] == "Software Engineer - AI Trainer"
+    assert jobs[0]["company"] == "DataAnnotation"
+    assert jobs[0]["location"] == "Stockholm"
+
+
 # --- Wellfound: HTML digest parsing ---
 
 # Mirrors the real Wellfound alert structure: a greeting banner (24px, with a
