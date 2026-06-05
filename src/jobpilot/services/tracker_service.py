@@ -79,8 +79,8 @@ class TrackerService:
         if app.last_status_change:
             try:
                 recency = datetime.fromisoformat(app.last_status_change).timestamp()
-            except ValueError:  # malformed timestamp — sort as oldest, never crash the list
-                recency = 0.0
+            except ValueError:  # malformed timestamp — keep default, never crash the list
+                pass
         return rank, -recency
 
     def get_application(self, app_id: int) -> Application | None:
