@@ -133,6 +133,20 @@ def test_get_jobs_needing_scrape(repo):
     assert "https://fakelinkedin.com/jobs/view/000" not in urls
 
 
+def test_get_jobs_needing_scrape_excludes_wellfound(repo):
+    """Wellfound jobs must NOT enter the scrape queue (we never fetch their pages)."""
+    job = ScrapedJob(
+        id=None, source="wellfound", title="WF Direct",
+        url="https://wellfound.com/jobs/12345-mobile-dev",
+    )
+    repo.insert_scraped_job(job)
+    for r in repo.conn.execute("SELECT id FROM scraped_jobs").fetchall():
+        repo.update_scraped_job_scores(r["id"], 0.7, None, "worth_checking")
+
+    needing = repo.get_jobs_needing_scrape()
+    assert all("wellfound" not in j.url for j in needing)
+
+
 def test_get_jobs_needing_scrape_excludes_attempted(repo):
     job = ScrapedJob(
         id=None, source="linkedin", title="Test Job",
@@ -334,6 +348,24 @@ def test_get_scrapable_domain_glassdoor():
 
     assert _get_scrapable_domain("https://www.glassdoor.com/job/1") == "glassdoor.com"
     assert _get_scrapable_domain("https://glassdoor.com/job/2") == "glassdoor.com"
+
+
+def test_wellfound_not_scrapable():
+    """Wellfound must not be scrapable — alerts are parsed, pages never fetched."""
+    from jobpilot.scraper.constants import SCRAPABLE_DOMAINS
+    from jobpilot.services.sync_service import _get_scrapable_domain
+
+    assert "wellfound.com" not in SCRAPABLE_DOMAINS
+    assert _get_scrapable_domain("https://wellfound.com/jobs/1") is None
+    assert _get_scrapable_domain("https://links.wellfound.com/s/c/abc") is None
+
+
+def test_wellfound_not_a_login_site():
+    """Wellfound must not be a browser-login site (no page access needed)."""
+    from jobpilot.scraper.browser import _LOGIN_URLS, ALLOWED_SITES
+
+    assert "wellfound" not in ALLOWED_SITES
+    assert "wellfound" not in _LOGIN_URLS
 
 
 def test_get_scrapable_domain_rejects_others():

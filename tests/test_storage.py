@@ -12,6 +12,33 @@ from jobpilot.storage.models import (
 from jobpilot.storage.repository import Repository
 
 
+def test_cleanup_corrupted_wellfound_jobs_deletes_unlabeled(db_conn):
+    """Unlabeled Wellfound jobs are deleted for re-parsing; labeled ones survive."""
+    from jobpilot.storage.database import _cleanup_corrupted_wellfound_jobs
+
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url, user_label) VALUES (?,?,?,?)",
+        ("wellfound", "Actively Hiring", "https://wellfound.com/jobs/1-x", None),
+    )
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url, user_label) VALUES (?,?,?,?)",
+        ("wellfound", "years of exp", "https://links.wellfound.com/s/c/abc", "skip"),
+    )
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url) VALUES (?,?,?)",
+        ("linkedin", "iOS Dev", "https://linkedin.com/jobs/view/9"),
+    )
+    db_conn.commit()
+
+    deleted = _cleanup_corrupted_wellfound_jobs(db_conn)
+
+    titles = {r["title"] for r in db_conn.execute("SELECT title FROM scraped_jobs")}
+    assert "Actively Hiring" not in titles
+    assert "years of exp" in titles
+    assert "iOS Dev" in titles
+    assert deleted == 1
+
+
 def test_init_db_creates_tables(db_conn):
     """Verify all expected tables are created."""
     cursor = db_conn.execute(

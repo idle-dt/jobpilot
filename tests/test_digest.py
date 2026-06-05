@@ -7,6 +7,7 @@ from jobpilot.gmail.digest import (
     _is_boilerplate_line,
     _parse_glassdoor_digest,
     _parse_linkedin_digest,
+    _parse_wellfound_digest,
     extract_single_job_url,
     parse_digest,
 )
@@ -353,6 +354,93 @@ def test_glassdoor_decimal_prefixed_title_not_dropped():
     assert job["title"] == "3.0 to 5.0 yrs - Backend Engineer"
     assert job["company"] == "Acme Corp"
     assert job["location"] == "Berlin"
+
+
+# --- Wellfound: HTML digest parsing ---
+
+# Mirrors the real Wellfound alert structure: a greeting banner (24px, with a
+# background-color) and a "Our take" blurb (12px) both use font-weight:700, and
+# the primary job card is rendered twice. Only the 14px/#000 title divs are real
+# jobs, and the duplicate card must collapse via (title, company) dedup.
+WELLFOUND_DIGEST_HTML = """\
+<html><body>
+<table><tr><td>
+  <div style="background-color: #210D25; font-size: 24px; font-weight: 700;">Hi Denys! I've found 2 new jobs matching your alert preferences.</div>
+</td></tr></table>
+<table><tr><td>
+  <div style="font-size: 14px; font-weight: 700; color: #000;">Mobile Developer (iOS or Android)</div>
+  <span style="color: #541142;">Tech Consulting</span>
+  <div style="font-size: 12px; font-weight: 700; color: #E93570;">Our take</div>
+  <a href="https://links.wellfound.com/s/c/abc123">Learn more</a>
+</td></tr></table>
+<table><tr><td>
+  <div style="font-size: 14px; font-weight: 700; color: #000;">Mobile Developer (iOS or Android)</div>
+  <span style="color: #541142;">Tech Consulting</span>
+  <a href="https://links.wellfound.com/s/c/abc999">Learn more</a>
+</td></tr></table>
+<table><tr><td>
+  <div style="font-size: 14px; font-weight: 700; color: #000;">Senior Flutter Engineer</div>
+  <span style="color: #541142;">Acme Startup</span>
+  <a href="https://links.wellfound.com/s/c/def456">Learn more</a>
+</td></tr></table>
+</body></html>
+"""
+
+
+def test_parse_wellfound_digest_dedups_to_two_jobs():
+    """Greeting + 'Our take' are ignored and the duplicate card collapses to one."""
+    jobs = _parse_wellfound_digest(WELLFOUND_DIGEST_HTML, "")
+    assert len(jobs) == 2
+
+
+def test_parse_wellfound_digest_titles_and_companies():
+    """Title and company come from the structured HTML, not the smushed text."""
+    jobs = _parse_wellfound_digest(WELLFOUND_DIGEST_HTML, "")
+    by_title = {j["title"]: j for j in jobs}
+    assert "Mobile Developer (iOS or Android)" in by_title
+    assert by_title["Mobile Developer (iOS or Android)"]["company"] == "Tech Consulting"
+    assert "Senior Flutter Engineer" in by_title
+    assert by_title["Senior Flutter Engineer"]["company"] == "Acme Startup"
+    # The greeting banner and "Our take" blurb must never be parsed as jobs.
+    for job in jobs:
+        assert "found" not in job["title"].lower()
+        assert job["title"] != "Our take"
+
+
+def test_parse_wellfound_digest_urls_point_to_wellfound():
+    """Each job carries a wellfound (or links.wellfound) redirect URL."""
+    jobs = _parse_wellfound_digest(WELLFOUND_DIGEST_HTML, "")
+    for job in jobs:
+        assert "wellfound.com" in job["url"]
+
+
+def test_parse_wellfound_digest_no_html_falls_back_to_generic():
+    """With no HTML body, fall back to the generic text parser."""
+    body = "Check this role: https://wellfound.com/jobs/12345-mobile-developer"
+    jobs = _parse_wellfound_digest("", body)
+    assert len(jobs) == 1
+    assert "wellfound.com/jobs/" in jobs[0]["url"]
+
+
+def test_parse_digest_routes_wellfound_emails():
+    """parse_digest routes a wellfound email through the HTML parser."""
+    email = Email(
+        id="wf_email_1",
+        thread_id="thread_wf",
+        sender="jobs@wellfound.com",
+        sender_domain="wellfound.com",
+        subject="New jobs for you",
+        received_at=datetime.now(timezone.utc),
+        body_text="Mobile Developer Actively Hiring years of exp Portugal",
+        body_html=WELLFOUND_DIGEST_HTML,
+        platform="wellfound",
+    )
+    jobs = parse_digest(email)
+    titles = {j.title for j in jobs}
+    assert "Mobile Developer (iOS or Android)" in titles
+    assert "Senior Flutter Engineer" in titles
+    for job in jobs:
+        assert job.source == "wellfound"
 
 
 # --- Internal LinkedIn Parser ---

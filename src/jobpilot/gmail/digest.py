@@ -15,6 +15,7 @@ JOB_URL_PATTERNS = [
     re.compile(r"https?://(?:www\.)?glassdoor\.com/partner/jobListing\.htm[^\s]*", re.IGNORECASE),
     re.compile(r"https?://(?:www\.)?relocate\.me/[^\s]*", re.IGNORECASE),
     re.compile(r"https?://(?:www\.)?wellfound\.com/jobs/[^\s]*", re.IGNORECASE),
+    re.compile(r"https?://links\.wellfound\.com/s/c/[^\s]*", re.IGNORECASE),
     re.compile(r"https?://(?:www\.)?arc\.dev/[^\s]*jobs?[^\s]*", re.IGNORECASE),
 ]
 
@@ -78,6 +79,14 @@ GLASSDOOR_MIN_TEXT_LENGTH = 10
 GLASSDOOR_MIN_CONTENT_PARTS = 3
 GENERIC_URL_CONTEXT_LINES = 5
 
+# Wellfound HTML digest structure. A job card's title is a bold 14px black div.
+# The greeting banner (24px, with a background-color) and the "Our take" blurb
+# (12px, colored accent) also use font-weight:700, so all three style fragments
+# are required to single out a real job title. The company sits in a colored
+# span inside the same table cell.
+_WELLFOUND_TITLE_STYLE_PARTS = ("font-size: 14px", "font-weight: 700", "color: #000")
+_WELLFOUND_COMPANY_COLOR = "#541142"
+
 
 def _is_boilerplate_line(line: str) -> bool:
     """Check if a line is boilerplate intro text rather than a job title."""
@@ -122,6 +131,12 @@ def parse_digest(email: Email) -> list[ScrapedJob]:
         jobs = _parse_indeed_digest(body)
     elif platform == "glassdoor" or "glassdoor" in (email.sender_domain or ""):
         jobs = _parse_glassdoor_digest(email.body_html or "", body)
+    elif platform == "wellfound" or "wellfound" in (email.sender_domain or ""):
+        # Wellfound alert emails arrive with an empty platform column, so
+        # canonicalize it here — this lets single-job alerts bypass the digest
+        # minimum-count gate below and tags the jobs with source "wellfound".
+        platform = "wellfound"
+        jobs = _parse_wellfound_digest(email.body_html or "", body)
     elif platform == "relocate_me" or "relocate.me" in (email.sender_domain or ""):
         jobs = _parse_generic_digest(body)
     elif platform == "google_alerts" or "google.com" in (email.sender_domain or ""):
@@ -130,7 +145,9 @@ def parse_digest(email: Email) -> list[ScrapedJob]:
         jobs = _parse_generic_digest(body)
 
     # Only return if we found multiple jobs (digest), or platform-specific parser found any
-    major_platforms = ("linkedin", "indeed", "glassdoor", "relocate_me", "google_alerts")
+    major_platforms = (
+        "linkedin", "indeed", "glassdoor", "wellfound", "relocate_me", "google_alerts",
+    )
     if len(jobs) < MIN_DIGEST_JOBS_FOR_GENERIC and platform not in major_platforms:
         return []
 
@@ -398,6 +415,52 @@ def _parse_glassdoor_digest(html: str, body_text: str) -> list[dict]:
         })
 
     return jobs
+
+
+def _is_wellfound_title_style(style: str | None) -> bool:
+    """Return True if a div's style matches Wellfound's job-title signature."""
+    return bool(style) and all(part in style for part in _WELLFOUND_TITLE_STYLE_PARTS)
+
+
+def _parse_wellfound_digest(html: str, body_text: str) -> list[dict]:
+    """Parse a Wellfound job alert digest from HTML.
+
+    Wellfound emails are deeply nested tables; the plain-text body smushes every
+    field together, so the generic text parser produces garbage. Each job card is
+    a table cell holding a bold title div and a colored company span, with a
+    links.wellfound.com redirect in the enclosing table. The primary job is
+    rendered twice, so jobs are deduped by (title, company). Falls back to the
+    generic text parser when no HTML is available.
+    """
+    if not html:
+        return _parse_generic_digest(body_text)
+
+    soup = BeautifulSoup(html, "lxml")
+    jobs: list[dict] = []
+    seen: set[tuple[str, str | None]] = set()
+
+    for title_div in soup.find_all("div", style=_is_wellfound_title_style):
+        title = title_div.get_text(strip=True)
+        cell = title_div.find_parent("td")
+        if not title or cell is None:
+            continue
+        company = _wellfound_company(cell)
+        if (title, company) in seen:
+            continue
+        table = cell.find_parent("table")
+        link = table.find("a", href=True) if table else None
+        if link is None:
+            continue
+        seen.add((title, company))
+        jobs.append({"title": title, "company": company, "url": link["href"]})
+
+    return jobs
+
+
+def _wellfound_company(cell) -> str | None:  # type: ignore[no-untyped-def]
+    """Extract the company name from a Wellfound job card's table cell."""
+    span = cell.find("span", style=lambda s: s and _WELLFOUND_COMPANY_COLOR in s)
+    return span.get_text(strip=True) if span else None
 
 
 def _parse_generic_digest(body: str) -> list[dict]:
