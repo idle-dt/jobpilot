@@ -25,6 +25,8 @@ STRATEGY_BROWSER_ONLY = "browser_only"
 # LinkedIn: requests first (cheap, ~98% success), browser fallback if blocked.
 # Glassdoor: browser only — Cloudflare blocks plain HTTP every time, so
 # skipping requests avoids wasted round-trips and 403/503 log noise.
+# Wellfound is intentionally absent: its pages aggressively IP-ban scrapers, so
+# we only parse the alert emails and never fetch Wellfound job pages.
 SCRAPABLE_DOMAINS: dict[str, str] = {
     "linkedin.com": STRATEGY_REQUESTS_THEN_BROWSER,
     "glassdoor.com": STRATEGY_BROWSER_ONLY,

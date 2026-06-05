@@ -209,6 +209,28 @@ WHERE (url LIKE 'https://glassdoor.com/%' OR url LIKE 'https://%.glassdoor.com/%
 """
 
 
+# Wellfound jobs predating the dedicated HTML parser were extracted by the
+# generic text parser and have corrupted fields (titles like "Actively Hiring").
+# Deleting the unlabeled ones lets the next sync re-parse the source emails
+# correctly. Labeled jobs are preserved — the user already acted on them.
+_CLEANUP_WELLFOUND_SQL = (
+    "DELETE FROM scraped_jobs "
+    "WHERE user_label IS NULL "
+    "AND (source = 'wellfound' "
+    "     OR url LIKE 'https://wellfound.com/%' "
+    "     OR url LIKE 'https://%.wellfound.com/%' "
+    "     OR url LIKE 'http://wellfound.com/%' "
+    "     OR url LIKE 'http://%.wellfound.com/%')"
+)
+
+
+def _cleanup_corrupted_wellfound_jobs(conn: sqlite3.Connection) -> int:
+    """Delete unlabeled Wellfound jobs so they can be re-parsed. Returns count."""
+    cursor = conn.execute(_CLEANUP_WELLFOUND_SQL)
+    conn.commit()
+    return cursor.rowcount
+
+
 def _run_migrations(conn: sqlite3.Connection) -> None:
     """Apply incremental schema changes idempotently."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(model_versions)").fetchall()}
@@ -293,6 +315,22 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("_migration_glassdoor_browser_retry", "1"),
+        )
+        conn.commit()
+
+    # One-time cleanup of corrupted Wellfound jobs after adding the HTML parser
+    try:
+        ran_wf = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("_migration_wellfound_cleanup",),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ran_wf = None
+    if not ran_wf:
+        _cleanup_corrupted_wellfound_jobs(conn)
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            ("_migration_wellfound_cleanup", "1"),
         )
         conn.commit()
 
