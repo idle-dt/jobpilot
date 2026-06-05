@@ -638,3 +638,147 @@ def test_descriptions_email_id_takes_precedence_over_origin_url(repo: Repository
 
     descriptions = repo.get_descriptions_for_emails(["dup"])
     assert descriptions["dup"][0] == "Own description."
+
+
+# --- Expired status + tracker sort order -------------------------------------
+
+# Pre-change applications schema: status CHECK lacks 'expired' and `remote` is the
+# LAST column (as it lands after _apply_column_migrations' ALTER on real DBs). Used
+# to exercise the rebuild migration's explicit-column copy on a realistic layout.
+_OLD_APPLICATIONS_SQL = """
+CREATE TABLE applications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email_id TEXT REFERENCES emails(id),
+    scraped_job_id INTEGER REFERENCES scraped_jobs(id),
+    company TEXT NOT NULL,
+    role_title TEXT NOT NULL,
+    location TEXT,
+    salary_range TEXT,
+    job_url TEXT,
+    platform TEXT,
+    status TEXT NOT NULL DEFAULT 'applied' CHECK(status IN (
+        'saved', 'applied', 'screening', 'technical',
+        'onsite', 'offer', 'accepted', 'rejected',
+        'withdrawn', 'no_response'
+    )),
+    applied_at TEXT DEFAULT (datetime('now')),
+    last_status_change TEXT DEFAULT (datetime('now')),
+    contact_name TEXT,
+    contact_email TEXT,
+    notes TEXT,
+    offer_salary TEXT,
+    offer_currency TEXT,
+    offer_equity TEXT,
+    offer_relocation_package TEXT,
+    offer_notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    remote BOOLEAN DEFAULT FALSE
+);
+"""
+
+
+def _tracker(repo: Repository):
+    from jobpilot.services.tracker_service import TrackerService
+
+    return TrackerService(repo)
+
+
+def test_update_status_accepts_expired(repo: Repository):
+    """update_status persists the new 'expired' status and reports success."""
+    app_id = repo.insert_application(
+        Application(id=None, company="TechCorp", role_title="Flutter Engineer")
+    )
+    assert _tracker(repo).update_status(app_id, "expired") is True
+    assert repo.get_application(app_id).status == "expired"
+
+
+def test_create_application_with_expired_status(repo: Repository):
+    """Creating an application directly as 'expired' passes the CHECK constraint."""
+    app_id = _tracker(repo).create_application(
+        company="GoneCorp", role_title="Backend Dev", status="expired"
+    )
+    assert repo.get_application(app_id).status == "expired"
+
+
+def test_status_label_for_expired():
+    """STATUS_LABELS exposes a human-readable label for the new status."""
+    from jobpilot.services.tracker_service import STATUS_LABELS
+
+    assert STATUS_LABELS["expired"] == "Expired"
+
+
+def test_list_applications_sorted_by_pipeline_stage(repo: Repository):
+    """Apps are ordered by pipeline rank: offer, applied, saved, expired, rejected."""
+    for status in ("saved", "offer", "rejected", "applied", "expired"):
+        repo.insert_application(
+            Application(id=None, company=f"Co-{status}", role_title="Dev", status=status)
+        )
+    apps, _, _ = _tracker(repo).list_applications()
+    assert [a.status for a in apps] == ["offer", "applied", "saved", "expired", "rejected"]
+
+
+def test_list_applications_newest_first_within_status(db_conn, repo: Repository):
+    """Within one status, the most recently changed application sorts first."""
+    db_conn.execute(
+        "INSERT INTO applications (company, role_title, status, last_status_change) "
+        "VALUES (?,?,?,?)",
+        ("OldCo", "Dev", "applied", "2026-05-01 00:00:00"),
+    )
+    db_conn.execute(
+        "INSERT INTO applications (company, role_title, status, last_status_change) "
+        "VALUES (?,?,?,?)",
+        ("NewCo", "Dev", "applied", "2026-06-01 00:00:00"),
+    )
+    db_conn.commit()
+    apps, _, _ = _tracker(repo).list_applications()
+    assert [a.company for a in apps] == ["NewCo", "OldCo"]
+
+
+def test_migrate_add_expired_rebuilds_and_preserves_data(db_conn):
+    """Migration on an old-schema table preserves all data, history, and enables 'expired'."""
+    from jobpilot.storage.database import _migrate_add_expired_status
+
+    db_conn.execute("DROP TABLE applications")
+    db_conn.executescript(_OLD_APPLICATIONS_SQL)
+    db_conn.execute(
+        "INSERT INTO applications (id, company, role_title, status, offer_salary, "
+        "created_at, remote) VALUES (1, 'Acme', 'Dev', 'offer', '120k', "
+        "'2026-01-01 00:00:00', 1)"
+    )
+    db_conn.execute(
+        "INSERT INTO application_status_history (application_id, to_status) VALUES (1, 'offer')"
+    )
+    db_conn.commit()
+
+    _migrate_add_expired_status(db_conn)
+
+    row = db_conn.execute("SELECT * FROM applications WHERE id = 1").fetchone()
+    assert (row["company"], row["status"], row["offer_salary"]) == ("Acme", "offer", "120k")
+    assert row["remote"] == 1 and row["created_at"] == "2026-01-01 00:00:00"
+    history = db_conn.execute(
+        "SELECT COUNT(*) c FROM application_status_history WHERE application_id = 1"
+    ).fetchone()["c"]
+    assert history == 1  # FK-off swap did not cascade-delete history
+    db_conn.execute("UPDATE applications SET status = 'expired' WHERE id = 1")  # now allowed
+    indexes = {
+        r["name"]
+        for r in db_conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='applications'"
+        )
+    }
+    assert "idx_applications_status" in indexes  # indexes recreated after rebuild
+
+
+def test_migrate_add_expired_is_idempotent(db_conn):
+    """Re-running the migration on an already-migrated table is a harmless no-op."""
+    from jobpilot.storage.database import _migrate_add_expired_status
+
+    db_conn.execute(
+        "INSERT INTO applications (id, company, role_title, status) VALUES (5, 'Keep', 'Dev', 'saved')"
+    )
+    db_conn.commit()
+    _migrate_add_expired_status(db_conn)  # SCHEMA_SQL already has 'expired' -> guard returns early
+    assert db_conn.execute(
+        "SELECT company FROM applications WHERE id = 5"
+    ).fetchone()["company"] == "Keep"
