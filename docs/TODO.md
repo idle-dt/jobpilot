@@ -13,42 +13,103 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## Tech Debt
 
-### Application status vocabulary is duplicated across 4 places
+### Application status vocabulary is duplicated across 4 places — guarded
 
-The set of valid application statuses is declared independently in four locations,
-with no single source of truth:
+The valid-status set is still declared in four places (`APPLICATION_STATUSES`,
+`STATUS_SORT_RANK`, `STATUS_LABELS` in `services/tracker_service.py`, and the two SQL
+`CHECK(status IN (...))` lists in `storage/database.py`), but they can no longer
+*silently* drift: `test_status_*` parity guards in `tests/test_storage.py` fail the build
+if any copy diverges from the canonical tuple. This kills the latent bug where a status
+missing from `STATUS_SORT_RANK` would silently sort to the bottom of the tracker.
 
-| Location | Form | File |
-|----------|------|------|
-| `APPLICATION_STATUSES` | tuple of status strings | `services/tracker_service.py` |
-| `STATUS_LABELS` | dict keyed by status | `services/tracker_service.py` |
-| `STATUS_SORT_RANK` | dict keyed by status | `services/tracker_service.py` |
-| `CHECK(status IN (...))` | SQL constraint (appears twice: `SCHEMA_SQL` + the rebuild migration) | `storage/database.py` |
+The duplication itself remains by deliberate choice — statuses are a fixed,
+developer-controlled vocabulary, and a derived single source of truth (an
+`ApplicationStatus` enum/registry feeding the tuple, maps, and a generated SQL CHECK) was
+judged not worth the cost: it would require building SQL via string interpolation, against
+the no-f-string-SQL rule, while `STATUS_SORT_RANK` would still need a hand-authored map and
+guard. Revisit that fuller refactor only if the status set starts changing frequently.
 
-**Why it's a problem:** adding or renaming a status requires editing all four (five,
-counting the migration's duplicate CHECK). They can silently drift apart.
+### Security: CSRF token missing in `updateArbeitnow()`
 
-**Concrete latent bug:** if a status is added to `APPLICATION_STATUSES` but not to
-`STATUS_SORT_RANK`, it falls through to the `_UNKNOWN_STATUS_RANK = 99` fallback and
-silently sorts to the bottom of the tracker — no error, no warning. There is currently
-no test guarding that the two stay in sync.
+`settings.html:320-325` — the `updateArbeitnow()` JS function sends a POST without the
+`X-CSRFToken` header. Every other POST in the same file (`updatePreference`, `loginBrowser`)
+includes it. One-line fix: add `'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content`
+to the fetch headers.
 
-**Note on placement:** the sort order (`STATUS_SORT_RANK`) is correctly in the service
-layer — it's a business rule (which applications need attention first), not persistence
-or presentation, and it's co-located with the other status constants. The issue is the
-*duplication*, not the location. Moving the order out of the service would not help.
+### Security: Missing `rel="noopener noreferrer"` on external links
 
-**Options (cheapest first):**
+8 `target="_blank"` links across `review_queue.html`, `stats.html`, and `login.html` are
+missing `rel="noopener noreferrer"`. The tracker modal (`tracker_modal.html:84`) has it —
+the rest don't. Allows reverse tabnabbing where the opened page can navigate the opener via
+`window.opener`. Mechanical fix across all templates.
 
-1. **Parity guard (recommended near-term).** Add a test asserting
-   `set(STATUS_SORT_RANK) == set(APPLICATION_STATUSES)` (and that `STATUS_LABELS` covers
-   the same set). One line, catches drift, near-zero cost. Does not remove the duplication
-   but makes it safe.
-2. **Single source of truth (larger refactor).** Introduce an `ApplicationStatus` enum or
-   registry where each member carries `value + label + rank + is_terminal`, and derive the
-   tuple, labels, rank map, and the SQL CHECK list from it. Eliminates the duplication
-   entirely. Touches templates (which iterate `statuses` / `status_labels`) and the schema
-   CHECK generation. Worth doing only if the status set keeps growing.
+### Bare `except Exception:` in 4 places
+
+Per CLAUDE.md rule: *"catch specific types"*. Current violations:
+
+| File | Line | Context | Should catch |
+|------|------|---------|--------------|
+| `gmail/parser.py` | 66 | Date parsing | `ValueError` |
+| `gmail/auth.py` | 53 | Credential check | `json.JSONDecodeError, FileNotFoundError` |
+| `web/app.py` | 91 | Auth middleware | `KeyError, AttributeError` |
+| `web/sync_routes.py` | 103 | Sync thread boundary | Keep as fallback, but add specific catches first |
+
+### Business logic in route handlers
+
+`web/routes.py` has significant business logic that should be in service layer:
+
+- `inbox()` (lines 66–141, 76 lines) — builds review items, attaches predictions, aggregates counts
+- `ml_export()` (lines 526–631, 105 lines) — full export pipeline with feature extraction, metrics, disagreement detection
+- `settings_page()` (lines 260–301) — domain merging, preference transformation
+
+These are untestable without HTTP request context. Extract to `InboxService`, `MLExportService`.
+
+### Files over 300-line limit
+
+| File | Lines | Notes |
+|------|-------|-------|
+| `storage/database.py` | 713 | Migrations keep growing; extract to `storage/migrations.py` |
+| `web/routes.py` | 631 | Split into blueprints or extract service methods |
+| `gmail/digest.py` | 595 | Per-platform parsers could be separate modules |
+| `classifier/ml_trainer.py` | 468 | `_train_single()` alone is 76 lines |
+
+### Long functions (>30 lines)
+
+| Function | File | Lines |
+|----------|------|-------|
+| `inbox()` | `web/routes.py` | 76 |
+| `ml_export()` | `web/routes.py` | 105 |
+| `_train_single()` | `classifier/ml_trainer.py` | 76 |
+| `_predict_all()` | `classifier/ml_trainer.py` | 55 |
+| `create_app()` | `web/app.py` | 77 |
+| `fetch_new_emails()` | `gmail/fetcher.py` | 59 |
+| `_parse_glassdoor_digest()` | `gmail/digest.py` | 81 |
+| `_run_scrape_batch()` | `services/sync_service.py` | 92 |
+
+### `console.log()` debug statements left in production
+
+`stats.html` lines 1001–1016 contain 5 `console.log('[ML] ...')` calls that expose internal
+model structure details. Should be removed or gated behind a debug flag.
+
+### Inconsistent SQLite `busy_timeout` values
+
+`storage/database.py` sets `busy_timeout=5000` (5s) on connection init, but
+`web/sync_routes.py` overrides with `PRAGMA busy_timeout=30000` (30s) for sync threads.
+The override is also done via raw `conn.execute()` in route handlers — outside the
+repository layer. Should be a single configurable value applied in `get_connection()`.
+
+### Test coverage is thin
+
+Only 7 test modules exist, covering parsers, rules, digest, and storage basics.
+**No test coverage at all** for:
+
+- All route handlers (`web/routes.py`, `tracker_routes.py`, `sync_routes.py`)
+- Services (`classification_service.py`, `sync_service.py`, `ml_service.py`)
+- ML pipeline (`ml_trainer.py`, `ml_prediction.py`)
+- Gmail fetcher and client
+- Repositories (`app_repo.py`, `email_repo.py`, `ml_repo.py`, `predictions_repo.py`)
+
+Core business logic is essentially untested. Priority: services and route handlers.
 
 ## UI Improvements
 

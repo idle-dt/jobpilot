@@ -1,5 +1,6 @@
 """Tests for the storage layer."""
 
+import re
 import sqlite3
 from datetime import datetime
 
@@ -809,3 +810,52 @@ def test_migrate_add_expired_is_idempotent(db_conn):
     assert db_conn.execute(
         "SELECT company FROM applications WHERE id = 5"
     ).fetchone()["company"] == "Keep"
+
+
+# --- Status vocabulary parity guards -------------------------------------------------
+# The set of valid application statuses is declared in four places that can silently
+# drift: APPLICATION_STATUSES (canonical tuple) plus STATUS_SORT_RANK, STATUS_LABELS, and
+# the two SQL CHECK(status IN (...)) constraints in database.py. These tests fail the build
+# if any copy diverges from the canonical tuple — see docs/TODO.md tech-debt entry.
+
+# Pulls the quoted status literals out of a `CHECK(status IN ('a', 'b', ...))` clause.
+_STATUS_CHECK_RE = re.compile(r"status\s+TEXT[^)]*?CHECK\(status IN \(([^)]*)\)", re.S)
+
+
+def _check_constraint_statuses(sql: str) -> set[str]:
+    """Return the status literals enforced by the applications status CHECK in `sql`."""
+    match = _STATUS_CHECK_RE.search(sql)
+    assert match is not None, "applications status CHECK constraint not found in SQL"
+    return set(re.findall(r"'([^']+)'", match.group(1)))
+
+
+def test_status_sort_rank_covers_all_statuses():
+    """Every valid status has an explicit sort rank — none silently falls to the bottom."""
+    from jobpilot.services.tracker_service import APPLICATION_STATUSES, STATUS_SORT_RANK
+
+    assert set(STATUS_SORT_RANK) == set(APPLICATION_STATUSES)
+
+
+def test_status_labels_cover_all_statuses():
+    """Every valid status has a human-readable label."""
+    from jobpilot.services.tracker_service import APPLICATION_STATUSES, STATUS_LABELS
+
+    assert set(STATUS_LABELS) == set(APPLICATION_STATUSES)
+
+
+def test_schema_sql_check_matches_statuses():
+    """The new-database schema CHECK constraint matches the canonical status set."""
+    from jobpilot.services.tracker_service import APPLICATION_STATUSES
+    from jobpilot.storage import database
+
+    assert _check_constraint_statuses(database.SCHEMA_SQL) == set(APPLICATION_STATUSES)
+
+
+def test_rebuild_sql_check_matches_statuses():
+    """The migration rebuild CHECK constraint matches the canonical status set."""
+    from jobpilot.services.tracker_service import APPLICATION_STATUSES
+    from jobpilot.storage import database
+
+    assert _check_constraint_statuses(
+        database._APPLICATIONS_REBUILD_SQL
+    ) == set(APPLICATION_STATUSES)

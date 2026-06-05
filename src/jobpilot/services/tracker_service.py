@@ -9,6 +9,10 @@ from jobpilot.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
 
+# Canonical set of valid application statuses. Also mirrored in the SQL CHECK
+# constraints in storage/database.py. Adding a status here means adding it to
+# STATUS_SORT_RANK below and both CHECK lists; the test_status_* parity guards in
+# tests/test_storage.py fail the build if any copy drifts.
 APPLICATION_STATUSES = (
     "saved", "applied", "screening", "technical",
     "onsite", "offer", "accepted", "rejected",
@@ -19,7 +23,9 @@ STATUS_LABELS = {s: s.replace("_", " ").title() for s in APPLICATION_STATUSES}
 STATUS_LABELS["no_response"] = "No Response"
 
 # Pipeline-stage ordering for the tracker list: active stages first (furthest
-# along at top), then terminal states. Lower rank sorts first.
+# along at top), then terminal states. Lower rank sorts first. Must cover every
+# status in APPLICATION_STATUSES (guarded by test_status_sort_rank_covers_all_statuses)
+# — an uncovered status silently falls to _UNKNOWN_STATUS_RANK at the bottom.
 STATUS_SORT_RANK: dict[str, int] = {
     "offer": 0,
     "onsite": 1,
