@@ -1,10 +1,15 @@
 """SQLite database connection and schema management."""
 
+import logging
 import sqlite3
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
 from jobpilot.storage.job_repo import DROP_SCORES_SQL
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS emails (
@@ -304,6 +309,132 @@ def _dedup_glassdoor_jobs_by_content(conn: sqlite3.Connection) -> int:
     return len(duplicates)
 
 
+# Status progression rank — higher means more advanced. Terminal/negative
+# outcomes share rank 1 so an "applied"-then-rejected row outranks a bare "saved".
+_STATUS_RANK = {
+    "saved": 0,
+    "applied": 1,
+    "screening": 2,
+    "technical": 3,
+    "onsite": 4,
+    "offer": 5,
+    "accepted": 6,
+    "rejected": 1,
+    "withdrawn": 1,
+    "no_response": 1,
+}
+
+_URL_ALIVE_TIMEOUT = 3.0
+_HTTP_ERROR_STATUS = 400
+# Soft ceiling on live URL probes the one-time migration may perform so a backlog
+# of dead application URLs cannot stall app startup (init_db runs migrations
+# synchronously). Checked between groups, so the true worst case is this budget
+# plus one group's probes. Beyond the budget, surviving rows keep their original URL.
+_MAX_URL_PROBES = 40
+
+# Pull every application with a case-insensitive, NULL-safe content key so
+# duplicates collapse into the same group regardless of casing or missing location.
+# `created_sort` normalizes mixed timestamp formats so the newest row sorts last.
+_DEDUP_APPLICATIONS_SQL = """
+SELECT id, scraped_job_id, role_title, company, location, job_url, status, created_at,
+       datetime(created_at) AS created_sort,
+       LOWER(role_title) || '|' || LOWER(IFNULL(company, '')) || '|' ||
+       LOWER(IFNULL(location, '')) AS dedup_key
+FROM applications
+ORDER BY dedup_key, created_sort
+"""
+
+
+def _is_url_alive(url: str | None, timeout: float = _URL_ALIVE_TIMEOUT) -> bool:
+    """Return True if url is safe to fetch and responds with a 2xx/3xx status."""
+    from jobpilot.scraper.job_page import is_safe_url  # local import keeps storage light
+
+    if not url or not is_safe_url(url):
+        return False
+    try:
+        resp = urllib.request.urlopen(
+            urllib.request.Request(url, method="HEAD"), timeout=timeout
+        )
+        return resp.status < _HTTP_ERROR_STATUS
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
+def _pick_survivor(members: list[sqlite3.Row]) -> sqlite3.Row:
+    """Choose the survivor: most-advanced status, then newest created_at."""
+    return max(
+        members,
+        key=lambda r: (_STATUS_RANK.get(r["status"], 0), r["created_sort"] or ""),
+    )
+
+
+def _resolve_survivor_url(
+    conn: sqlite3.Connection, survivor: sqlite3.Row, duplicates: list[sqlite3.Row]
+) -> int:
+    """Swap a dead survivor URL for the first reachable duplicate's URL.
+
+    Returns the number of liveness probes performed so the caller can bound
+    total network I/O across the one-time migration.
+    """
+    if _is_url_alive(survivor["job_url"]):
+        return 1
+    probes = 1
+    for dupe in duplicates:
+        probes += 1
+        if _is_url_alive(dupe["job_url"]):
+            conn.execute(
+                "UPDATE applications SET job_url = ? WHERE id = ?",
+                (dupe["job_url"], survivor["id"]),
+            )
+            break
+    return probes
+
+
+def _delete_orphaned_scraped_job(conn: sqlite3.Connection, scraped_job_id: int | None) -> None:
+    """Delete a scraped_job row if no remaining application references it."""
+    if scraped_job_id is None:
+        return
+    still_used = conn.execute(
+        "SELECT 1 FROM applications WHERE scraped_job_id = ? LIMIT 1", (scraped_job_id,)
+    ).fetchone()
+    if not still_used:
+        conn.execute("DELETE FROM scraped_jobs WHERE id = ?", (scraped_job_id,))
+
+
+def _collapse_duplicates(
+    conn: sqlite3.Connection, survivor: sqlite3.Row, duplicates: list[sqlite3.Row]
+) -> None:
+    """Reroute history to the survivor, delete duplicates, clean orphaned scraped_jobs."""
+    for dupe in duplicates:
+        conn.execute(
+            "UPDATE application_status_history SET application_id = ? WHERE application_id = ?",
+            (survivor["id"], dupe["id"]),
+        )
+        conn.execute("DELETE FROM applications WHERE id = ?", (dupe["id"],))
+        _delete_orphaned_scraped_job(conn, dupe["scraped_job_id"])
+
+
+def _dedup_tracked_applications(conn: sqlite3.Connection) -> int:
+    """Collapse applications duplicated by (title, company, location). Returns count removed."""
+    groups: dict[str, list[sqlite3.Row]] = {}
+    for row in conn.execute(_DEDUP_APPLICATIONS_SQL).fetchall():
+        groups.setdefault(row["dedup_key"], []).append(row)
+    removed = 0
+    probes = 0
+    for members in groups.values():
+        if len(members) <= 1:
+            continue
+        survivor = _pick_survivor(members)
+        duplicates = [m for m in members if m["id"] != survivor["id"]]
+        if probes < _MAX_URL_PROBES:
+            probes += _resolve_survivor_url(conn, survivor, duplicates)
+        _collapse_duplicates(conn, survivor, duplicates)
+        removed += len(duplicates)
+    conn.commit()
+    logger.info("Deduplicated %d tracked application(s)", removed)
+    return removed
+
+
 def _run_once(
     conn: sqlite3.Connection,
     key: str,
@@ -391,6 +522,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     _run_once(conn, "_migration_wellfound_cleanup", _cleanup_corrupted_wellfound_jobs)
     _run_once(conn, "_migration_glassdoor_parsing_cleanup", _cleanup_corrupted_glassdoor_jobs)
     _run_once(conn, "_migration_glassdoor_content_dedup", _dedup_glassdoor_jobs_by_content)
+    _run_once(conn, "_migration_dedup_tracked_applications", _dedup_tracked_applications)
 
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
