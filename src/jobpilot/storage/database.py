@@ -324,16 +324,23 @@ _STATUS_RANK = {
     "no_response": 1,
 }
 
-_URL_ALIVE_TIMEOUT = 5.0
+_URL_ALIVE_TIMEOUT = 3.0
+_HTTP_ERROR_STATUS = 400
+# Cap how many live URL probes the one-time migration may perform so a backlog
+# of dead application URLs cannot stall app startup (init_db runs migrations
+# synchronously). Beyond the budget, surviving rows keep their original URL.
+_MAX_URL_PROBES = 40
 
 # Pull every application with a case-insensitive, NULL-safe content key so
 # duplicates collapse into the same group regardless of casing or missing location.
+# `created_sort` normalizes mixed timestamp formats so the newest row sorts last.
 _DEDUP_APPLICATIONS_SQL = """
 SELECT id, scraped_job_id, role_title, company, location, job_url, status, created_at,
+       datetime(created_at) AS created_sort,
        LOWER(role_title) || '|' || LOWER(IFNULL(company, '')) || '|' ||
        LOWER(IFNULL(location, '')) AS dedup_key
 FROM applications
-ORDER BY dedup_key, created_at
+ORDER BY dedup_key, created_sort
 """
 
 
@@ -347,7 +354,7 @@ def _is_url_alive(url: str | None, timeout: float = _URL_ALIVE_TIMEOUT) -> bool:
         resp = urllib.request.urlopen(
             urllib.request.Request(url, method="HEAD"), timeout=timeout
         )
-        return resp.status < 400
+        return resp.status < _HTTP_ERROR_STATUS
     except (urllib.error.URLError, OSError, ValueError):
         return False
 
@@ -356,23 +363,30 @@ def _pick_survivor(members: list[sqlite3.Row]) -> sqlite3.Row:
     """Choose the survivor: most-advanced status, then newest created_at."""
     return max(
         members,
-        key=lambda r: (_STATUS_RANK.get(r["status"], 0), r["created_at"]),
+        key=lambda r: (_STATUS_RANK.get(r["status"], 0), r["created_sort"] or ""),
     )
 
 
 def _resolve_survivor_url(
     conn: sqlite3.Connection, survivor: sqlite3.Row, duplicates: list[sqlite3.Row]
-) -> None:
-    """If the survivor's URL is dead, swap in the first reachable duplicate URL."""
+) -> int:
+    """Swap a dead survivor URL for the first reachable duplicate's URL.
+
+    Returns the number of liveness probes performed so the caller can bound
+    total network I/O across the one-time migration.
+    """
     if _is_url_alive(survivor["job_url"]):
-        return
+        return 1
+    probes = 1
     for dupe in duplicates:
+        probes += 1
         if _is_url_alive(dupe["job_url"]):
             conn.execute(
                 "UPDATE applications SET job_url = ? WHERE id = ?",
                 (dupe["job_url"], survivor["id"]),
             )
-            return
+            break
+    return probes
 
 
 def _delete_orphaned_scraped_job(conn: sqlite3.Connection, scraped_job_id: int | None) -> None:
@@ -386,11 +400,10 @@ def _delete_orphaned_scraped_job(conn: sqlite3.Connection, scraped_job_id: int |
         conn.execute("DELETE FROM scraped_jobs WHERE id = ?", (scraped_job_id,))
 
 
-def _collapse_group(conn: sqlite3.Connection, members: list[sqlite3.Row]) -> int:
-    """Merge a content-duplicate group into one survivor. Returns deleted count."""
-    survivor = _pick_survivor(members)
-    duplicates = [m for m in members if m["id"] != survivor["id"]]
-    _resolve_survivor_url(conn, survivor, duplicates)
+def _collapse_duplicates(
+    conn: sqlite3.Connection, survivor: sqlite3.Row, duplicates: list[sqlite3.Row]
+) -> None:
+    """Reroute history to the survivor, delete duplicates, clean orphaned scraped_jobs."""
     for dupe in duplicates:
         conn.execute(
             "UPDATE application_status_history SET application_id = ? WHERE application_id = ?",
@@ -398,7 +411,6 @@ def _collapse_group(conn: sqlite3.Connection, members: list[sqlite3.Row]) -> int
         )
         conn.execute("DELETE FROM applications WHERE id = ?", (dupe["id"],))
         _delete_orphaned_scraped_job(conn, dupe["scraped_job_id"])
-    return len(duplicates)
 
 
 def _dedup_tracked_applications(conn: sqlite3.Connection) -> int:
@@ -407,9 +419,16 @@ def _dedup_tracked_applications(conn: sqlite3.Connection) -> int:
     for row in conn.execute(_DEDUP_APPLICATIONS_SQL).fetchall():
         groups.setdefault(row["dedup_key"], []).append(row)
     removed = 0
+    probes = 0
     for members in groups.values():
-        if len(members) > 1:
-            removed += _collapse_group(conn, members)
+        if len(members) <= 1:
+            continue
+        survivor = _pick_survivor(members)
+        duplicates = [m for m in members if m["id"] != survivor["id"]]
+        if probes < _MAX_URL_PROBES:
+            probes += _resolve_survivor_url(conn, survivor, duplicates)
+        _collapse_duplicates(conn, survivor, duplicates)
+        removed += len(duplicates)
     conn.commit()
     logger.info("Deduplicated %d tracked application(s)", removed)
     return removed
