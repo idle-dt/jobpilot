@@ -88,6 +88,11 @@ GENERIC_URL_CONTEXT_LINES = 5
 _WELLFOUND_TITLE_STYLE_PARTS = ("font-size: 14px", "font-weight: 700", "color: #000")
 _WELLFOUND_COMPANY_COLOR = "#541142"
 _WELLFOUND_URL_HOST = "wellfound.com"
+# The "Learn more" CTA is a links.wellfound.com redirect pointing at the specific
+# job; a card also carries a wellfound.com/company/<slug>/jobs link to the
+# company page. Prefer the former and never store the company page.
+_WELLFOUND_REDIRECT_HOST = "links.wellfound.com"
+_WELLFOUND_COMPANY_PATH = "/company/"
 _SAFE_URL_SCHEMES = ("http://", "https://")
 
 
@@ -450,8 +455,7 @@ def _parse_wellfound_digest(html: str, body_text: str) -> list[dict]:
         company = _wellfound_company(cell)
         if (title, company) in seen:
             continue
-        # Prefer a link scoped to the card cell; fall back to the enclosing table.
-        url = _wellfound_job_url(cell) or _wellfound_job_url(cell.find_parent("table"))
+        url = _wellfound_job_url(cell.find_parent("table"))
         if url is None:
             continue
         seen.add((title, company))
@@ -467,21 +471,28 @@ def _wellfound_company(cell: Tag) -> str | None:
 
 
 def _wellfound_job_url(container: Tag | None) -> str | None:
-    """Return the first safe http(s) Wellfound link in a container, or None.
+    """Return the best Wellfound job link in a container, or None.
 
-    The href comes from untrusted email HTML, so reject non-HTTP schemes
-    (e.g. ``javascript:``) and links that don't point at Wellfound.
+    Prefers the "Learn more" tracking redirect (links.wellfound.com), which
+    targets the specific job, over a wellfound.com/company/<slug> page. The href
+    comes from untrusted email HTML, so reject non-HTTP schemes (e.g.
+    ``javascript:``) and links that don't point at Wellfound.
     """
     if container is None:
         return None
+    fallback: str | None = None
     for anchor in container.find_all("a", href=True):
         href = anchor["href"]
         if not href.startswith(_SAFE_URL_SCHEMES):
             continue
-        host = urlparse(href).hostname or ""
-        if host == _WELLFOUND_URL_HOST or host.endswith(f".{_WELLFOUND_URL_HOST}"):
+        parsed = urlparse(href)
+        host = parsed.hostname or ""
+        if host == _WELLFOUND_REDIRECT_HOST:
             return href
-    return None
+        is_wellfound = host == _WELLFOUND_URL_HOST or host.endswith(f".{_WELLFOUND_URL_HOST}")
+        if is_wellfound and _WELLFOUND_COMPANY_PATH not in parsed.path and fallback is None:
+            fallback = href
+    return fallback
 
 
 def _parse_generic_digest(body: str) -> list[dict]:

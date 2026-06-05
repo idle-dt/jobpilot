@@ -441,6 +441,34 @@ def test_parse_wellfound_digest_skips_non_wellfound_links():
     assert jobs[0]["url"] == "https://links.wellfound.com/s/c/realjob"
 
 
+def test_parse_wellfound_digest_prefers_learn_more_over_company_link():
+    """When a card has both a company-page link and a Learn more redirect,
+    the redirect (the specific job) must win."""
+    html = """\
+<table><tr><td>
+  <div style="font-size: 14px; font-weight: 700; color: #000;">Contract Flutter Engineer</div>
+  <span style="color: #541142;">Resengi</span>
+  <a href="https://wellfound.com/company/resengi/jobs?email_uid=123&utm_source=x">Resengi</a>
+  <a href="https://links.wellfound.com/s/c/REALTOKEN/20">Learn more</a>
+</td></tr></table>
+"""
+    jobs = _parse_wellfound_digest(html, "")
+    assert len(jobs) == 1
+    assert jobs[0]["url"] == "https://links.wellfound.com/s/c/REALTOKEN/20"
+
+
+def test_parse_wellfound_digest_ignores_company_only_card():
+    """A card whose only link is a company page yields no job (no per-job link)."""
+    html = """\
+<table><tr><td>
+  <div style="font-size: 14px; font-weight: 700; color: #000;">Some Role</div>
+  <span style="color: #541142;">Acme</span>
+  <a href="https://wellfound.com/company/acme/jobs?email_uid=9">Acme</a>
+</td></tr></table>
+"""
+    assert _parse_wellfound_digest(html, "") == []
+
+
 def test_parse_wellfound_digest_rejects_spoofed_host():
     """A look-alike host (wellfound.com.attacker.net) must not be accepted."""
     html = """\
