@@ -75,8 +75,12 @@ class TrackerService:
     def _sort_key(app: Application) -> tuple[int, float]:
         """Sort by pipeline stage, then most-recently-changed first within a stage."""
         rank = STATUS_SORT_RANK.get(app.status, _UNKNOWN_STATUS_RANK)
-        changed = app.last_status_change
-        recency = datetime.fromisoformat(changed).timestamp() if changed else 0.0
+        recency = 0.0
+        if app.last_status_change:
+            try:
+                recency = datetime.fromisoformat(app.last_status_change).timestamp()
+            except ValueError:  # malformed timestamp — sort as oldest, never crash the list
+                recency = 0.0
         return rank, -recency
 
     def get_application(self, app_id: int) -> Application | None:

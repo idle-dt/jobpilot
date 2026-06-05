@@ -1,7 +1,9 @@
 """Tests for the storage layer."""
 
+import sqlite3
 from datetime import datetime
 
+import pytest
 from jobpilot.storage.models import (
     Application,
     Email,
@@ -768,6 +770,31 @@ def test_migrate_add_expired_rebuilds_and_preserves_data(db_conn):
         )
     }
     assert "idx_applications_status" in indexes  # indexes recreated after rebuild
+
+
+def test_migrate_add_expired_rolls_back_on_failure(db_conn, monkeypatch):
+    """A failure mid-rebuild rolls back, leaving the original table and data intact."""
+    from jobpilot.storage import database as db_module
+    from jobpilot.storage.database import _migrate_add_expired_status
+
+    db_conn.execute("DROP TABLE applications")
+    db_conn.executescript(_OLD_APPLICATIONS_SQL)
+    db_conn.execute(
+        "INSERT INTO applications (id, company, role_title, status) VALUES (1, 'Acme', 'Dev', 'offer')"
+    )
+    db_conn.commit()
+
+    # Inject a statement that errors after the table swap but before COMMIT.
+    broken = db_module._APPLICATIONS_REBUILD_SQL.replace(
+        "COMMIT;", "INSERT INTO applications (nonexistent) VALUES (1);\nCOMMIT;"
+    )
+    monkeypatch.setattr(db_module, "_APPLICATIONS_REBUILD_SQL", broken)
+    with pytest.raises(sqlite3.OperationalError):
+        _migrate_add_expired_status(db_conn)
+    db_conn.rollback()  # discard the failed, uncommitted transaction
+
+    row = db_conn.execute("SELECT company, status FROM applications WHERE id = 1").fetchone()
+    assert (row["company"], row["status"]) == ("Acme", "offer")  # original survived
 
 
 def test_migrate_add_expired_is_idempotent(db_conn):

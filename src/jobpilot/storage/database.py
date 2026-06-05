@@ -520,7 +520,10 @@ def _retry_glassdoor_browser(conn: sqlite3.Connection) -> None:
 # a positional copy would misalign every column after it. Foreign keys are
 # disabled around the swap so dropping the old table doesn't trip the
 # application_status_history FK; the indexes (dropped with the table) are recreated.
+# The whole rebuild runs in an explicit BEGIN/COMMIT so a crash mid-swap rolls back
+# and leaves the original table intact (executescript adds no transaction of its own).
 _APPLICATIONS_REBUILD_SQL = """
+BEGIN;
 DROP TABLE IF EXISTS applications_new;
 CREATE TABLE applications_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -569,6 +572,7 @@ CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
 CREATE INDEX IF NOT EXISTS idx_applications_company ON applications(company);
 CREATE INDEX IF NOT EXISTS idx_applications_email ON applications(email_id);
 CREATE INDEX IF NOT EXISTS idx_applications_scraped ON applications(scraped_job_id);
+COMMIT;
 """
 
 
@@ -579,10 +583,16 @@ def _migrate_add_expired_status(conn: sqlite3.Connection) -> None:
     ).fetchone()
     if row and row["sql"] and "'expired'" in row["sql"]:
         return  # fresh DB already built from the updated SCHEMA_SQL
+    conn.commit()  # flush any pending write txn so the PRAGMA below is not a no-op
     conn.execute("PRAGMA foreign_keys=OFF")
-    conn.executescript(_APPLICATIONS_REBUILD_SQL)
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.commit()
+    if conn.execute("PRAGMA foreign_keys").fetchone()[0]:
+        # Disabling FKs failed (a transaction was still open) — abort rather than
+        # risk DROP TABLE cascade-deleting application_status_history.
+        raise sqlite3.IntegrityError("cannot disable foreign keys for applications rebuild")
+    try:
+        conn.executescript(_APPLICATIONS_REBUILD_SQL)
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
 
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
