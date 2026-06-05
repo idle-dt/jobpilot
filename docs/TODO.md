@@ -9,7 +9,7 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## In Progress
 
-(none)
+- `docs/specs/SPEC_TRACKER_STATUS_SORT.md` — Add "Expired" status and sort tracker by pipeline stage
 
 ## UI Improvements
 
