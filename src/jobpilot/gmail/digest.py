@@ -476,7 +476,10 @@ def _wellfound_job_url(container: Tag | None) -> str | None:
         return None
     for anchor in container.find_all("a", href=True):
         href = anchor["href"]
-        if href.startswith(_SAFE_URL_SCHEMES) and _WELLFOUND_URL_HOST in href:
+        if not href.startswith(_SAFE_URL_SCHEMES):
+            continue
+        host = urlparse(href).hostname or ""
+        if host == _WELLFOUND_URL_HOST or host.endswith(f".{_WELLFOUND_URL_HOST}"):
             return href
     return None
 

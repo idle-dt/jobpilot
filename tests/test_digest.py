@@ -441,6 +441,18 @@ def test_parse_wellfound_digest_skips_non_wellfound_links():
     assert jobs[0]["url"] == "https://links.wellfound.com/s/c/realjob"
 
 
+def test_parse_wellfound_digest_rejects_spoofed_host():
+    """A look-alike host (wellfound.com.attacker.net) must not be accepted."""
+    html = """\
+<table><tr><td>
+  <div style="font-size: 14px; font-weight: 700; color: #000;">Spoof Role</div>
+  <span style="color: #541142;">Bad Co</span>
+  <a href="https://wellfound.com.attacker.net/jobs/1">Learn more</a>
+</td></tr></table>
+"""
+    assert _parse_wellfound_digest(html, "") == []
+
+
 def test_parse_wellfound_digest_no_html_falls_back_to_generic():
     """With no HTML body, fall back to the generic text parser."""
     body = "Check this role: https://wellfound.com/jobs/12345-mobile-developer"
