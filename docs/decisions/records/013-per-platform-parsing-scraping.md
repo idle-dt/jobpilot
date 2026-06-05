@@ -51,6 +51,16 @@ Key sub-decisions:
   but is **never auto-fetched**.
 - **URLs from email HTML are untrusted.** Extracted hrefs are validated
   (scheme + parsed hostname) before storage.
+- **Glassdoor dedups by content, not URL.** Glassdoor reissues a fresh
+  `jobListingId` (hence a new URL) for the same posting in every daily digest, so
+  the `scraped_jobs.url` UNIQUE constraint alone lets one posting accumulate as
+  many rows. For this source only, `JobRepository.insert_scraped_job` dedups on
+  `(title, company, location)`: a content match **refreshes the stored link to
+  the newer URL** (so the Source link stays live) rather than inserting a
+  duplicate, and `_parse_glassdoor_digest` also dedups within a single email. URL
+  normalization to just `jobListingId` (`_clean_job_url`) additionally collapses
+  same-listing copies. Other platforms keep plain URL-based dedup, where the same
+  URL reliably identifies the same posting.
 
 ## Alternatives Considered
 
@@ -75,6 +85,11 @@ Key sub-decisions:
   threshold.
 - HTML parsers are coupled to each platform's email markup and can break if the
   sender redesigns its template.
+- Glassdoor content-dedup treats two postings with an identical
+  `(title, company, location)` as the same job, so a genuinely distinct reposting
+  with the same title/company/location is merged; conversely it only carries over
+  one user label per posting if the same listing was labeled differently across
+  digests.
 
 ### Risks
 - Markup-signature drift (e.g. Wellfound changing its title CSS) silently yields
