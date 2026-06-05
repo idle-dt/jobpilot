@@ -2,6 +2,7 @@
 
 import logging
 import re
+from datetime import datetime
 
 from jobpilot.storage.models import Application
 from jobpilot.storage.repository import Repository
@@ -11,11 +12,29 @@ logger = logging.getLogger(__name__)
 APPLICATION_STATUSES = (
     "saved", "applied", "screening", "technical",
     "onsite", "offer", "accepted", "rejected",
-    "withdrawn", "no_response",
+    "withdrawn", "no_response", "expired",
 )
 
 STATUS_LABELS = {s: s.replace("_", " ").title() for s in APPLICATION_STATUSES}
 STATUS_LABELS["no_response"] = "No Response"
+
+# Pipeline-stage ordering for the tracker list: active stages first (furthest
+# along at top), then terminal states. Lower rank sorts first.
+STATUS_SORT_RANK: dict[str, int] = {
+    "offer": 0,
+    "onsite": 1,
+    "technical": 2,
+    "screening": 3,
+    "applied": 4,
+    "saved": 5,
+    "accepted": 6,
+    "expired": 7,
+    "rejected": 8,
+    "no_response": 9,
+    "withdrawn": 10,
+}
+# Fallback rank for any unknown status — sorts after all known statuses.
+_UNKNOWN_STATUS_RANK = 99
 
 _URL_SCHEME_RE = re.compile(r"^https?://", re.IGNORECASE)
 
@@ -47,9 +66,22 @@ class TrackerService:
         apps = self.repo.get_applications_by_status(
             status=status_filter or None,
         )
+        apps.sort(key=self._sort_key)
         counts = self.repo.count_applications_by_status()
         total = sum(counts.values())
         return apps, counts, total
+
+    @staticmethod
+    def _sort_key(app: Application) -> tuple[int, float]:
+        """Sort by pipeline stage, then most-recently-changed first within a stage."""
+        rank = STATUS_SORT_RANK.get(app.status, _UNKNOWN_STATUS_RANK)
+        recency = 0.0
+        if app.last_status_change:
+            try:
+                recency = datetime.fromisoformat(app.last_status_change).timestamp()
+            except ValueError:  # malformed timestamp — keep default, never crash the list
+                pass
+        return rank, -recency
 
     def get_application(self, app_id: int) -> Application | None:
         """Get a single application."""

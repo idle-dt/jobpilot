@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS applications (
     status TEXT NOT NULL DEFAULT 'applied' CHECK(status IN (
         'saved', 'applied', 'screening', 'technical',
         'onsite', 'offer', 'accepted', 'rejected',
-        'withdrawn', 'no_response'
+        'withdrawn', 'no_response', 'expired'
     )),
     applied_at TEXT DEFAULT (datetime('now')),
     last_status_change TEXT DEFAULT (datetime('now')),
@@ -513,6 +513,88 @@ def _retry_glassdoor_browser(conn: sqlite3.Connection) -> None:
     )
 
 
+# Rebuild `applications` so the status CHECK constraint accepts 'expired'.
+# SQLite can't ALTER a CHECK, so the table is recreated. Columns are copied by an
+# explicit list (not SELECT *) because `remote` was appended by an earlier ALTER
+# (see _apply_column_migrations) and so is the last column in existing databases —
+# a positional copy would misalign every column after it. Foreign keys are
+# disabled around the swap so dropping the old table doesn't trip the
+# application_status_history FK; the indexes (dropped with the table) are recreated.
+# The whole rebuild runs in an explicit BEGIN/COMMIT so a crash mid-swap rolls back
+# and leaves the original table intact (executescript adds no transaction of its own).
+_APPLICATIONS_REBUILD_SQL = """
+BEGIN;
+DROP TABLE IF EXISTS applications_new;
+CREATE TABLE applications_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email_id TEXT REFERENCES emails(id),
+    scraped_job_id INTEGER REFERENCES scraped_jobs(id),
+    company TEXT NOT NULL,
+    role_title TEXT NOT NULL,
+    location TEXT,
+    salary_range TEXT,
+    job_url TEXT,
+    platform TEXT,
+    status TEXT NOT NULL DEFAULT 'applied' CHECK(status IN (
+        'saved', 'applied', 'screening', 'technical',
+        'onsite', 'offer', 'accepted', 'rejected',
+        'withdrawn', 'no_response', 'expired'
+    )),
+    applied_at TEXT DEFAULT (datetime('now')),
+    last_status_change TEXT DEFAULT (datetime('now')),
+    contact_name TEXT,
+    contact_email TEXT,
+    notes TEXT,
+    offer_salary TEXT,
+    offer_currency TEXT,
+    offer_equity TEXT,
+    offer_relocation_package TEXT,
+    offer_notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    remote BOOLEAN DEFAULT FALSE
+);
+INSERT INTO applications_new (
+    id, email_id, scraped_job_id, company, role_title, location, salary_range,
+    job_url, platform, status, applied_at, last_status_change, contact_name,
+    contact_email, notes, offer_salary, offer_currency, offer_equity,
+    offer_relocation_package, offer_notes, created_at, updated_at, remote
+)
+SELECT
+    id, email_id, scraped_job_id, company, role_title, location, salary_range,
+    job_url, platform, status, applied_at, last_status_change, contact_name,
+    contact_email, notes, offer_salary, offer_currency, offer_equity,
+    offer_relocation_package, offer_notes, created_at, updated_at, remote
+FROM applications;
+DROP TABLE applications;
+ALTER TABLE applications_new RENAME TO applications;
+CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
+CREATE INDEX IF NOT EXISTS idx_applications_company ON applications(company);
+CREATE INDEX IF NOT EXISTS idx_applications_email ON applications(email_id);
+CREATE INDEX IF NOT EXISTS idx_applications_scraped ON applications(scraped_job_id);
+COMMIT;
+"""
+
+
+def _migrate_add_expired_status(conn: sqlite3.Connection) -> None:
+    """Rebuild `applications` so 'expired' is allowed by the status CHECK constraint."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'applications'"
+    ).fetchone()
+    if row and row["sql"] and "'expired'" in row["sql"]:
+        return  # fresh DB already built from the updated SCHEMA_SQL
+    conn.commit()  # flush any pending write txn so the PRAGMA below is not a no-op
+    conn.execute("PRAGMA foreign_keys=OFF")
+    if conn.execute("PRAGMA foreign_keys").fetchone()[0]:
+        # Disabling FKs failed (a transaction was still open) — abort rather than
+        # risk DROP TABLE cascade-deleting application_status_history.
+        raise sqlite3.IntegrityError("cannot disable foreign keys for applications rebuild")
+    try:
+        conn.executescript(_APPLICATIONS_REBUILD_SQL)
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
 def _run_migrations(conn: sqlite3.Connection) -> None:
     """Apply incremental schema changes and one-time data migrations idempotently."""
     _apply_column_migrations(conn)
@@ -523,6 +605,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     _run_once(conn, "_migration_glassdoor_parsing_cleanup", _cleanup_corrupted_glassdoor_jobs)
     _run_once(conn, "_migration_glassdoor_content_dedup", _dedup_glassdoor_jobs_by_content)
     _run_once(conn, "_migration_dedup_tracked_applications", _dedup_tracked_applications)
+    _run_once(conn, "_migration_add_expired_status", _migrate_add_expired_status)
 
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
