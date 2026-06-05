@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 
 from jobpilot.gmail.digest import (
+    _GLASSDOOR_NOISE_RE,
+    _GLASSDOOR_SALARY_RE,
     _clean_job_url,
     _is_boilerplate_line,
     _parse_glassdoor_digest,
@@ -354,6 +356,116 @@ def test_glassdoor_decimal_prefixed_title_not_dropped():
     assert job["title"] == "3.0 to 5.0 yrs - Backend Engineer"
     assert job["company"] == "Acme Corp"
     assert job["location"] == "Berlin"
+
+
+# --- Glassdoor: salary detection and noise filtering ---
+
+
+def test_glassdoor_salary_re_matches_standalone_ranges():
+    """Standalone salary ranges are recognized as salary."""
+    assert _GLASSDOOR_SALARY_RE.match("$150K - $220K")
+    assert _GLASSDOOR_SALARY_RE.match("$85K - $103K")
+
+
+def test_glassdoor_salary_re_rejects_title_with_parenthetical_amount():
+    """A title containing a parenthetical salary is NOT treated as salary."""
+    title = "Remote Sr/Staff Engineer ($150-$220k) Agentic AI, Ruby, Rails"
+    assert _GLASSDOOR_SALARY_RE.match(title) is None
+
+
+def test_glassdoor_noise_re_filters_hours_and_days():
+    """Time durations in hours and days are filtered as noise."""
+    assert _GLASSDOOR_NOISE_RE.match("22h")
+    assert _GLASSDOOR_NOISE_RE.match("6h")
+    assert _GLASSDOOR_NOISE_RE.match("3d")
+
+
+def test_glassdoor_noise_re_keeps_content_starting_with_duration():
+    """Real parts that merely start with a digit+d/h are not filtered as noise."""
+    assert _GLASSDOOR_NOISE_RE.match("3D Artist") is None
+    assert _GLASSDOOR_NOISE_RE.match("24h support engineer") is None
+    assert _GLASSDOOR_NOISE_RE.match("3d printing specialist") is None
+
+
+GLASSDOOR_EVERFORTH_HTML = """\
+<html><body>
+<table><tr><td>
+  <div>Everforth CyberCoders</div>
+  <div>4.5</div>
+  <div>★</div>
+  <a href="https://www.glassdoor.com/partner/jobListing.htm?pos=102&jobListingId=1010148677811&jrtk=abc">Remote Sr/Staff Engineer ($150-$220k) Agentic AI, Ruby, Rails</a>
+  <div>Philadelphia, PA</div>
+  <div>$150K - $220K</div>
+  <div>22h</div>
+</td></tr></table>
+</body></html>
+"""
+
+
+def test_glassdoor_full_card_keeps_title_and_extracts_salary():
+    """Title with parenthetical salary survives; salary and location are correct."""
+    jobs = _parse_glassdoor_digest(GLASSDOOR_EVERFORTH_HTML, "")
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job["title"] == "Remote Sr/Staff Engineer ($150-$220k) Agentic AI, Ruby, Rails"
+    assert job["company"] == "Everforth CyberCoders"
+    assert job["location"] == "Philadelphia, PA"
+    assert job["salary"] == "$150K - $220K"
+
+
+# --- Glassdoor: URL normalization ---
+
+
+def test_clean_glassdoor_url_keeps_only_job_listing_id():
+    """Glassdoor tracking params are stripped, keeping only jobListingId."""
+    url = (
+        "https://www.glassdoor.com/partner/jobListing.htm"
+        "?pos=102&jobListingId=1010148677811&jrtk=abc"
+    )
+    assert _clean_job_url(url) == (
+        "https://www.glassdoor.com/partner/jobListing.htm?jobListingId=1010148677811"
+    )
+
+
+def test_clean_glassdoor_url_dedups_across_digests():
+    """Same jobListingId with different tracking params yields identical URLs."""
+    url_a = (
+        "https://www.glassdoor.com/partner/jobListing.htm"
+        "?pos=102&jobListingId=1010148677811&guid=aaa&cb=111"
+    )
+    url_b = (
+        "https://www.glassdoor.com/partner/jobListing.htm"
+        "?pos=999&jobListingId=1010148677811&guid=bbb&cb=222"
+    )
+    assert _clean_job_url(url_a) == _clean_job_url(url_b)
+
+
+# --- Glassdoor: in-email content dedup ---
+
+# A single digest lists the same posting twice with different jobListingId links.
+GLASSDOOR_DUPLICATE_CARDS_HTML = """\
+<html><body>
+<table><tr><td>
+  <div>DataAnnotation</div>
+  <a href="https://www.glassdoor.com/partner/jobListing.htm?jobListingId=1010123850169">Software Engineer - AI Trainer</a>
+  <div>Stockholm</div>
+</td></tr></table>
+<table><tr><td>
+  <div>DataAnnotation</div>
+  <a href="https://www.glassdoor.com/partner/jobListing.htm?jobListingId=1010123850111">Software Engineer - AI Trainer</a>
+  <div>Stockholm</div>
+</td></tr></table>
+</body></html>
+"""
+
+
+def test_glassdoor_duplicate_cards_collapse_to_one():
+    """Two cards with the same title/company/location collapse to a single job."""
+    jobs = _parse_glassdoor_digest(GLASSDOOR_DUPLICATE_CARDS_HTML, "")
+    assert len(jobs) == 1
+    assert jobs[0]["title"] == "Software Engineer - AI Trainer"
+    assert jobs[0]["company"] == "DataAnnotation"
+    assert jobs[0]["location"] == "Stockholm"
 
 
 # --- Wellfound: HTML digest parsing ---

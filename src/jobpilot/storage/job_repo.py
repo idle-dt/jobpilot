@@ -12,6 +12,17 @@ DROP_SCORES_SQL = (
     "WHERE user_label IS NULL"
 )
 
+# Glassdoor reissues a fresh jobListingId (and thus a new URL) for the same
+# posting in every daily digest, so URL-only dedup lets the same job pile up as
+# new rows. For this source, dedup on content (title, company, location) instead
+# and refresh the stored link to the newest one.
+GLASSDOOR_SOURCE = "glassdoor"
+_GLASSDOOR_CONTENT_MATCH_SQL = (
+    "SELECT id, url FROM scraped_jobs "
+    "WHERE source = ? AND title IS ? AND company IS ? AND location IS ? "
+    "LIMIT 1"
+)
+
 
 class JobRepository:
     """CRUD operations for scraped jobs."""
@@ -20,7 +31,14 @@ class JobRepository:
         self.conn = conn
 
     def insert_scraped_job(self, job: ScrapedJob) -> bool:
-        """Insert a scraped job. Returns True if inserted, False if duplicate URL."""
+        """Insert a scraped job. Returns True if inserted, False if duplicate.
+
+        For Glassdoor, a content match (same title/company/location) refreshes the
+        existing row's link to the newer digest URL instead of inserting a
+        duplicate row, since Glassdoor reissues the jobListingId per digest.
+        """
+        if job.source == GLASSDOOR_SOURCE and self._refresh_glassdoor_duplicate(job):
+            return False
         try:
             self.conn.execute(
                 """INSERT INTO scraped_jobs
@@ -35,6 +53,35 @@ class JobRepository:
             return True
         except sqlite3.IntegrityError:
             return False
+
+    def _refresh_glassdoor_duplicate(self, job: ScrapedJob) -> bool:
+        """Refresh an existing same-content Glassdoor row's link.
+
+        Returns True if a matching row was found (so the caller skips inserting a
+        duplicate), False if no match exists. The link is refreshed to the newer
+        URL only when that URL is not already taken by another row, so the refresh
+        never trips the UNIQUE url constraint.
+        """
+        row = self.conn.execute(
+            _GLASSDOOR_CONTENT_MATCH_SQL,
+            (job.source, job.title, job.company, job.location),
+        ).fetchone()
+        if row is None:
+            return False
+        if job.url != row["url"] and not self._url_taken(job.url, row["id"]):
+            self.conn.execute(
+                "UPDATE scraped_jobs SET url = ? WHERE id = ?",
+                (job.url, row["id"]),
+            )
+            self.conn.commit()
+        return True
+
+    def _url_taken(self, url: str, exclude_id: int) -> bool:
+        """Return True if another scraped_jobs row already uses this URL."""
+        return self.conn.execute(
+            "SELECT 1 FROM scraped_jobs WHERE url = ? AND id != ?",
+            (url, exclude_id),
+        ).fetchone() is not None
 
     def get_scraped_job(self, job_id: int) -> ScrapedJob | None:
         """Get a single scraped job by ID."""

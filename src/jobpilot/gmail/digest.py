@@ -35,6 +35,15 @@ _LINKEDIN_JOB_URL = re.compile(
     r"https?://(?:www\.)?linkedin\.com/(?:comm/)?jobs/view/(\d+)", re.IGNORECASE
 )
 
+# Glassdoor generates a unique tracking URL per digest for the same job (the
+# pos/guid/cb params differ; only jobListingId is stable). Normalizing to just
+# jobListingId lets the UNIQUE constraint collapse duplicates across digests.
+_GLASSDOOR_LISTING_MARKER = "partner/jobListing"
+_GLASSDOOR_LISTING_PARAM = "jobListingId"
+_GLASSDOOR_LISTING_URL = (
+    "https://www.glassdoor.com/partner/jobListing.htm?jobListingId={job_id}"
+)
+
 # Lines to skip in LinkedIn blocks
 _LINKEDIN_SKIP_LINES = re.compile(
     r"^(This company is actively hiring|Apply with|Promoted|Be an early applicant|"
@@ -225,6 +234,13 @@ def _clean_job_url(url: str) -> str:
         job_id = match.group(1)
         return f"https://www.linkedin.com/jobs/view/{job_id}/"
 
+    # Glassdoor: keep only jobListingId so the same job across digests dedups
+    if _GLASSDOOR_LISTING_MARKER in parsed.path or _GLASSDOOR_LISTING_MARKER in url:
+        if parsed.query:
+            job_id = parse_qs(parsed.query).get(_GLASSDOOR_LISTING_PARAM, [None])[0]
+            if job_id:
+                return _GLASSDOOR_LISTING_URL.format(job_id=job_id)
+
     # For other URLs, strip common tracking params
     tracking_params = {
         "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
@@ -342,8 +358,14 @@ def _parse_indeed_digest(body: str) -> list[dict]:
 
 
 _GLASSDOOR_RATING_RE = re.compile(r"^(\d+\.\d+\s*★?|★)$")
+# Matches a standalone salary range like "$150K - $220K" or "$85K - $103K".
+# Anchored at both ends so titles containing parenthetical amounts (e.g.
+# "Sr Engineer ($150-$220k) AI") are NOT mistaken for a salary value.
+_GLASSDOOR_SALARY_RE = re.compile(r"^\$[\d,.]+[KkMm]?\s*[-–]\s*\$[\d,.]+[KkMm]?$")
 _GLASSDOOR_NOISE_RE = re.compile(
-    r"^(Glassdoor est\.|Employer est\.|Easy Apply|\d+d|See more jobs|"
+    # \d+[dh]$ is end-anchored so only standalone age tokens ("22h", "3d") match,
+    # not real content that merely starts with them ("3D Artist", "24h support").
+    r"^(Glassdoor est\.|Employer est\.|Easy Apply|\d+[dh]$|See more jobs|"
     r"Want more listings|Similar jobs|Create|Looking for|You can edit|"
     r"Sent Daily|Edit|This message was sent|Privacy Policy|Manage Settings|"
     r"Unsubscribe|Glassdoor|Copyright|\(|\)|operations analyst|systems analyst|"
@@ -363,6 +385,9 @@ def _parse_glassdoor_digest(html: str, body_text: str) -> list[dict]:
 
     soup = BeautifulSoup(html, "lxml")
     jobs = []
+    # A single digest lists the same posting multiple times with different
+    # jobListingId links, so dedup within the email by (title, company, location).
+    seen: set[tuple[str, str | None, str | None]] = set()
 
     for link in soup.find_all("a", href=True):
         href = link["href"]
@@ -398,7 +423,7 @@ def _parse_glassdoor_digest(html: str, body_text: str) -> list[dict]:
                 continue
             if _GLASSDOOR_NOISE_RE.match(part):
                 continue
-            if part.startswith("$") or ("$" in part and "K" in part.upper()):
+            if _GLASSDOOR_SALARY_RE.match(part):
                 salary = part
                 continue
             content_parts.append(part)
@@ -416,6 +441,11 @@ def _parse_glassdoor_digest(html: str, body_text: str) -> list[dict]:
 
         if not title:
             continue
+
+        key = (title, company, location)
+        if key in seen:
+            continue
+        seen.add(key)
 
         jobs.append({
             "title": title,

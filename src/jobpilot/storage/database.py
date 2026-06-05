@@ -1,6 +1,7 @@
 """SQLite database connection and schema management."""
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 from jobpilot.storage.job_repo import DROP_SCORES_SQL
@@ -231,8 +232,104 @@ def _cleanup_corrupted_wellfound_jobs(conn: sqlite3.Connection) -> int:
     return cursor.rowcount
 
 
-def _run_migrations(conn: sqlite3.Connection) -> None:
-    """Apply incremental schema changes idempotently."""
+# Glassdoor jobs predating the parsing fixes have corrupted fields (titles eaten
+# as salary, hour-durations leaking into location) and duplicate rows from
+# per-digest tracking URLs. Deleting the unlabeled ones lets the next sync
+# re-parse the source emails with the fixed parser and normalized URLs. Labeled
+# jobs are preserved — the user already acted on them — as are any with an
+# application attached (deleting them would break the applications FK).
+_CLEANUP_GLASSDOOR_SQL = (
+    "DELETE FROM scraped_jobs WHERE source = 'glassdoor' AND user_label IS NULL "
+    "AND id NOT IN (SELECT scraped_job_id FROM applications "
+    "WHERE scraped_job_id IS NOT NULL)"
+)
+
+
+def _cleanup_corrupted_glassdoor_jobs(conn: sqlite3.Connection) -> int:
+    """Delete unlabeled Glassdoor jobs so they can be re-parsed. Returns count."""
+    cursor = conn.execute(_CLEANUP_GLASSDOOR_SQL)
+    conn.commit()
+    return cursor.rowcount
+
+
+# Collapse existing Glassdoor content-duplicates (same posting recurring across
+# daily digests with a fresh jobListingId each time). Per (title, company,
+# location) group: keep one row — preferring a labeled row (lowest id among them)
+# so a user decision is carried over rather than dropped — refresh its link to
+# the newest sibling's URL, and delete the rest. In the rare case the same
+# posting was labeled differently across digests, only the earliest label is
+# kept (one row can hold one label).
+#
+# Per Glassdoor row: keep_id is its group's survivor (labeled-first, then lowest
+# id); fresh_url is the group's newest link (highest id).
+_GLASSDOOR_DEDUP_KEYS_SQL = """
+SELECT
+  id,
+  FIRST_VALUE(id) OVER (PARTITION BY k ORDER BY (user_label IS NULL), id) AS keep_id,
+  FIRST_VALUE(url) OVER (PARTITION BY k ORDER BY id DESC) AS fresh_url
+FROM (
+  SELECT id, url, user_label,
+         title || '|' || IFNULL(company, '') || '|' || IFNULL(location, '') AS k
+  FROM scraped_jobs WHERE source = 'glassdoor'
+)
+"""
+
+
+def _dedup_glassdoor_jobs_by_content(conn: sqlite3.Connection) -> int:
+    """Collapse Glassdoor content-duplicates to one row each. Returns deleted count.
+
+    For each duplicate row: repoint any applications referencing it to the
+    survivor (so the FK holds and the user's application tracking is preserved),
+    then delete it. Finally refresh each survivor's link to its freshest sibling
+    (done after the deletes so it can't collide with the sibling's UNIQUE url).
+    """
+    rows = conn.execute(_GLASSDOOR_DEDUP_KEYS_SQL).fetchall()
+    survivors: dict[int, str] = {}
+    duplicates: list[tuple[int, int]] = []
+    for row in rows:
+        survivors[row["keep_id"]] = row["fresh_url"]
+        if row["id"] != row["keep_id"]:
+            duplicates.append((row["id"], row["keep_id"]))
+    for dupe_id, keep_id in duplicates:
+        conn.execute(
+            "UPDATE applications SET scraped_job_id = ? WHERE scraped_job_id = ?",
+            (keep_id, dupe_id),
+        )
+        conn.execute("DELETE FROM scraped_jobs WHERE id = ?", (dupe_id,))
+    for keep_id, fresh_url in survivors.items():
+        conn.execute(
+            "UPDATE scraped_jobs SET url = ? WHERE id = ?", (fresh_url, keep_id)
+        )
+    conn.commit()
+    return len(duplicates)
+
+
+def _run_once(
+    conn: sqlite3.Connection,
+    key: str,
+    action: Callable[[sqlite3.Connection], object],
+) -> None:
+    """Run a one-time data migration `action` unless its `key` is already set.
+
+    Records the key in `settings` afterwards so the action never runs twice.
+    """
+    try:
+        ran = conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ran = None
+    if ran:
+        return
+    action(conn)
+    conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, "1")
+    )
+    conn.commit()
+
+
+def _apply_column_migrations(conn: sqlite3.Connection) -> None:
+    """Add columns and run the idempotent schema scripts."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(model_versions)").fetchall()}
     if "model_type" not in existing:
         conn.execute("ALTER TABLE model_versions ADD COLUMN model_type TEXT DEFAULT 'scoring'")
@@ -243,7 +340,6 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_SQL)
     conn.executescript(MIGRATION_PREFS_SQL)
 
-    # Add remote column to applications
     app_cols = {row[1] for row in conn.execute("PRAGMA table_info(applications)").fetchall()}
     if "remote" not in app_cols:
         conn.execute("ALTER TABLE applications ADD COLUMN remote BOOLEAN DEFAULT FALSE")
@@ -255,84 +351,46 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
-    # One-time cleanup for browser scraper migration
-    try:
-        ran = conn.execute(
-            "SELECT value FROM settings WHERE key = ?",
-            ("_migration_browser_scrape_cleanup",),
-        ).fetchone()
-    except sqlite3.OperationalError:
-        ran = None
-    if not ran:
-        for stmt in _CLEANUP_BROWSER_SCRAPE_SQL.strip().split(";"):
-            stmt = stmt.strip()
-            if stmt:
-                conn.execute(stmt)
-        conn.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-            ("_migration_browser_scrape_cleanup", "1"),
-        )
-        conn.commit()
 
-    # Migrate job_title -> job_title_primary + drop scores for rescore
-    try:
-        ran_jt = conn.execute(
-            "SELECT value FROM settings WHERE key = ?",
-            ("_migration_job_title_tiers",),
-        ).fetchone()
-    except sqlite3.OperationalError:
-        ran_jt = None
-    if not ran_jt:
-        conn.execute(
-            "UPDATE user_preferences SET category = 'job_title_primary' "
-            "WHERE category = 'job_title'"
-        )
-        conn.execute(DROP_SCORES_SQL)
-        conn.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-            ("_migration_job_title_tiers", "1"),
-        )
-        conn.commit()
+def _cleanup_browser_scrape(conn: sqlite3.Connection) -> None:
+    """Reset corrupted login-wall descriptions and failed scrapes for re-attempt."""
+    for stmt in _CLEANUP_BROWSER_SCRAPE_SQL.strip().split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            conn.execute(stmt)
 
-    # One-time retry for Glassdoor jobs after switching to browser-only strategy
-    try:
-        ran_gd = conn.execute(
-            "SELECT value FROM settings WHERE key = ?",
-            ("_migration_glassdoor_browser_retry",),
-        ).fetchone()
-    except sqlite3.OperationalError:
-        ran_gd = None
-    if not ran_gd:
-        conn.execute(
-            "UPDATE scraped_jobs SET scrape_attempted = 0 "
-            "WHERE (url LIKE 'https://glassdoor.com/%' "
-            "       OR url LIKE 'https://%.glassdoor.com/%' "
-            "       OR url LIKE 'http://glassdoor.com/%' "
-            "       OR url LIKE 'http://%.glassdoor.com/%') "
-            "  AND description IS NULL "
-            "  AND scrape_attempted = 1"
-        )
-        conn.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-            ("_migration_glassdoor_browser_retry", "1"),
-        )
-        conn.commit()
 
-    # One-time cleanup of corrupted Wellfound jobs after adding the HTML parser
-    try:
-        ran_wf = conn.execute(
-            "SELECT value FROM settings WHERE key = ?",
-            ("_migration_wellfound_cleanup",),
-        ).fetchone()
-    except sqlite3.OperationalError:
-        ran_wf = None
-    if not ran_wf:
-        _cleanup_corrupted_wellfound_jobs(conn)
-        conn.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-            ("_migration_wellfound_cleanup", "1"),
-        )
-        conn.commit()
+def _migrate_job_title_tiers(conn: sqlite3.Connection) -> None:
+    """Rename the job_title preference category and drop scores for a rescore."""
+    conn.execute(
+        "UPDATE user_preferences SET category = 'job_title_primary' "
+        "WHERE category = 'job_title'"
+    )
+    conn.execute(DROP_SCORES_SQL)
+
+
+def _retry_glassdoor_browser(conn: sqlite3.Connection) -> None:
+    """Re-arm failed Glassdoor scrapes after switching to the browser strategy."""
+    conn.execute(
+        "UPDATE scraped_jobs SET scrape_attempted = 0 "
+        "WHERE (url LIKE 'https://glassdoor.com/%' "
+        "       OR url LIKE 'https://%.glassdoor.com/%' "
+        "       OR url LIKE 'http://glassdoor.com/%' "
+        "       OR url LIKE 'http://%.glassdoor.com/%') "
+        "  AND description IS NULL "
+        "  AND scrape_attempted = 1"
+    )
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Apply incremental schema changes and one-time data migrations idempotently."""
+    _apply_column_migrations(conn)
+    _run_once(conn, "_migration_browser_scrape_cleanup", _cleanup_browser_scrape)
+    _run_once(conn, "_migration_job_title_tiers", _migrate_job_title_tiers)
+    _run_once(conn, "_migration_glassdoor_browser_retry", _retry_glassdoor_browser)
+    _run_once(conn, "_migration_wellfound_cleanup", _cleanup_corrupted_wellfound_jobs)
+    _run_once(conn, "_migration_glassdoor_parsing_cleanup", _cleanup_corrupted_glassdoor_jobs)
+    _run_once(conn, "_migration_glassdoor_content_dedup", _dedup_glassdoor_jobs_by_content)
 
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
