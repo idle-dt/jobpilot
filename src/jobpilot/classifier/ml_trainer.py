@@ -182,63 +182,14 @@ class MLTrainer:
         """Train one algorithm, cross-validate, serialize, store."""
         try:
             clf = algo_factory()
-
-            # Defense-in-depth: should_retrain() checks MIN_NEGATIVE_LABELS for
-            # noise, but scoring model and direct train_all() calls need this guard.
-            min_class = int(np.min(np.bincount(y)))
-            if min_class < MIN_CV_SPLITS:
-                logger.warning(
-                    "Skipping %s — min class count %d < %d required",
-                    algo_name, min_class, MIN_CV_SPLITS,
-                )
+            scores = self._cross_validate(clf, x, y, algo_name)
+            if scores is None:
                 return None
-
-            n_splits = min(MAX_CV_SPLITS, min_class)
-            n_splits = max(MIN_CV_SPLITS, n_splits)
-            cv = StratifiedKFold(
-                n_splits=n_splits, shuffle=True, random_state=42,
-            )
-            scoring = {
-                "accuracy": "accuracy",
-                "precision": make_scorer(precision_score, zero_division=0),
-                "recall": make_scorer(recall_score, zero_division=0),
-                "f1": make_scorer(f1_score, zero_division=0),
-            }
-            scores = cross_validate(
-                clf, x, y, cv=cv,
-                scoring=scoring,
-                return_train_score=False,
-            )
-
             clf.fit(x, y)
             train_accuracy = float(clf.score(x, y))
-
-            names = feature_names_for_model or FEATURE_NAMES
-            importances = self._extract_importances(clf, algo_name, len(names))
-
-            buf = io.BytesIO()
-            joblib.dump(clf, buf)
-            model_blob = buf.getvalue()
-
-            feature_data = json.dumps({
-                "names": names,
-                "importances": importances,
-            })
-
-            mv = ModelVersion(
-                id=None,
-                version=version,
-                training_samples=len(y),
-                model_blob=model_blob,
-                accuracy=float(np.mean(scores["test_accuracy"])),
-                precision_score=float(np.mean(scores["test_precision"])),
-                recall_score=float(np.mean(scores["test_recall"])),
-                f1_score=float(np.mean(scores["test_f1"])),
-                feature_names=feature_data,
-                is_active=False,
-                model_type=model_type,
-                algorithm=algo_name,
-                train_accuracy=train_accuracy,
+            mv = self._build_model_version(
+                clf, algo_name, y, model_type, version,
+                scores, train_accuracy, feature_names_for_model,
             )
             model_id = self.repo.insert_model_version(mv)
             logger.info(
@@ -246,10 +197,59 @@ class MLTrainer:
                 model_type, algo_name, mv.f1_score, len(y),
             )
             return model_id
-
         except (ValueError, np.linalg.LinAlgError, RuntimeError):
             logger.exception("Failed to train %s/%s", model_type, algo_name)
             return None
+
+    def _cross_validate(self, clf, x: np.ndarray, y: np.ndarray, algo_name: str) -> dict | None:
+        """Cross-validate clf, returning score arrays, or None if too few samples."""
+        # Defense-in-depth: should_retrain() checks MIN_NEGATIVE_LABELS for
+        # noise, but scoring model and direct train_all() calls need this guard.
+        min_class = int(np.min(np.bincount(y)))
+        if min_class < MIN_CV_SPLITS:
+            logger.warning(
+                "Skipping %s — min class count %d < %d required",
+                algo_name, min_class, MIN_CV_SPLITS,
+            )
+            return None
+        n_splits = max(MIN_CV_SPLITS, min(MAX_CV_SPLITS, min_class))
+        cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+        scoring = {
+            "accuracy": "accuracy",
+            "precision": make_scorer(precision_score, zero_division=0),
+            "recall": make_scorer(recall_score, zero_division=0),
+            "f1": make_scorer(f1_score, zero_division=0),
+        }
+        return cross_validate(
+            clf, x, y, cv=cv, scoring=scoring, return_train_score=False,
+        )
+
+    def _build_model_version(
+        self, clf, algo_name: str, y: np.ndarray,
+        model_type: str, version: int, scores: dict, train_accuracy: float,
+        feature_names_for_model: list[str] | None,
+    ) -> ModelVersion:
+        """Build a ModelVersion from a fitted classifier and its CV scores."""
+        names = feature_names_for_model or FEATURE_NAMES
+        importances = self._extract_importances(clf, algo_name, len(names))
+        buf = io.BytesIO()
+        joblib.dump(clf, buf)
+        feature_data = json.dumps({"names": names, "importances": importances})
+        return ModelVersion(
+            id=None,
+            version=version,
+            training_samples=len(y),
+            model_blob=buf.getvalue(),
+            accuracy=float(np.mean(scores["test_accuracy"])),
+            precision_score=float(np.mean(scores["test_precision"])),
+            recall_score=float(np.mean(scores["test_recall"])),
+            f1_score=float(np.mean(scores["test_f1"])),
+            feature_names=feature_data,
+            is_active=False,
+            model_type=model_type,
+            algorithm=algo_name,
+            train_accuracy=train_accuracy,
+        )
 
     def _extract_importances(
         self, clf, algo_name: str, n_features: int | None = None,
@@ -322,47 +322,12 @@ class MLTrainer:
                 continue
 
             clf = joblib.load(io.BytesIO(mv.model_blob))
-            extra_features = self._get_model_extra_features(mv)
             self.repo.delete_predictions_for_model(model_id)
-            predictions: list[MLPrediction] = []
-
             if model_type == "noise":
-                rows = self.repo.get_all_processed_emails()
-
-                def noise_feature_fn(row: dict) -> list[float]:
-                    return self._compute_noise_features(
-                        row["subject"], row["body_text"] or "",
-                        extra_features, email_id=row["id"],
-                    )
-
-                predictions = self._predict_items(
-                    clf, model_id, rows, noise_feature_fn,
-                    "job", "not_a_job", "email",
-                )
+                extra_features = self._get_model_extra_features(mv)
+                predictions = self._predict_noise(clf, model_id, extra_features)
             else:
-                email_rows = self.repo.get_all_processed_emails()
-
-                def scoring_email_fn(row: dict) -> list[float]:
-                    return compute_features(row["subject"], row["body_text"] or "")
-
-                predictions = self._predict_items(
-                    clf, model_id, email_rows, scoring_email_fn,
-                    "worth_checking", "skip", "email",
-                )
-
-                job_rows = self.repo.get_all_scraped_jobs()
-
-                def scoring_job_fn(row: dict) -> list[float]:
-                    body = (
-                        f"{row['title']} {row['company'] or ''}"
-                        f" {row['location'] or ''} {row['description'] or ''}"
-                    )
-                    return compute_features(row["title"], body)
-
-                predictions.extend(self._predict_items(
-                    clf, model_id, job_rows, scoring_job_fn,
-                    "worth_checking", "skip", "scraped_job",
-                ))
+                predictions = self._predict_scoring(clf, model_id)
 
             if predictions:
                 self.repo.insert_predictions(predictions)
@@ -370,6 +335,49 @@ class MLTrainer:
                     "Stored %d predictions for %s/%s",
                     len(predictions), model_type, mv.algorithm,
                 )
+
+    def _predict_noise(
+        self, clf, model_id: int, extra_features: list[str],
+    ) -> list[MLPrediction]:
+        """Predict the noise model over all processed emails."""
+        rows = self.repo.get_all_processed_emails()
+
+        def noise_feature_fn(row: dict) -> list[float]:
+            return self._compute_noise_features(
+                row["subject"], row["body_text"] or "",
+                extra_features, email_id=row["id"],
+            )
+
+        return self._predict_items(
+            clf, model_id, rows, noise_feature_fn, "job", "not_a_job", "email",
+        )
+
+    def _predict_scoring(self, clf, model_id: int) -> list[MLPrediction]:
+        """Predict the scoring model over all processed emails and scraped jobs."""
+        email_rows = self.repo.get_all_processed_emails()
+
+        def scoring_email_fn(row: dict) -> list[float]:
+            return compute_features(row["subject"], row["body_text"] or "")
+
+        predictions = self._predict_items(
+            clf, model_id, email_rows, scoring_email_fn,
+            "worth_checking", "skip", "email",
+        )
+
+        job_rows = self.repo.get_all_scraped_jobs()
+
+        def scoring_job_fn(row: dict) -> list[float]:
+            body = (
+                f"{row['title']} {row['company'] or ''}"
+                f" {row['location'] or ''} {row['description'] or ''}"
+            )
+            return compute_features(row["title"], body)
+
+        predictions.extend(self._predict_items(
+            clf, model_id, job_rows, scoring_job_fn,
+            "worth_checking", "skip", "scraped_job",
+        ))
+        return predictions
 
     def predict_single(
         self, model_type: str, item_type: str, item_id: str,

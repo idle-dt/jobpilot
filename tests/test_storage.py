@@ -17,7 +17,7 @@ from jobpilot.storage.repository import Repository
 
 def test_cleanup_corrupted_wellfound_jobs_deletes_unlabeled(db_conn):
     """Unlabeled Wellfound jobs are deleted for re-parsing; labeled ones survive."""
-    from jobpilot.storage.database import _cleanup_corrupted_wellfound_jobs
+    from jobpilot.storage.migrations import _cleanup_corrupted_wellfound_jobs
 
     db_conn.execute(
         "INSERT INTO scraped_jobs (source, title, url, user_label) VALUES (?,?,?,?)",
@@ -44,7 +44,7 @@ def test_cleanup_corrupted_wellfound_jobs_deletes_unlabeled(db_conn):
 
 def test_cleanup_corrupted_glassdoor_jobs_deletes_unlabeled(db_conn):
     """Unlabeled Glassdoor jobs are deleted for re-parsing; labeled ones survive."""
-    from jobpilot.storage.database import _cleanup_corrupted_glassdoor_jobs
+    from jobpilot.storage.migrations import _cleanup_corrupted_glassdoor_jobs
 
     db_conn.execute(
         "INSERT INTO scraped_jobs (source, title, url, user_label) VALUES (?,?,?,?)",
@@ -133,7 +133,7 @@ def test_insert_glassdoor_distinct_content_still_inserts(repo: Repository, db_co
 
 def test_dedup_glassdoor_jobs_by_content_keeps_labeled_and_freshest_link(db_conn):
     """Migration collapses a content group: keep the labeled row, refresh its link."""
-    from jobpilot.storage.database import _dedup_glassdoor_jobs_by_content
+    from jobpilot.storage.migrations import _dedup_glassdoor_jobs_by_content
 
     for url, label in ((_GD_URL_1, "skip"), (_GD_URL_2, None), (_GD_URL_2 + "x", None)):
         db_conn.execute(
@@ -156,7 +156,7 @@ def test_dedup_glassdoor_jobs_by_content_keeps_labeled_and_freshest_link(db_conn
 
 def test_dedup_glassdoor_repoints_applications_to_survivor(db_conn):
     """An application on a duplicate row is repointed to the survivor, FK intact."""
-    from jobpilot.storage.database import _dedup_glassdoor_jobs_by_content
+    from jobpilot.storage.migrations import _dedup_glassdoor_jobs_by_content
 
     cur = db_conn.execute(
         "INSERT INTO scraped_jobs (source, title, company, location, url, user_label) "
@@ -211,7 +211,7 @@ def _insert_app(
 
 def test_dedup_collapses_identical_applications_and_reroutes_history(db_conn):
     """Same (title, company, location): newest survives, dupe deleted, history rerouted."""
-    from jobpilot.storage.database import _dedup_tracked_applications
+    from jobpilot.storage.migrations import _dedup_tracked_applications
 
     dupe_id = _insert_app(db_conn, created_at="2024-01-01T00:00:00")
     survivor_id = _insert_app(db_conn, created_at="2024-02-01T00:00:00")
@@ -234,7 +234,7 @@ def test_dedup_collapses_identical_applications_and_reroutes_history(db_conn):
 
 def test_dedup_keeps_higher_status_survivor(db_conn):
     """'applied' outranks 'saved' even when the saved row is newer."""
-    from jobpilot.storage.database import _dedup_tracked_applications
+    from jobpilot.storage.migrations import _dedup_tracked_applications
 
     applied_id = _insert_app(db_conn, status="applied", created_at="2024-01-01T00:00:00")
     _insert_app(db_conn, status="saved", created_at="2024-02-01T00:00:00")
@@ -252,7 +252,7 @@ def test_dedup_swaps_dead_survivor_url_for_alive_duplicate(db_conn):
     """Survivor URL dead, duplicate URL alive: survivor's job_url is swapped in."""
     from unittest.mock import patch
 
-    from jobpilot.storage.database import _dedup_tracked_applications
+    from jobpilot.storage.migrations import _dedup_tracked_applications
 
     alive_url = "https://alive.example/job"
     _insert_app(db_conn, job_url=alive_url, created_at="2024-01-01T00:00:00")
@@ -262,7 +262,7 @@ def test_dedup_swaps_dead_survivor_url_for_alive_duplicate(db_conn):
     db_conn.commit()
 
     with patch(
-        "jobpilot.storage.database._is_url_alive",
+        "jobpilot.storage.migrations._is_url_alive",
         side_effect=lambda url, *a, **k: url == alive_url,
     ):
         removed = _dedup_tracked_applications(db_conn)
@@ -278,7 +278,7 @@ def test_dedup_keeps_survivor_url_when_all_dead(db_conn):
     """No reachable URL in the group: the survivor keeps its original job_url."""
     from unittest.mock import patch
 
-    from jobpilot.storage.database import _dedup_tracked_applications
+    from jobpilot.storage.migrations import _dedup_tracked_applications
 
     _insert_app(db_conn, job_url="https://a.example/job", created_at="2024-01-01T00:00:00")
     survivor_id = _insert_app(
@@ -286,7 +286,7 @@ def test_dedup_keeps_survivor_url_when_all_dead(db_conn):
     )
     db_conn.commit()
 
-    with patch("jobpilot.storage.database._is_url_alive", return_value=False):
+    with patch("jobpilot.storage.migrations._is_url_alive", return_value=False):
         removed = _dedup_tracked_applications(db_conn)
 
     assert removed == 1
@@ -298,7 +298,7 @@ def test_dedup_keeps_survivor_url_when_all_dead(db_conn):
 
 def test_dedup_deletes_orphaned_scraped_job(db_conn):
     """The deleted duplicate's scraped_job is removed when nothing else references it."""
-    from jobpilot.storage.database import _dedup_tracked_applications
+    from jobpilot.storage.migrations import _dedup_tracked_applications
 
     orphan_id = db_conn.execute(
         "INSERT INTO scraped_jobs (source, title, url) VALUES ('email', 'Sr. Flutter Developer', "
@@ -318,7 +318,7 @@ def test_dedup_deletes_orphaned_scraped_job(db_conn):
 
 def test_dedup_keeps_shared_scraped_job(db_conn):
     """A scraped_job still referenced by the survivor is kept after the duplicate is removed."""
-    from jobpilot.storage.database import _dedup_tracked_applications
+    from jobpilot.storage.migrations import _dedup_tracked_applications
 
     shared_id = db_conn.execute(
         "INSERT INTO scraped_jobs (source, title, url) VALUES ('email', 'Sr. Flutter Developer', "
@@ -338,7 +338,7 @@ def test_dedup_keeps_shared_scraped_job(db_conn):
 
 def test_dedup_leaves_unique_application_untouched(db_conn):
     """An application with no content-duplicate is left alone."""
-    from jobpilot.storage.database import _dedup_tracked_applications
+    from jobpilot.storage.migrations import _dedup_tracked_applications
 
     app_id = _insert_app(db_conn)
     db_conn.commit()
@@ -352,7 +352,7 @@ def test_dedup_leaves_unique_application_untouched(db_conn):
 
 def test_dedup_runs_only_once(db_conn):
     """_run_once guards the migration: duplicates added after the first run are not collapsed."""
-    from jobpilot.storage.database import _dedup_tracked_applications, _run_once
+    from jobpilot.storage.migrations import _dedup_tracked_applications, _run_once
 
     _insert_app(db_conn, created_at="2024-01-01T00:00:00")
     _insert_app(db_conn, created_at="2024-02-01T00:00:00")
@@ -740,7 +740,7 @@ def test_list_applications_newest_first_within_status(db_conn, repo: Repository)
 
 def test_migrate_add_expired_rebuilds_and_preserves_data(db_conn):
     """Migration on an old-schema table preserves all data, history, and enables 'expired'."""
-    from jobpilot.storage.database import _migrate_add_expired_status
+    from jobpilot.storage.migrations import _migrate_add_expired_status
 
     db_conn.execute("DROP TABLE applications")
     db_conn.executescript(_OLD_APPLICATIONS_SQL)
@@ -775,8 +775,8 @@ def test_migrate_add_expired_rebuilds_and_preserves_data(db_conn):
 
 def test_migrate_add_expired_rolls_back_on_failure(db_conn, monkeypatch):
     """A failure mid-rebuild rolls back, leaving the original table and data intact."""
-    from jobpilot.storage import database as db_module
-    from jobpilot.storage.database import _migrate_add_expired_status
+    from jobpilot.storage import migrations as mig_module
+    from jobpilot.storage.migrations import _migrate_add_expired_status
 
     db_conn.execute("DROP TABLE applications")
     db_conn.executescript(_OLD_APPLICATIONS_SQL)
@@ -786,10 +786,10 @@ def test_migrate_add_expired_rolls_back_on_failure(db_conn, monkeypatch):
     db_conn.commit()
 
     # Inject a statement that errors after the table swap but before COMMIT.
-    broken = db_module._APPLICATIONS_REBUILD_SQL.replace(
+    broken = mig_module._APPLICATIONS_REBUILD_SQL.replace(
         "COMMIT;", "INSERT INTO applications (nonexistent) VALUES (1);\nCOMMIT;"
     )
-    monkeypatch.setattr(db_module, "_APPLICATIONS_REBUILD_SQL", broken)
+    monkeypatch.setattr(mig_module, "_APPLICATIONS_REBUILD_SQL", broken)
     with pytest.raises(sqlite3.OperationalError):
         _migrate_add_expired_status(db_conn)
     db_conn.rollback()  # discard the failed, uncommitted transaction
@@ -800,7 +800,7 @@ def test_migrate_add_expired_rolls_back_on_failure(db_conn, monkeypatch):
 
 def test_migrate_add_expired_is_idempotent(db_conn):
     """Re-running the migration on an already-migrated table is a harmless no-op."""
-    from jobpilot.storage.database import _migrate_add_expired_status
+    from jobpilot.storage.migrations import _migrate_add_expired_status
 
     db_conn.execute(
         "INSERT INTO applications (id, company, role_title, status) VALUES (5, 'Keep', 'Dev', 'saved')"
@@ -858,8 +858,8 @@ def test_schema_sql_check_matches_statuses() -> None:
 def test_rebuild_sql_check_matches_statuses() -> None:
     """The migration rebuild CHECK constraint matches the canonical status set."""
     from jobpilot.services.tracker_service import APPLICATION_STATUSES
-    from jobpilot.storage import database
+    from jobpilot.storage import migrations
 
     assert _check_constraint_statuses(
-        database._APPLICATIONS_REBUILD_SQL
+        migrations._APPLICATIONS_REBUILD_SQL
     ) == set(APPLICATION_STATUSES)

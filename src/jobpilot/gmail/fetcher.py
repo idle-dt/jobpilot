@@ -7,6 +7,7 @@ from jobpilot.classifier.job_detector import JobDetector
 from jobpilot.gmail.client import GmailClient
 from jobpilot.gmail.digest import extract_single_job_url, parse_digest
 from jobpilot.gmail.parser import parse_message
+from jobpilot.storage.models import Email, ExtractedSignal, ScrapedJob
 from jobpilot.storage.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -67,45 +68,56 @@ def fetch_new_emails(
     log.info("Found %d messages matching query", len(message_stubs))
 
     detector = JobDetector()
-    new_count = 0
-    for stub in message_stubs:
-        msg_id = stub["id"]
-
-        # Skip if already in DB
-        if repo.get_email(msg_id):
-            continue
-
-        raw = client.get_message(msg_id)
-        email, signals = parse_message(raw)
-
-        # Parse digest emails into individual jobs (before insert so we have count)
-        extracted_jobs = parse_digest(email)
-
-        # Detect if this is a job opportunity or platform noise
-        is_job, confidence = detector.is_job_opportunity(
-            email.subject, email.sender, email.platform,
-            email.body_text, len(extracted_jobs),
-        )
-        email.is_job_related = is_job
-        email.confidence = confidence
-
-        repo.insert_email(email)
-
-        # Store extracted signals
-        for signal in signals:
-            repo.insert_signal(signal)
-
-        for job in extracted_jobs:
-            repo.insert_scraped_job(job)
-
-        # For non-digest emails, extract single job URL for "Open Origin"
-        if not extracted_jobs:
-            origin_url = extract_single_job_url(email.body_text or "", email.platform)
-            if origin_url:
-                repo.update_email_origin_url(msg_id, origin_url)
-
-        new_count += 1
-        log.debug("Stored email %s: %s (%d jobs)", msg_id, email.subject, len(extracted_jobs))
-
+    new_count = sum(
+        _process_message(stub["id"], client, repo, detector)
+        for stub in message_stubs
+    )
     log.info("Fetched %d new emails (%d dupes skipped)", new_count, len(message_stubs) - new_count)
     return new_count
+
+
+def _process_message(
+    msg_id: str, client: GmailClient, repo: Repository, detector: JobDetector,
+) -> bool:
+    """Fetch, parse, classify, and store one message. Returns True if newly stored."""
+    if repo.get_email(msg_id):  # Skip if already in DB
+        return False
+
+    raw = client.get_message(msg_id)
+    email, signals = parse_message(raw)
+
+    # Parse digest emails into individual jobs (before insert so we have count)
+    extracted_jobs = parse_digest(email)
+
+    # Detect if this is a job opportunity or platform noise
+    is_job, confidence = detector.is_job_opportunity(
+        email.subject, email.sender, email.platform,
+        email.body_text, len(extracted_jobs),
+    )
+    email.is_job_related = is_job
+    email.confidence = confidence
+
+    _store_email(repo, email, signals, extracted_jobs, msg_id)
+    log.debug("Stored email %s: %s (%d jobs)", msg_id, email.subject, len(extracted_jobs))
+    return True
+
+
+def _store_email(
+    repo: Repository,
+    email: Email,
+    signals: list[ExtractedSignal],
+    extracted_jobs: list[ScrapedJob],
+    msg_id: str,
+) -> None:
+    """Persist an email, its extracted signals, and any digest jobs."""
+    repo.insert_email(email)
+    for signal in signals:
+        repo.insert_signal(signal)
+    for job in extracted_jobs:
+        repo.insert_scraped_job(job)
+
+    # For non-digest emails, extract single job URL for "Open Origin"
+    if not extracted_jobs:
+        origin_url = extract_single_job_url(email.body_text or "", email.platform)
+        if origin_url:
+            repo.update_email_origin_url(msg_id, origin_url)
