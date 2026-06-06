@@ -39,9 +39,9 @@
 
     <div class="row-actions" hx-target="#email-{{ email.id }}" hx-swap="outerHTML">
         {% if email.origin_url and email.origin_url.startswith(('http://', 'https://')) %}
-        <a href="{{ email.origin_url }}" target="_blank" class="btn-link">Origin</a>
+        <a href="{{ email.origin_url }}" target="_blank" rel="noopener noreferrer" class="btn-link">Origin</a>
         {% endif %}
-        <a href="https://mail.google.com/mail/u/0/#inbox/{{ email.id }}" target="_blank" class="btn-link">Source</a>
+        <a href="https://mail.google.com/mail/u/0/#inbox/{{ email.id }}" target="_blank" rel="noopener noreferrer" class="btn-link">Source</a>
         <span class="actions-spacer"></span>
         <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "worth_checking"}' class="btn-approve">Worth Checking</button>
         <button hx-post="/api/feedback/{{ email.id }}" hx-vals='{"label": "skip"}' class="btn-skip">Skip</button>
@@ -53,7 +53,7 @@
 <article class="row-card" id="scraped-{{ job.id }}" tabindex="0">
     <div class="card-top">
         <div class="card-main">
-            <div class="row-title">{% if job.url and job.url.startswith(('http://', 'https://')) %}<a href="{{ job.url }}" target="_blank">{{ job.title }}</a>{% else %}{{ job.title }}{% endif %}</div>
+            <div class="row-title">{% if job.url and job.url.startswith(('http://', 'https://')) %}<a href="{{ job.url }}" target="_blank" rel="noopener noreferrer">{{ job.title }}</a>{% else %}{{ job.title }}{% endif %}</div>
             <div class="row-company">{{ job.company or 'Unknown' }} · {{ job.location or 'Unknown location' }}{% if job.salary %} · <strong class="row-salary">{{ job.salary }}</strong>{% endif %}</div>
             <div class="row-meta">
                 <span class="badge badge-scraped">{{ job.source }}</span>
@@ -87,10 +87,10 @@
 
     <div class="row-actions" hx-target="#scraped-{{ job.id }}" hx-swap="outerHTML">
         {% if job.url and job.url.startswith(('http://', 'https://')) %}
-        <a href="{{ job.url }}" target="_blank" class="btn-link">Origin</a>
+        <a href="{{ job.url }}" target="_blank" rel="noopener noreferrer" class="btn-link">Origin</a>
         {% endif %}
         {% if job.email_id %}
-        <a href="https://mail.google.com/mail/u/0/#inbox/{{ job.email_id }}" target="_blank" class="btn-link">Source</a>
+        <a href="https://mail.google.com/mail/u/0/#inbox/{{ job.email_id }}" target="_blank" rel="noopener noreferrer" class="btn-link">Source</a>
         {% endif %}
         <span class="actions-spacer"></span>
         <button hx-post="/api/feedback/scraped/{{ job.id }}" hx-vals='{"label": "worth_checking"}' class="btn-approve">Worth Checking</button>

@@ -320,9 +320,10 @@ function browserLogin(site, btn) {
 function updateArbeitnow() {
     const enabled = document.getElementById('arbeitnow-enabled').checked;
     const visaOnly = document.getElementById('arbeitnow-visa-only').checked;
+    var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
     fetch('/api/settings/arbeitnow', {
         method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken},
         body: new URLSearchParams({
             enabled: enabled ? 'true' : 'false',
             visa_only: visaOnly ? 'true' : 'false',
