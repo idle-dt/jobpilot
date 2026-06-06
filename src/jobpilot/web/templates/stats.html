@@ -365,7 +365,7 @@
                 {% for item in data.recent_predictions %}
                 <tr>
                     {% set link = item.url if item.url and item.url.startswith(('http://', 'https://')) else ('https://mail.google.com/mail/u/0/#inbox/' + item.safe_email_id if item.item_type == 'email' and item.get('safe_email_id') else '') %}
-                    <td class="exp-item-title">{% if link %}<a href="{{ link }}" target="_blank">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</a>{% else %}{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}{% endif %}</td>
+                    <td class="exp-item-title">{% if link %}<a href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</a>{% else %}{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}{% endif %}</td>
                     <td>
                         {% set rule_pct = ((item.raw_score or 0) * 100) | round(0) | int %}
                         {% set rule_agrees = (item.user_label == 'worth_checking' and (item.raw_score or 0) >= 0.6) or (item.user_label == 'skip' and (item.raw_score or 0) < 0.6) %}
@@ -421,7 +421,7 @@
                 {% for item in data.recent_noise_predictions %}
                 <tr>
                     {% set link = item.url if item.url and item.url.startswith(('http://', 'https://')) else ('https://mail.google.com/mail/u/0/#inbox/' + item.safe_email_id if item.item_type == 'email' and item.get('safe_email_id') else '') %}
-                    <td class="exp-item-title">{% if link %}<a href="{{ link }}" target="_blank">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</a>{% else %}{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}{% endif %}</td>
+                    <td class="exp-item-title">{% if link %}<a href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</a>{% else %}{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}{% endif %}</td>
                     {% set ns = namespace(agree_count=0) %}
                     {% for algo in ['LR', 'RF', 'GBC', 'SVM'] %}
                     <td>
@@ -998,22 +998,17 @@ var DATA = {{ data | tojson }};
 /* ── Feature importance bars (ML Experiment Lab) ──── */
 (function() {
     var allModels = DATA.all_models || {};
-    console.log('[ML] all_models keys:', Object.keys(allModels));
     ['scoring', 'noise'].forEach(function(mt) {
         var models = allModels[mt] || [];
-        console.log('[ML] ' + mt + ': ' + models.length + ' models');
         models.forEach(function(m) {
-            console.log('[ML] ' + mt + '/' + m.algorithm + ' feature_names type:', typeof m.feature_names, 'value:', m.feature_names ? m.feature_names.substring(0, 80) : 'null');
             if (!m.feature_names) return;
             var containerId = 'feat-' + mt + '-' + m.algorithm;
             var container = document.getElementById(containerId);
-            console.log('[ML] container #' + containerId + ':', container ? 'found' : 'NOT FOUND');
             if (!container) return;
             try {
                 var fd = JSON.parse(m.feature_names);
                 var names = fd.names || [];
                 var imps = fd.importances || [];
-                console.log('[ML] ' + m.algorithm + ' parsed: names=' + names.length + ', imps=' + imps.length, imps);
                 if (!names.length || !imps.length) return;
                 var maxImp = Math.max.apply(null, imps) || 1;
                 /* Sort by importance descending */

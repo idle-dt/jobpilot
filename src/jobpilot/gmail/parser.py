@@ -63,7 +63,7 @@ def _parse_date(date_str: str) -> datetime:
         return datetime.now(timezone.utc)
     try:
         return parsedate_to_datetime(date_str)
-    except Exception:
+    except (ValueError, TypeError):
         return datetime.now(timezone.utc)
 
 

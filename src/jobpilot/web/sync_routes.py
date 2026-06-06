@@ -55,7 +55,6 @@ def scraper_login():
         conn = None
         try:
             conn = get_connection(settings.db_path)
-            conn.execute("PRAGMA busy_timeout=30000")
             repo = Repository(conn)
             scraper = BrowserScraper(headless=False)
             scraper.login(site_name)
@@ -84,7 +83,6 @@ def _run_sync_background() -> None:
     conn = None
     try:
         conn = get_connection(settings.db_path)
-        conn.execute("PRAGMA busy_timeout=30000")
         repo = Repository(conn)
         result = SyncService(repo).run()
         sync_state.finish(

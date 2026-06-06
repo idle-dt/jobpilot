@@ -81,7 +81,7 @@
                 </label>
                 <label>Job URL
                     {% if app.job_url and app.job_url.startswith(('http://', 'https://')) %}
-                    <a href="{{ app.job_url }}" target="_blank" rel="noopener" class="tracker-link">{{ app.job_url[:60] }}{% if app.job_url|length > 60 %}...{% endif %}</a>
+                    <a href="{{ app.job_url }}" target="_blank" rel="noopener noreferrer" class="tracker-link">{{ app.job_url[:60] }}{% if app.job_url|length > 60 %}...{% endif %}</a>
                     {% endif %}
                     <input type="url" value="{{ app.job_url or '' }}"
                            onblur="patchApp({{ app.id }}, 'job_url', this.value)">

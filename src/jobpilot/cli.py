@@ -74,6 +74,8 @@ def scrape():
 @cli.command()
 def setup():
     """Set up Gmail OAuth credentials."""
+    from google.auth.exceptions import GoogleAuthError
+
     from jobpilot.gmail.auth import GmailAuth
 
     auth = GmailAuth(settings.gmail_credentials_path, settings.gmail_token_path)
@@ -92,9 +94,9 @@ def setup():
         auth.get_credentials()
         click.echo("Authentication successful!")
         click.echo(f"Token saved to: {settings.gmail_token_path}")
-    except Exception as e:
+    except (FileNotFoundError, OSError, ValueError, GoogleAuthError) as e:
         click.echo(f"Authentication failed: {e}")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
 
 @cli.command()

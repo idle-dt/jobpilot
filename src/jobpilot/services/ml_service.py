@@ -135,13 +135,8 @@ class MLService:
         try:
             from jobpilot.classifier.ml_trainer import MLTrainer
             from jobpilot.config import settings
-            conn = sqlite3.connect(
-                str(settings.db_path), timeout=30, check_same_thread=False,
-            )
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.execute("PRAGMA foreign_keys=ON")
-            conn.row_factory = sqlite3.Row
+            from jobpilot.storage.database import get_connection
+            conn = get_connection(settings.db_path)
             repo = Repository(conn)
             trainer = MLTrainer(repo)
             trainer.train_all(model_type)

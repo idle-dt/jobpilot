@@ -25,6 +25,11 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
     )
 
+    # Database
+    # Milliseconds a query waits on a locked SQLite database before raising
+    # OperationalError. Applied uniformly to every connection in get_connection().
+    db_busy_timeout_ms: int = 30000
+
     # Paths
     db_path: Path = Path.home() / ".jobpilot" / "jobpilot.db"
     gmail_credentials_path: Path = Path.home() / ".jobpilot" / "credentials.json"

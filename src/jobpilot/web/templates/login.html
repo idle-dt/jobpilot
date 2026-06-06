@@ -33,7 +33,7 @@
                 OAuth credentials not found. To get started:
             </p>
             <ol>
-                <li>Go to <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>
+                <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a></li>
                 <li>Create an OAuth 2.0 Client ID (type: <strong>Web application</strong>)</li>
                 <li>Add <code>http://localhost:{{ config.get('SERVER_PORT', 5050) }}/auth/callback</code> as an authorized redirect URI</li>
                 <li>Download the JSON and save it as <code>~/.jobpilot/credentials.json</code></li>
