@@ -1,5 +1,6 @@
 """OAuth2 flow and token management for Gmail API."""
 
+import json
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -50,5 +51,5 @@ class GmailAuth:
         try:
             creds = Credentials.from_authorized_user_file(str(self.token_path), SCOPES)
             return creds.valid or (creds.expired and creds.refresh_token)
-        except Exception:
+        except (json.JSONDecodeError, ValueError, KeyError, FileNotFoundError):
             return False
