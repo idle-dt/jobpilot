@@ -195,6 +195,17 @@ def test_sort_applications_applied_desc_nulls_still_last() -> None:
     assert [a.role_title for a in ordered] == ["new", "old", "none"]
 
 
+def test_sort_applications_applied_ties_break_by_pipeline_rank() -> None:
+    """Rows with identical applied_at fall back to pipeline rank as the tiebreaker."""
+    same = "2026-02-01T00:00:00"
+    apps = [
+        _app("saved-row", status="saved", applied_at=same),
+        _app("offer-row", status="offer", applied_at=same),
+    ]
+    ordered = TrackerService(None)._sort_applications(apps, "applied_asc")
+    assert [a.role_title for a in ordered] == ["offer-row", "saved-row"]
+
+
 def test_sort_applications_default_is_pipeline_rank() -> None:
     """sort=status orders by pipeline rank (offer before saved before withdrawn)."""
     apps = [

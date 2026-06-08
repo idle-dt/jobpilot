@@ -4,7 +4,7 @@
     hx-target="#modal-container"
     hx-swap="innerHTML">
     <td>
-        {% if app.job_url and (app.job_url.startswith('http://') or app.job_url.startswith('https://')) %}
+        {% if app.job_url and app.job_url.startswith(('http://', 'https://')) %}
         <a class="role-link" href="{{ app.job_url }}" target="_blank" rel="noopener noreferrer"
            hx-boost="false" onclick="event.stopPropagation()">{{ app.role_title }}</a>
         {% else %}

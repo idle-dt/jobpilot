@@ -61,7 +61,7 @@ def _parse_tracker_sort(raw: str) -> tuple[str, str]:
 def canonical_tracker_sort(raw: str) -> str:
     """Normalize an untrusted sort param to a known-good value for safe reflection."""
     column, direction = _parse_tracker_sort(raw)
-    return DEFAULT_TRACKER_SORT if column == "status" else f"{column}_{direction}"
+    return DEFAULT_TRACKER_SORT if column == "status" else f"applied_{direction}"
 
 
 def _iso_to_timestamp(value: str | None) -> float:
@@ -72,6 +72,7 @@ def _iso_to_timestamp(value: str | None) -> float:
         return datetime.fromisoformat(value).timestamp()
     except ValueError:  # malformed timestamp — never crash the list
         return 0.0
+
 
 # Fields the PATCH endpoint is allowed to modify.
 # "status" is deliberately excluded — status changes must go through
