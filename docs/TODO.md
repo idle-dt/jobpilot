@@ -9,7 +9,7 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## In Progress
 
-- `docs/specs/SPEC_TRACKER_COLUMN_SORT.md` — Sortable tracker table columns (click header to sort)
+(none)
 
 ## Tech Debt
 
