@@ -1,14 +1,19 @@
-<tr id="app-row-{{ app.id }}" class="{% if app.status in ('rejected', 'withdrawn', 'no_response') %}tracker-row-dimmed{% endif %}">
+<tr id="app-row-{{ app.id }}"
+    class="tracker-row{% if app.status in ('rejected', 'withdrawn', 'no_response') %} tracker-row-dimmed{% endif %}"
+    hx-get="/api/tracker/{{ app.id }}"
+    hx-target="#modal-container"
+    hx-swap="innerHTML">
     <td>
-        <a class="role-link" href="#"
-           hx-get="/api/tracker/{{ app.id }}"
-           hx-target="#modal-container"
-           hx-swap="innerHTML"
-           onclick="event.preventDefault()">{{ app.role_title }}</a>
+        {% if app.job_url and (app.job_url.startswith('http://') or app.job_url.startswith('https://')) %}
+        <a class="role-link" href="{{ app.job_url }}" target="_blank" rel="noopener noreferrer"
+           hx-boost="false" onclick="event.stopPropagation()">{{ app.role_title }}</a>
+        {% else %}
+        <span class="role-link">{{ app.role_title }}</span>
+        {% endif %}
     </td>
     <td>{{ app.company }}</td>
     <td class="tracker-muted">{{ app.location or '' }}{% if app.remote %} / Remote{% endif %}</td>
-    <td>{% include "partials/tracker_status_badge.html" %}</td>
+    <td onclick="event.stopPropagation()">{% include "partials/tracker_status_badge.html" %}</td>
     <td class="tracker-muted">{{ app.platform or '' }}</td>
     <td class="tracker-muted">{% if app.applied_at %}{{ app.applied_at[:10] }}{% endif %}</td>
 </tr>

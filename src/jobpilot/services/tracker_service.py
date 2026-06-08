@@ -42,7 +42,36 @@ STATUS_SORT_RANK: dict[str, int] = {
 # Fallback rank for any unknown status — sorts after all known statuses.
 _UNKNOWN_STATUS_RANK = 99
 
+# Default sort (no param): pipeline rank, matching the historical behavior.
+# Only the Applied date is user-sortable; every other column keeps pipeline order.
+DEFAULT_TRACKER_SORT = "status"
+
 _URL_SCHEME_RE = re.compile(r"^https?://", re.IGNORECASE)
+
+
+def _parse_tracker_sort(raw: str) -> tuple[str, str]:
+    """Parse the sort param into (column, direction). Returns default on bad input."""
+    if raw == "applied_asc":
+        return "applied", "asc"
+    if raw == "applied_desc":
+        return "applied", "desc"
+    return "status", "asc"
+
+
+def canonical_tracker_sort(raw: str) -> str:
+    """Normalize an untrusted sort param to a known-good value for safe reflection."""
+    column, direction = _parse_tracker_sort(raw)
+    return DEFAULT_TRACKER_SORT if column == "status" else f"{column}_{direction}"
+
+
+def _iso_to_timestamp(value: str | None) -> float:
+    """Parse an ISO timestamp to epoch seconds; 0.0 on missing/malformed input."""
+    if not value:
+        return 0.0
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:  # malformed timestamp — never crash the list
+        return 0.0
 
 # Fields the PATCH endpoint is allowed to modify.
 # "status" is deliberately excluded — status changes must go through
@@ -64,30 +93,44 @@ class TrackerService:
         self.repo = repo
 
     def list_applications(
-        self, status_filter: str = "",
+        self, status_filter: str = "", sort: str = DEFAULT_TRACKER_SORT,
     ) -> tuple[list[Application], dict[str, int], int]:
-        """Return (apps, counts_by_status, total)."""
+        """Return (apps, counts_by_status, total), sorted per the sort param."""
         if status_filter and status_filter not in APPLICATION_STATUSES:
             status_filter = ""
         apps = self.repo.get_applications_by_status(
             status=status_filter or None,
         )
-        apps.sort(key=self._sort_key)
+        apps = self._sort_applications(apps, sort)
         counts = self.repo.count_applications_by_status()
         total = sum(counts.values())
         return apps, counts, total
+
+    def _sort_applications(
+        self, apps: list[Application], sort: str,
+    ) -> list[Application]:
+        """Sort by applied date when requested, else pipeline rank.
+
+        Rows with no applied_at always sort last, in both directions.
+        """
+        column, direction = _parse_tracker_sort(sort)
+        if column == "status":
+            apps.sort(key=self._sort_key)
+            return apps
+        present = [a for a in apps if a.applied_at]
+        missing = [a for a in apps if not a.applied_at]
+        # Secondary sort first; a stable primary sort then preserves it within ties.
+        present.sort(key=self._sort_key)
+        present.sort(key=lambda a: _iso_to_timestamp(a.applied_at),
+                     reverse=(direction == "desc"))
+        missing.sort(key=self._sort_key)
+        return present + missing
 
     @staticmethod
     def _sort_key(app: Application) -> tuple[int, float]:
         """Sort by pipeline stage, then most-recently-changed first within a stage."""
         rank = STATUS_SORT_RANK.get(app.status, _UNKNOWN_STATUS_RANK)
-        recency = 0.0
-        if app.last_status_change:
-            try:
-                recency = datetime.fromisoformat(app.last_status_change).timestamp()
-            except ValueError:  # malformed timestamp — keep default, never crash the list
-                pass
-        return rank, -recency
+        return rank, -_iso_to_timestamp(app.last_status_change)
 
     def get_application(self, app_id: int) -> Application | None:
         """Get a single application."""

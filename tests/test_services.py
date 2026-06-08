@@ -9,7 +9,12 @@ from jobpilot.services.inbox_service import (
 )
 from jobpilot.services.ml_export_service import MLExportService
 from jobpilot.services.settings_service import SettingsService
-from jobpilot.storage.models import ExtractedSignal
+from jobpilot.services.tracker_service import (
+    TrackerService,
+    _parse_tracker_sort,
+    canonical_tracker_sort,
+)
+from jobpilot.storage.models import Application, ExtractedSignal
 from jobpilot.storage.repository import Repository
 
 
@@ -134,3 +139,68 @@ def test_build_prediction_entry_detects_disagreement() -> None:
     entry, disagree = MLExportService._build_prediction_entry(item)
     assert set(entry["ml_predictions"]) == {"LR", "RF"}
     assert disagree == ["LR"]
+
+
+# --- TrackerService sorting ---
+
+def _app(
+    role: str, *, status: str = "applied", applied_at: str | None = None,
+) -> Application:
+    """Build an Application with sensible defaults for sort tests."""
+    return Application(
+        id=None, company="Acme", role_title=role,
+        status=status, applied_at=applied_at,
+    )
+
+
+def test_parse_tracker_sort_valid_and_invalid() -> None:
+    """Only applied_asc/desc parse; everything else falls back to the status default."""
+    assert _parse_tracker_sort("status") == ("status", "asc")
+    assert _parse_tracker_sort("applied_asc") == ("applied", "asc")
+    assert _parse_tracker_sort("applied_desc") == ("applied", "desc")
+    # Other columns are not sortable — they fall back to the pipeline-rank default.
+    assert _parse_tracker_sort("company_asc") == ("status", "asc")
+    assert _parse_tracker_sort("INVALID") == ("status", "asc")
+    assert _parse_tracker_sort("") == ("status", "asc")
+
+
+def test_canonical_tracker_sort_normalizes_untrusted_input() -> None:
+    """Junk and non-applied columns canonicalize to the default; applied passes through."""
+    assert canonical_tracker_sort("applied_asc") == "applied_asc"
+    assert canonical_tracker_sort("applied_desc") == "applied_desc"
+    assert canonical_tracker_sort("company_asc") == "status"
+    assert canonical_tracker_sort('"><script>') == "status"
+    assert canonical_tracker_sort("") == "status"
+
+
+def test_sort_applications_applied_asc_nulls_last() -> None:
+    """applied_asc: oldest first, rows with no applied_at sink to the bottom."""
+    apps = [
+        _app("new", applied_at="2026-03-01T00:00:00"),
+        _app("none", applied_at=None),
+        _app("old", applied_at="2026-01-01T00:00:00"),
+    ]
+    ordered = TrackerService(None)._sort_applications(apps, "applied_asc")
+    assert [a.role_title for a in ordered] == ["old", "new", "none"]
+
+
+def test_sort_applications_applied_desc_nulls_still_last() -> None:
+    """applied_desc: newest first, but null applied_at still sorts last."""
+    apps = [
+        _app("old", applied_at="2026-01-01T00:00:00"),
+        _app("none", applied_at=None),
+        _app("new", applied_at="2026-03-01T00:00:00"),
+    ]
+    ordered = TrackerService(None)._sort_applications(apps, "applied_desc")
+    assert [a.role_title for a in ordered] == ["new", "old", "none"]
+
+
+def test_sort_applications_default_is_pipeline_rank() -> None:
+    """sort=status orders by pipeline rank (offer before saved before withdrawn)."""
+    apps = [
+        _app("c", status="withdrawn"),
+        _app("a", status="offer"),
+        _app("b", status="saved"),
+    ]
+    ordered = TrackerService(None)._sort_applications(apps, "status")
+    assert [a.status for a in ordered] == ["offer", "saved", "withdrawn"]

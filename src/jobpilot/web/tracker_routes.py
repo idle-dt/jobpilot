@@ -6,9 +6,11 @@ from flask import Blueprint, current_app, jsonify, render_template, request
 
 from jobpilot.services.tracker_service import (
     APPLICATION_STATUSES,
+    DEFAULT_TRACKER_SORT,
     PATCH_BLOCKED_FIELDS,
     STATUS_LABELS,
     TrackerService,
+    canonical_tracker_sort,
 )
 from jobpilot.storage.repository import Repository
 from jobpilot.web.request_utils import get_param
@@ -28,7 +30,8 @@ def _service() -> TrackerService:
 def tracker_page() -> str:
     """Main tracker page with status filter pills and table."""
     status_filter = request.args.get("status", "")
-    apps, counts, total = _service().list_applications(status_filter)
+    sort = canonical_tracker_sort(request.args.get("sort", DEFAULT_TRACKER_SORT))
+    apps, counts, total = _service().list_applications(status_filter, sort)
 
     return render_template(
         "tracker.html",
@@ -36,6 +39,7 @@ def tracker_page() -> str:
         counts=counts,
         total=total,
         status_filter=status_filter,
+        sort=sort,
         statuses=APPLICATION_STATUSES,
         status_labels=STATUS_LABELS,
     )

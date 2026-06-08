@@ -11,10 +11,12 @@
 </div>
 
 <div class="tracker-pills">
-    <a href="/tracker" class="tracker-pill {% if not status_filter %}active{% endif %}">All <span class="pill-count">{{ total }}</span></a>
+    {% set sort_active = sort and sort != 'status' %}
+    {% set sort_qs = '&sort=' ~ sort if sort_active else '' %}
+    <a href="/tracker{% if sort_active %}?sort={{ sort }}{% endif %}" class="tracker-pill {% if not status_filter %}active{% endif %}">All <span class="pill-count">{{ total }}</span></a>
     {% for s in statuses %}
         {% if counts.get(s, 0) > 0 %}
-        <a href="/tracker?status={{ s }}" class="tracker-pill {% if status_filter == s %}active{% endif %}">
+        <a href="/tracker?status={{ s }}{{ sort_qs }}" class="tracker-pill {% if status_filter == s %}active{% endif %}">
             {{ status_labels[s] }} <span class="pill-count">{{ counts[s] }}</span>
         </a>
         {% endif %}
@@ -31,7 +33,16 @@
                 <th>Location</th>
                 <th>Status</th>
                 <th>Platform</th>
-                <th>Applied</th>
+                <th>
+                    {% set status_qs = '&status=' ~ status_filter if status_filter else '' %}
+                    {% set next_dir = 'desc' if sort == 'applied_asc' else 'asc' %}
+                    <a href="/tracker?sort=applied_{{ next_dir }}{{ status_qs }}" class="th-sort{% if sort.startswith('applied_') %} th-sort-active{% endif %}">
+                        Applied
+                        {% if sort == 'applied_asc' %}<span class="sort-arrow">▲</span>
+                        {% elif sort == 'applied_desc' %}<span class="sort-arrow">▼</span>
+                        {% endif %}
+                    </a>
+                </th>
             </tr>
         </thead>
         <tbody id="tracker-body">
