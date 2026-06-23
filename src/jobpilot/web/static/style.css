@@ -2262,6 +2262,26 @@ td .badge-ml-active {
     font-weight: 600;
 }
 
+.th-sort {
+    color: var(--slate);
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.th-sort:hover {
+    color: var(--ink);
+}
+
+.th-sort-active {
+    color: var(--ink);
+}
+
+.sort-arrow {
+    font-size: 0.6rem;
+    margin-left: 0.2rem;
+}
+
 .tracker-table td {
     padding: 12px 14px;
     border-bottom: 1px solid var(--dust);
@@ -2275,6 +2295,10 @@ td .badge-ml-active {
 
 .tracker-table tbody tr:hover {
     background: var(--canvas);
+}
+
+.tracker-row {
+    cursor: pointer;
 }
 
 .tracker-row-dimmed {
