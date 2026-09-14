@@ -31,7 +31,7 @@ class FetchResult:
 
     new_emails: int
     truncated: bool  # True when the quota cut the batch short even after waiting
-    processed: int = 0  # Message stubs handled (stored or skipped as already-known)
+    processed: int = 0  # Message stubs consumed: stored, already-known, or skipped as bad
     total: int = 0  # Message stubs the query matched
 
 # Sender domains to monitor via Gmail search
