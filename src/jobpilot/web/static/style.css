@@ -643,6 +643,38 @@ table {
     font-weight: 500;
 }
 
+/* Inline call-to-action shown when a sync stops early and must be re-run.
+   !important mirrors button.sync-btn — both neutralize Pico's button defaults. */
+button.sync-retry,
+button.sync-retry:hover,
+button.sync-retry:focus {
+    display: inline;
+    margin: 0 0 0 7px !important;
+    padding: 0 !important;
+    width: auto !important;
+    font-family: 'Sofia Sans', Arial, sans-serif;
+    font-size: 0.8rem;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--signal-orange) !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+button.sync-retry:hover {
+    opacity: 0.75;
+}
+
+button.sync-retry:focus-visible {
+    outline: 2px solid var(--signal-orange) !important;
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
 .toolbar-right-group {
     position: relative;
     display: grid;

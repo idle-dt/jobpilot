@@ -82,7 +82,8 @@
         'parsing': 'Parsing digests…',
         'fetching_arbeitnow': 'Fetching job boards…',
         'scoring': 'Scoring jobs…',
-        'scraping': 'Scraping…'
+        'scraping': 'Scraping…',
+        'waiting_quota': 'Waiting for Gmail quota…'
     };
     var POLL_INTERVAL_MS = 3000;
     var syncPollTimer = null;
@@ -91,6 +92,7 @@
     function setSyncInfo(text, className) {
         var info = document.getElementById('sync-info');
         if (!info) return;
+        info.title = '';
         info.textContent = text;
         info.className = className || 'sync-info';
     }
@@ -99,6 +101,7 @@
         var info = document.getElementById('sync-info');
         if (!info) return;
         /* Build DOM nodes instead of innerHTML to avoid XSS */
+        info.title = '';
         info.textContent = '';
         info.className = 'sync-info';
         var strong = document.createElement('strong');
@@ -110,11 +113,43 @@
         }
     }
 
+    /* Terminal state: nothing is running. "Incomplete" (not "Partially syncing") so it
+       cannot be read as work in progress — that is the waiting_quota step. */
+    function setSyncInfoPartial(data) {
+        var info = document.getElementById('sync-info');
+        if (!info) return;
+        info.textContent = '';
+        info.className = 'sync-info';
+        var strong = document.createElement('strong');
+        strong.style.color = 'var(--signal-orange)';
+        strong.textContent = 'Sync incomplete';
+        info.appendChild(strong);
+        var processed = data.processed || 0;
+        var total = data.fetch_total || 0;
+        /* "N/M" matches the scraping step's format, and keeps this inside the toolbar's
+           nowrap line — the full explanation lives in the title tooltip. */
+        if (total > 0) {
+            info.appendChild(document.createTextNode(' \u2014 ' + processed + '/' + total));
+        }
+        /* A real control, not just advice: the remaining messages need another run. */
+        var retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'sync-retry';
+        retry.textContent = 'Run sync again';
+        retry.addEventListener('click', startSync);
+        info.appendChild(retry);
+        info.title = 'Gmail rate limit reached \u2014 run sync again to fetch the remaining messages';
+        var dot = document.getElementById('sync-dot');
+        if (dot) dot.style.background = 'var(--signal-orange)';
+    }
+
     function showSyncingUI() {
         var dot = document.getElementById('sync-dot');
         var btn = document.getElementById('sync-btn');
         var progress = document.getElementById('sync-progress');
-        if (dot) dot.classList.add('syncing');
+        /* Clear any inline colour left by a previous error/incomplete run — inline
+           style outranks the .syncing class and would otherwise stick. */
+        if (dot) { dot.style.background = ''; dot.classList.add('syncing'); }
         if (btn) btn.style.visibility = 'hidden';
         if (progress) progress.classList.add('active');
     }
@@ -151,6 +186,11 @@
                     var pct = Math.round((data.current / data.total) * 100);
                     setSyncInfo('Scraping ' + data.current + '/' + data.total + '…', 'sync-info syncing');
                     if (fill) fill.style.width = pct + '%';
+                } else if (data.step === 'waiting_quota' && data.total > 0) {
+                    /* Live counts here make the ongoing pause unmistakable from the
+                       terminal "Sync incomplete" state, which shows the same numbers. */
+                    setSyncInfo(label + ' ' + data.current + '/' + data.total, 'sync-info syncing');
+                    if (fill) fill.style.width = '0%';
                 } else {
                     setSyncInfo(label, 'sync-info syncing');
                     if (fill) fill.style.width = '0%';
@@ -159,11 +199,15 @@
             }
 
             /* Not running — check terminal states */
-            if (data.step === 'done' && data.finished_at && data.finished_at !== lastHandledFinish) {
+            if ((data.step === 'done' || data.step === 'partial') && data.finished_at && data.finished_at !== lastHandledFinish) {
                 lastHandledFinish = data.finished_at;
                 stopPolling();
                 resetSyncingUI();
-                setSyncInfoSuccess(data.new_emails || 0);
+                if (data.step === 'partial') {
+                    setSyncInfoPartial(data);
+                } else {
+                    setSyncInfoSuccess(data.new_emails || 0);
+                }
                 /* Refresh review queue and toolbar stats once (inbox only) */
                 if (document.getElementById('review-queue')) {
                     htmx.ajax('GET', window.location.href, {target: '#review-queue', select: '#review-queue', swap: 'outerHTML'});
@@ -232,6 +276,9 @@
                 showSyncingUI();
                 setSyncInfo(STEP_LABELS[data.step] || 'Syncing…', 'sync-info syncing');
                 startPolling();
+            } else if (data.step === 'partial' && data.finished_at) {
+                lastHandledFinish = data.finished_at;
+                setSyncInfoPartial(data);
             } else if (data.step === 'done' && data.finished_at) {
                 lastHandledFinish = data.finished_at;
                 setSyncInfoSuccess(data.new_emails || 0);

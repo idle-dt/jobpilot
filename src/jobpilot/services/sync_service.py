@@ -27,6 +27,7 @@ from jobpilot.storage.repository import Repository
 
 if TYPE_CHECKING:
     from jobpilot.classifier.rules import RuleBasedScorer, SignalConfig
+    from jobpilot.gmail.fetcher import FetchResult
     from jobpilot.scraper.browser import BrowserScraper
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,9 @@ class SyncResult:
     """Result of a sync operation."""
     new_emails: int
     arbeitnow_jobs: int
+    fetch_truncated: bool = False  # Gmail quota cut the email fetch short even after waiting
+    fetch_processed: int = 0  # Messages handled
+    fetch_total: int = 0  # Messages the Gmail query matched
 
 
 class SyncService:
@@ -51,8 +55,11 @@ class SyncService:
         self.classification = ClassificationService(repo)
 
     def run(self) -> SyncResult:
-        """Execute full sync: fetch, classify, parse, score, scrape."""
-        new_emails = self._fetch_emails()
+        """Execute full sync: fetch, classify, parse, score, scrape.
+
+        A quota-truncated fetch still completes the pipeline, but reports as incomplete.
+        """
+        fetch = self._fetch_emails()
 
         sync_state.update("classifying", "Classifying emails…")
         self.classification.classify_unprocessed()
@@ -72,13 +79,25 @@ class SyncService:
 
         self.repo.set_setting("last_sync_time", datetime.now(timezone.utc).isoformat())
 
-        logger.info(
-            "[Sync] Pipeline complete: %d emails, %d arbeitnow jobs",
-            new_emails, arbeitnow_count,
-        )
-        return SyncResult(new_emails=new_emails, arbeitnow_jobs=arbeitnow_count)
+        return self._build_result(fetch, arbeitnow_count)
 
-    def _fetch_emails(self) -> int:
+    @staticmethod
+    def _build_result(fetch: FetchResult, arbeitnow_count: int) -> SyncResult:
+        """Log the pipeline summary and package it as a SyncResult."""
+        logger.info(
+            "[Sync] Pipeline complete: %d emails, %d arbeitnow jobs%s",
+            fetch.new_emails, arbeitnow_count,
+            " (email fetch truncated by Gmail quota)" if fetch.truncated else "",
+        )
+        return SyncResult(
+            new_emails=fetch.new_emails,
+            arbeitnow_jobs=arbeitnow_count,
+            fetch_truncated=fetch.truncated,
+            fetch_processed=fetch.processed,
+            fetch_total=fetch.total,
+        )
+
+    def _fetch_emails(self) -> FetchResult:
         """Fetch new emails from Gmail."""
         from jobpilot.gmail.auth import GmailAuth
         from jobpilot.gmail.client import GmailClient
@@ -90,9 +109,11 @@ class SyncService:
         sync_days = int(self.repo.get_setting("sync_days", "7"))
         since = datetime.now() - timedelta(days=sync_days)
         client = GmailClient(creds)
-        new_emails = fetch_new_emails(client, self.repo, since=since)
-        logger.info("[Sync] Fetched %d new emails", new_emails)
-        return new_emails
+        result = fetch_new_emails(
+            client, self.repo, since=since, on_quota_wait=_report_quota_wait,
+        )
+        logger.info("[Sync] Fetched %d new emails", result.new_emails)
+        return result
 
     def _fetch_arbeitnow(self) -> int:
         """Fetch jobs from ArbeitNow API."""
@@ -223,6 +244,13 @@ class SyncService:
             job.id, result.score, None, result.classification,
             matched_signals=signals_json,
         )
+
+
+def _report_quota_wait(processed: int, total: int) -> None:
+    """Surface a quota pause in the sync UI so the wait does not look like a hang."""
+    sync_state.update(
+        "waiting_quota", f"{processed}/{total} fetched", processed, total,
+    )
 
 
 def _get_scrapable_domain(url: str) -> str | None:

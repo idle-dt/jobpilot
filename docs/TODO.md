@@ -46,7 +46,6 @@ settings, ML export). Still untested:
 
 - Remaining services (`classification_service.py`, `sync_service.py`, `ml_service.py`, `tracker_service.py`)
 - ML pipeline (`ml_trainer.py` training/prediction, `ml_prediction.py`)
-- Gmail fetcher and client
 - Repositories (`app_repo.py`, `email_repo.py`, `ml_repo.py`, `predictions_repo.py`) beyond storage basics
 
 ## UI Improvements
