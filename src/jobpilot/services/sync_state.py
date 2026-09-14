@@ -4,6 +4,12 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 
+# Terminal steps. "done" means every matched message was handled; "partial" means the Gmail
+# quota cut the fetch short even after waiting, so a later sync must finish the job.
+STEP_DONE = "done"
+STEP_PARTIAL = "partial"
+STEP_ERROR = "error"
+
 
 @dataclass
 class SyncState:
@@ -20,6 +26,8 @@ class SyncState:
     new_emails: int = 0
     arbeitnow_jobs: int = 0
     truncated: bool = False
+    processed: int = 0
+    fetch_total: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def start(self) -> bool:
@@ -38,6 +46,8 @@ class SyncState:
             self.new_emails = 0
             self.arbeitnow_jobs = 0
             self.truncated = False
+            self.processed = 0
+            self.fetch_total = 0
             return True
 
     def update(self, step: str, detail: str = "", current: int = 0, total: int = 0) -> None:
@@ -49,12 +59,21 @@ class SyncState:
             self.total = total
 
     def finish(
-        self, new_emails: int = 0, arbeitnow_jobs: int = 0, truncated: bool = False,
+        self,
+        new_emails: int = 0,
+        arbeitnow_jobs: int = 0,
+        truncated: bool = False,
+        processed: int = 0,
+        fetch_total: int = 0,
     ) -> None:
-        """Mark sync as complete. `truncated` flags a partial, quota-limited fetch."""
+        """Mark sync as complete.
+
+        `step` is "done" only when every matched message was handled. A quota-truncated
+        fetch ends in "partial" instead, so "done" has exactly one meaning.
+        """
         with self._lock:
             self.running = False
-            self.step = "done"
+            self.step = STEP_PARTIAL if truncated else STEP_DONE
             self.detail = ""
             self.current = 0
             self.total = 0
@@ -62,12 +81,14 @@ class SyncState:
             self.new_emails = new_emails
             self.arbeitnow_jobs = arbeitnow_jobs
             self.truncated = truncated
+            self.processed = processed
+            self.fetch_total = fetch_total
 
     def fail(self, error: str) -> None:
         """Mark sync as failed."""
         with self._lock:
             self.running = False
-            self.step = "error"
+            self.step = STEP_ERROR
             self.detail = ""
             self.current = 0
             self.total = 0
@@ -89,6 +110,8 @@ class SyncState:
                 "new_emails": self.new_emails,
                 "arbeitnow_jobs": self.arbeitnow_jobs,
                 "truncated": self.truncated,
+                "processed": self.processed,
+                "fetch_total": self.fetch_total,
             }
 
 

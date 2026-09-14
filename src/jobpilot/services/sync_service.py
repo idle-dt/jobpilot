@@ -42,7 +42,9 @@ class SyncResult:
     """Result of a sync operation."""
     new_emails: int
     arbeitnow_jobs: int
-    fetch_truncated: bool = False  # Gmail quota cut the email fetch short
+    fetch_truncated: bool = False  # Gmail quota cut the email fetch short even after waiting
+    fetch_processed: int = 0  # Messages handled
+    fetch_total: int = 0  # Messages the Gmail query matched
 
 
 class SyncService:
@@ -91,6 +93,8 @@ class SyncService:
             new_emails=fetch.new_emails,
             arbeitnow_jobs=arbeitnow_count,
             fetch_truncated=fetch.truncated,
+            fetch_processed=fetch.processed,
+            fetch_total=fetch.total,
         )
 
     def _fetch_emails(self) -> FetchResult:
@@ -105,7 +109,9 @@ class SyncService:
         sync_days = int(self.repo.get_setting("sync_days", "7"))
         since = datetime.now() - timedelta(days=sync_days)
         client = GmailClient(creds)
-        result = fetch_new_emails(client, self.repo, since=since)
+        result = fetch_new_emails(
+            client, self.repo, since=since, on_quota_wait=_report_quota_wait,
+        )
         logger.info("[Sync] Fetched %d new emails", result.new_emails)
         return result
 
@@ -238,6 +244,13 @@ class SyncService:
             job.id, result.score, None, result.classification,
             matched_signals=signals_json,
         )
+
+
+def _report_quota_wait(processed: int, total: int) -> None:
+    """Surface a quota pause in the sync UI so the wait does not look like a hang."""
+    sync_state.update(
+        "waiting_quota", f"{processed}/{total} fetched", processed, total,
+    )
 
 
 def _get_scrapable_domain(url: str) -> str | None:

@@ -89,6 +89,8 @@ def _run_sync_background() -> None:
             new_emails=result.new_emails,
             arbeitnow_jobs=result.arbeitnow_jobs,
             truncated=result.fetch_truncated,
+            processed=result.fetch_processed,
+            fetch_total=result.fetch_total,
         )
     except (ValueError, FileNotFoundError, OSError):
         logger.exception("[Sync] Auth failed")

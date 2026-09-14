@@ -82,7 +82,8 @@
         'parsing': 'Parsing digests…',
         'fetching_arbeitnow': 'Fetching job boards…',
         'scoring': 'Scoring jobs…',
-        'scraping': 'Scraping…'
+        'scraping': 'Scraping…',
+        'waiting_quota': 'Waiting for Gmail quota…'
     };
     var POLL_INTERVAL_MS = 3000;
     var syncPollTimer = null;
@@ -95,7 +96,7 @@
         info.className = className || 'sync-info';
     }
 
-    function setSyncInfoSuccess(newEmails, truncated) {
+    function setSyncInfoSuccess(newEmails) {
         var info = document.getElementById('sync-info');
         if (!info) return;
         /* Build DOM nodes instead of innerHTML to avoid XSS */
@@ -108,9 +109,24 @@
         if (newEmails > 0) {
             info.appendChild(document.createTextNode(' \u2014 ' + newEmails + ' new email' + (newEmails !== 1 ? 's' : '')));
         }
-        if (truncated) {
-            info.appendChild(document.createTextNode(' \u2014 Gmail rate limit reached, run sync again to continue'));
+    }
+
+    /* A quota-truncated run is NOT "Synced" — emails remain unfetched. */
+    function setSyncInfoPartial(data) {
+        var info = document.getElementById('sync-info');
+        if (!info) return;
+        info.textContent = '';
+        info.className = 'sync-info';
+        var strong = document.createElement('strong');
+        strong.style.color = 'var(--signal-orange)';
+        strong.textContent = 'Partially synced';
+        info.appendChild(strong);
+        var processed = data.processed || 0;
+        var total = data.fetch_total || 0;
+        if (total > 0) {
+            info.appendChild(document.createTextNode(' \u2014 ' + processed + ' of ' + total + ' messages'));
         }
+        info.appendChild(document.createTextNode(' \u2014 Gmail rate limit reached, run sync again to continue'));
     }
 
     function showSyncingUI() {
@@ -162,11 +178,15 @@
             }
 
             /* Not running — check terminal states */
-            if (data.step === 'done' && data.finished_at && data.finished_at !== lastHandledFinish) {
+            if ((data.step === 'done' || data.step === 'partial') && data.finished_at && data.finished_at !== lastHandledFinish) {
                 lastHandledFinish = data.finished_at;
                 stopPolling();
                 resetSyncingUI();
-                setSyncInfoSuccess(data.new_emails || 0, data.truncated);
+                if (data.step === 'partial') {
+                    setSyncInfoPartial(data);
+                } else {
+                    setSyncInfoSuccess(data.new_emails || 0);
+                }
                 /* Refresh review queue and toolbar stats once (inbox only) */
                 if (document.getElementById('review-queue')) {
                     htmx.ajax('GET', window.location.href, {target: '#review-queue', select: '#review-queue', swap: 'outerHTML'});
@@ -235,9 +255,12 @@
                 showSyncingUI();
                 setSyncInfo(STEP_LABELS[data.step] || 'Syncing…', 'sync-info syncing');
                 startPolling();
+            } else if (data.step === 'partial' && data.finished_at) {
+                lastHandledFinish = data.finished_at;
+                setSyncInfoPartial(data);
             } else if (data.step === 'done' && data.finished_at) {
                 lastHandledFinish = data.finished_at;
-                setSyncInfoSuccess(data.new_emails || 0, data.truncated);
+                setSyncInfoSuccess(data.new_emails || 0);
             }
         }).catch(function() {});
     })();

@@ -219,19 +219,52 @@ def test_sort_applications_default_is_pipeline_rank() -> None:
 
 # --- SyncService partial success ---
 
-def test_sync_run_records_last_sync_on_truncated_fetch(repo: Repository) -> None:
-    """A quota-truncated fetch is a completed sync: state is recorded, result flags it."""
+def _run_sync_with(repo: Repository, fetch_result):
+    """Run the pipeline with the Gmail and ArbeitNow stages stubbed out."""
     from unittest.mock import patch
 
-    from jobpilot.gmail.fetcher import FetchResult
     from jobpilot.services.sync_service import SyncService
 
-    service = SyncService(repo)
-    with patch.object(
-        SyncService, "_fetch_emails", return_value=FetchResult(new_emails=3, truncated=True),
-    ), patch.object(SyncService, "_fetch_arbeitnow", return_value=0):
-        result = service.run()
+    with patch.object(SyncService, "_fetch_emails", return_value=fetch_result), \
+         patch.object(SyncService, "_fetch_arbeitnow", return_value=0):
+        return SyncService(repo).run()
+
+
+def test_sync_run_records_last_sync_on_truncated_fetch(repo: Repository) -> None:
+    """A quota-truncated fetch still completes the pipeline and records the sync time."""
+    from jobpilot.gmail.fetcher import FetchResult
+
+    result = _run_sync_with(
+        repo, FetchResult(new_emails=3, truncated=True, processed=3, total=10),
+    )
 
     assert result.fetch_truncated is True
-    assert result.new_emails == 3
+    assert (result.new_emails, result.fetch_processed, result.fetch_total) == (3, 3, 10)
     assert repo.get_setting("last_sync_time") is not None
+
+
+def test_truncated_sync_is_partial_not_done(repo: Repository) -> None:
+    """`done` must mean every message was handled; a truncated run reports `partial`."""
+    from jobpilot.gmail.fetcher import FetchResult
+    from jobpilot.services.sync_state import STEP_DONE, STEP_PARTIAL, SyncState
+
+    truncated = _run_sync_with(
+        repo, FetchResult(new_emails=3, truncated=True, processed=3, total=10),
+    )
+    state = SyncState()
+    state.start()
+    state.finish(
+        new_emails=truncated.new_emails, truncated=truncated.fetch_truncated,
+        processed=truncated.fetch_processed, fetch_total=truncated.fetch_total,
+    )
+    partial = state.to_dict()
+    assert partial["step"] == STEP_PARTIAL
+    assert (partial["processed"], partial["fetch_total"]) == (3, 10)
+
+    complete = _run_sync_with(
+        repo, FetchResult(new_emails=10, truncated=False, processed=10, total=10),
+    )
+    state.start()
+    state.finish(new_emails=complete.new_emails, truncated=complete.fetch_truncated,
+                 processed=complete.fetch_processed, fetch_total=complete.fetch_total)
+    assert state.to_dict()["step"] == STEP_DONE
