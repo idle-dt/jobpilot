@@ -514,3 +514,110 @@ def test_revert_clears_the_reason_too(repo: Repository):
     repo.labels.clear_labels_by_source(ASSISTANT_SOURCE)
 
     assert repo.get_scraped_job(job_id).label_reason is None
+
+
+def _report(repo: Repository, tmp_path: Path) -> str:
+    """Render the review document to a temp file and return its text."""
+    from jobpilot.services.label_report import write_label_report
+
+    return write_label_report(repo, tmp_path / "out" / "result.md").read_text()
+
+
+def test_report_groups_rows_sharing_a_reason(service, repo, tmp_path):
+    """A reason used many times becomes one auditable section, not many rows."""
+    ids = [_make_job(repo, n) for n in range(4)]
+    _run(service, repo, tmp_path, [
+        {"id": i, "label": "skip", "confidence": 0.99, "reason": "No mobile component"}
+        for i in ids[:3]
+    ] + [{"id": ids[3], "label": "skip", "confidence": 0.99, "reason": "Onsite in Oslo"}])
+
+    text = _report(repo, tmp_path)
+    assert "### No mobile component (3)" in text
+    assert "### Individually judged (1)" in text
+    assert "Onsite in Oslo" in text
+
+
+def test_report_leads_with_what_to_act_on(service, repo, tmp_path):
+    """worth_checking must come before skip — it is the section with work in it."""
+    keep, drop = _make_job(repo, 1), _make_job(repo, 2)
+    _run(service, repo, tmp_path, [
+        {"id": drop, "label": "skip", "confidence": 0.99, "reason": "Onsite"},
+        {"id": keep, "label": "worth_checking", "confidence": 0.99, "reason": "Fully remote"},
+    ])
+
+    text = _report(repo, tmp_path)
+    assert text.index("## Worth checking") < text.index("## Skip")
+
+
+def test_report_links_only_safe_urls(repo: Repository, tmp_path: Path):
+    """A javascript: url must never become a Markdown link."""
+    repo.insert_scraped_job(ScrapedJob(
+        id=None, source="linkedin", title="Evil", url="javascript:alert(1)",
+    ))
+    job_id = repo.conn.execute(
+        "SELECT id FROM scraped_jobs WHERE url = 'javascript:alert(1)'"
+    ).fetchone()["id"]
+    repo.labels.apply_labels([LabelEntry(job_id, "skip", 0.99, "Not a job")])
+
+    text = _report(repo, tmp_path)
+    assert "javascript:" not in text
+    assert "Evil" in text
+
+
+def test_report_states_the_unlabeled_remainder(service, repo, tmp_path):
+    """The queue left behind is explained, so its size is not read as failure."""
+    labeled = _make_job(repo, 1)
+    _make_job(repo, 2)
+    _run(service, repo, tmp_path, [
+        {"id": labeled, "label": "skip", "confidence": 0.99, "reason": "Onsite"},
+    ])
+
+    assert "## Left unlabeled (1)" in _report(repo, tmp_path)
+
+
+def test_report_handles_having_nothing_to_report(repo: Repository, tmp_path: Path):
+    """With no bulk labels the document says so rather than rendering empty headings."""
+    text = _report(repo, tmp_path)
+
+    assert "No labels are currently authored by a bulk run." in text
+    assert "## Skip" not in text
+
+
+def test_report_neutralises_markdown_in_a_scraped_title(repo: Repository, tmp_path: Path):
+    """A title that closes the link and opens its own must not become a link.
+
+    Checking the url scheme alone is not enough — every scraped field is untrusted.
+    """
+    repo.insert_scraped_job(ScrapedJob(
+        id=None, source="linkedin", title="Nice role](javascript:alert(1))",
+        url="https://example.com/ok", company="A[b](c)", location="X)(Y",
+    ))
+    job_id = repo.conn.execute(
+        "SELECT id FROM scraped_jobs WHERE url = 'https://example.com/ok'"
+    ).fetchone()["id"]
+    repo.labels.apply_labels([LabelEntry(job_id, "skip", 0.99, "See [here](javascript:0)")])
+
+    text = _report(repo, tmp_path)
+
+    # The dangerous sequence is "](" followed by a scheme — that is what closes the
+    # intended link and opens a new one. Escaped, it is inert text.
+    assert "](javascript:" not in text
+    assert "(1))" not in text                    # the title's own parens are escaped
+    assert "https://example.com/ok" in text      # the one real link survives
+    assert "Nice role" in text
+
+
+def test_report_breaks_spelling_ties_deterministically(repo: Repository, tmp_path: Path):
+    """Two equally common spellings must pick the same heading on every run."""
+    ids = [_make_job(repo, n) for n in range(4)]
+    repo.labels.apply_labels([
+        LabelEntry(ids[0], "skip", 0.99, "Remote-first"),
+        LabelEntry(ids[1], "skip", 0.99, "Remote-first"),
+        LabelEntry(ids[2], "skip", 0.99, "remote-first"),
+        LabelEntry(ids[3], "skip", 0.99, "remote-first"),
+    ])
+
+    headings = {
+        line for line in _report(repo, tmp_path).splitlines() if line.startswith("### ")
+    }
+    assert headings == {"### Remote-first (4)"}

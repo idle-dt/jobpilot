@@ -47,8 +47,13 @@ One object per line, in `/tmp/labels.jsonl`:
 - `confidence` is **your own** stated confidence, not a model probability. Anything
   below 0.95 is rejected and the job stays in the queue — that is the correct outcome
   for a judgment you are unsure of, so do not inflate it.
-- `reason` is free text and is recorded in the audit log. Write the deciding fact, not
-  a restatement of the label.
+- `reason` is free text, stored on the row and shown in the UI and the review document.
+  Write the deciding fact, not a restatement of the label.
+- **Reuse the exact same reason string for the same rule.** The review document groups
+  rows by identical reason, so one wording means one auditable section and a hundred
+  variations mean a hundred rows to read. Do not interpolate the job title or company
+  into a reason that applies generally — put per-job specifics in a reason only when
+  the deciding fact genuinely differs (a quoted office requirement, say).
 
 Omit a job entirely rather than guessing at it.
 
@@ -71,12 +76,25 @@ PYTHONPATH=src python -m jobpilot label-batch --input /tmp/labels.jsonl
 Report the counts to the user, and confirm the review-queue count dropped by exactly the
 number applied.
 
-## 7. Spot-check gate — do not skip this
+## 7. Write the review document
 
-Sample 30 applied labels at random and present them to the user as a table: title,
-company, label, reason. Ask them to confirm or correct each one.
+```bash
+PYTHONPATH=src python -m jobpilot label-report
+```
 
-**Below roughly 95% agreement, revert rather than keep them:**
+Writes `docs/label-queue-result.md` — every applied label, `worth_checking` first, then
+rejections grouped by the reason that decided them. It is generated from the database,
+so it always matches what is actually stored; do not hand-roll this file. It is
+gitignored and meant to be deleted once reviewed. Tell the user the path.
+
+## 8. Spot-check gate — do not skip this
+
+Point the user at `docs/label-queue-result.md` and ask them to confirm or correct.
+Auditing by group is the efficient path — accepting one reason accepts every row under
+it. Draw their attention to the largest groups and to any rule that rests on inference
+rather than on something the posting states.
+
+**Below roughly 95% agreement on any group, revert rather than keep them:**
 
 ```bash
 PYTHONPATH=src python -m jobpilot label-revert --source assistant

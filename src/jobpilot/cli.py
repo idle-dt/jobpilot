@@ -206,6 +206,24 @@ def label_batch(input_path: str, min_confidence: float, dry_run: bool, force: bo
     conn.close()
 
 
+@cli.command("label-report")
+@click.option(
+    "--output", "output_path", default=None, type=click.Path(),
+    help="Where to write the review document (default: docs/label-queue-result.md).",
+)
+def label_report(output_path: str | None) -> None:
+    """Write a Markdown review of every label a bulk run has applied."""
+    from pathlib import Path
+
+    from jobpilot.services.label_report import DEFAULT_REPORT_PATH, write_label_report
+
+    conn, repo = _open_repo()
+    target = Path(output_path) if output_path else DEFAULT_REPORT_PATH
+    written = write_label_report(repo, target)
+    click.echo(f"Review written to {written}")
+    conn.close()
+
+
 @cli.command("label-revert")
 @click.option(
     "--source", default=ASSISTANT_LABEL_SOURCE,

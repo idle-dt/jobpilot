@@ -113,6 +113,15 @@ class LabelRepository:
         ).fetchall()
         return [row["id"] for row in rows]
 
+    def rows_by_source(self, source: str) -> list[dict]:
+        """Return the labelled rows from one author, for the review document."""
+        rows = self.conn.execute(
+            "SELECT id, title, company, location, url, user_label, label_reason"
+            " FROM scraped_jobs WHERE label_source = ? ORDER BY id",
+            (source,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def count_by_source(self, source: str) -> int:
         """Count jobs currently carrying a label from one author."""
         return self.conn.execute(
