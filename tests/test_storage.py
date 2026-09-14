@@ -1068,3 +1068,42 @@ def test_noise_fallback_location_table_is_unchanged(repo: Repository):
 
     assert LOCATION_PATTERNS["netherlands"]["weight"] == 1.0
     assert LOCATION_PATTERNS["sweden"]["weight"] == 0.6
+
+
+def test_job_label_is_stamped_in_utc(repo: Repository, db_conn):
+    """labeled_at shares the UTC basis of feedback_at and the criteria cutoff."""
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url) VALUES (?,?,?)",
+        ("linkedin", "Flutter Engineer", "https://linkedin.com/jobs/view/tz"),
+    )
+    db_conn.commit()
+    job_id = db_conn.execute(
+        "SELECT id FROM scraped_jobs WHERE title = 'Flutter Engineer'"
+    ).fetchone()["id"]
+
+    repo.update_scraped_job_label(job_id, "worth_checking")
+
+    drift = db_conn.execute(
+        "SELECT CAST((julianday(datetime('now'))"
+        " - julianday(datetime(labeled_at))) * 86400 AS INTEGER) AS drift"
+        " FROM scraped_jobs WHERE id = ?",
+        (job_id,),
+    ).fetchone()["drift"]
+    assert abs(drift) <= 5
+
+
+def test_label_given_after_a_reset_counts_under_the_new_criteria(repo: Repository, db_conn):
+    """A label given moments after a reset must not fall on the wrong side of the cutoff."""
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url) VALUES (?,?,?)",
+        ("linkedin", "Remote Flutter Engineer", "https://linkedin.com/jobs/view/after"),
+    )
+    db_conn.commit()
+    job_id = db_conn.execute(
+        "SELECT id FROM scraped_jobs WHERE title = 'Remote Flutter Engineer'"
+    ).fetchone()["id"]
+    repo.reset_scoring_criteria()
+
+    repo.update_scraped_job_label(job_id, "worth_checking")
+
+    assert len(repo.get_scoring_training_data()) == 1

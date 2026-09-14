@@ -1,7 +1,6 @@
 """Scraped job data access."""
 
 import sqlite3
-from datetime import datetime
 
 from jobpilot.storage.models import ScrapedJob
 
@@ -120,9 +119,13 @@ class JobRepository:
     def update_scraped_job_label(self, job_id: int, label: str | None) -> None:
         """Set or clear the user label on a scraped job."""
         if label:
+            # datetime('now') is UTC, matching user_feedback.feedback_at and the
+            # scoring criteria cutoff. A local-time stamp here would be compared
+            # against those as if it were UTC.
             self.conn.execute(
-                "UPDATE scraped_jobs SET user_label = ?, labeled_at = ? WHERE id = ?",
-                (label, datetime.now().isoformat(), job_id),
+                "UPDATE scraped_jobs SET user_label = ?,"
+                " labeled_at = datetime('now') WHERE id = ?",
+                (label, job_id),
             )
         else:
             self.conn.execute(
