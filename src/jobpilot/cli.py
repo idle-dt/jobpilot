@@ -35,36 +35,49 @@ def fetch(days: int | None, max_results: int):
     import logging
     from datetime import datetime, timedelta
 
-    from jobpilot.gmail.auth import GmailAuth
     from jobpilot.gmail.client import GmailClient
     from jobpilot.gmail.fetcher import fetch_new_emails
     from jobpilot.storage.database import init_db
     from jobpilot.storage.repository import Repository
 
     logging.basicConfig(level=settings.log_level)
+    creds = _require_credentials()
+
+    conn = init_db(settings.db_path)
+    repo = Repository(conn)
+    if days is None:
+        days = int(repo.get_setting("sync_days", "7"))
+
+    since = datetime.now() - timedelta(days=days)
+    click.echo(f"Fetching emails from the last {days} days...")
+    result = fetch_new_emails(
+        GmailClient(creds), repo, since=since, max_results=max_results,
+        on_quota_wait=_echo_quota_wait,
+    )
+
+    click.echo(f"Done. {result.new_emails} new emails stored.")
+    if result.truncated:
+        click.echo(f"Incomplete: {result.processed}/{result.total} handled. Run fetch again.")
+    conn.close()
+
+
+def _require_credentials():
+    """Return Gmail credentials, exiting with a hint if the user has not authenticated."""
+    from jobpilot.gmail.auth import GmailAuth
 
     auth = GmailAuth(settings.gmail_credentials_path, settings.gmail_token_path)
     if not auth.is_authenticated():
         click.echo("Not authenticated. Run 'jobpilot setup' first.")
         raise SystemExit(1)
+    return auth.get_credentials()
 
-    conn = init_db(settings.db_path)
-    repo = Repository(conn)
 
-    if days is None:
-        days = int(repo.get_setting("sync_days", "7"))
-
-    creds = auth.get_credentials()
-    client = GmailClient(creds)
-
-    since = datetime.now() - timedelta(days=days)
-    click.echo(f"Fetching emails from the last {days} days...")
-
-    result = fetch_new_emails(client, repo, since=since, max_results=max_results)
-    click.echo(f"Done. {result.new_emails} new emails stored.")
-    if result.truncated:
-        click.echo("Gmail rate limit reached — run sync again to fetch the rest.")
-    conn.close()
+def _echo_quota_wait(processed: int, total: int) -> None:
+    """Tell the user why a fetch has gone quiet, so it does not look hung."""
+    click.echo(
+        f"Gmail rate limit reached at {processed}/{total} — "
+        "waiting for the quota to refill…"
+    )
 
 
 @cli.command()
