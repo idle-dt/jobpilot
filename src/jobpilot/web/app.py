@@ -43,6 +43,10 @@ def create_app() -> Flask:
     csrf.init_app(app)
     limiter.init_app(app)
 
+    db_error = settings.missing_db_error()
+    if db_error:
+        raise RuntimeError(db_error)
+
     conn = init_db(settings.db_path)
     repo = Repository(conn)
     app.config["repo"] = repo

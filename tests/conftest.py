@@ -38,6 +38,8 @@ def app(tmp_path: Path) -> Flask:
         mock_settings.min_training_samples = 20
         mock_settings.gmail_credentials_path = ""
         mock_settings.gmail_token_path = ""
+        # Without this the MagicMock returns a truthy object and create_app aborts.
+        mock_settings.missing_db_error.return_value = None
         test_app = create_app()
 
     test_app.config["TESTING"] = True

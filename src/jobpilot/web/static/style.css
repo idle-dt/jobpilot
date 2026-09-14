@@ -1674,6 +1674,34 @@ td .badge-ml-active {
     border-color: rgba(248, 113, 113, 0.2);
 }
 
+/* The rationale a bulk run stated, shown under the job title so a run can be
+   audited by scanning the table rather than opening every posting. */
+.exp-item-reason {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.68rem;
+    line-height: 1.3;
+    color: var(--slate);
+    opacity: 0.85;
+    white-space: normal;
+    max-width: 30ch;
+}
+
+/* Bulk-run provenance. Deliberately neutral — an assistant label is not a
+   weaker label, only a differently authored one. */
+.badge-assistant {
+    background: transparent;
+    color: var(--slate);
+    border: 1px solid var(--dust);
+    font-size: 0.65rem;
+    margin-left: 0.3rem;
+}
+
+[data-theme="dark"] .badge-assistant {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
 [data-theme="dark"] .badge-ml-agree {
     background: rgba(74, 222, 128, 0.08);
 }

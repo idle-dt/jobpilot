@@ -11,6 +11,7 @@ import urllib.request
 from collections.abc import Callable
 
 from jobpilot.storage.job_repo import DROP_SCORES_SQL
+from jobpilot.storage.label_repo import USER_SOURCE
 
 logger = logging.getLogger(__name__)
 
@@ -333,6 +334,40 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    _add_label_source(conn)
+    _add_label_reason(conn)
+
+
+def _add_label_source(conn: sqlite3.Connection) -> None:
+    """Add scraped_jobs.label_source, attributing every existing label to the user.
+
+    Guarded on the column's absence, so a second run backfills nothing: labels
+    written by later bulk runs keep their own source.
+    """
+    job_cols = {row[1] for row in conn.execute("PRAGMA table_info(scraped_jobs)").fetchall()}
+    if "label_source" in job_cols:
+        return
+    conn.execute("ALTER TABLE scraped_jobs ADD COLUMN label_source TEXT")
+    conn.execute(
+        "UPDATE scraped_jobs SET label_source = ? WHERE user_label IS NOT NULL",
+        (USER_SOURCE,),
+    )
+    conn.commit()
+
+
+def _add_label_reason(conn: sqlite3.Connection) -> None:
+    """Add scraped_jobs.label_reason, the stated rationale for a bulk label.
+
+    Nothing is backfilled: labels written before the column existed have no
+    recorded rationale, and NULL says exactly that. Hand-clicked labels leave it
+    NULL too — a click states no reason.
+    """
+    job_cols = {row[1] for row in conn.execute("PRAGMA table_info(scraped_jobs)").fetchall()}
+    if "label_reason" in job_cols:
+        return
+    conn.execute("ALTER TABLE scraped_jobs ADD COLUMN label_reason TEXT")
+    conn.commit()
+
 
 def _cleanup_browser_scrape(conn: sqlite3.Connection) -> None:
     """Reset corrupted login-wall descriptions and failed scrapes for re-attempt."""
@@ -347,6 +382,33 @@ def _migrate_job_title_tiers(conn: sqlite3.Connection) -> None:
     conn.execute(
         "UPDATE user_preferences SET category = 'job_title_primary' "
         "WHERE category = 'job_title'"
+    )
+    conn.execute(DROP_SCORES_SQL)
+
+
+def _add_hybrid_negative_signals(conn: sqlite3.Connection) -> None:
+    """Seed workplace-arrangement negatives into an existing database.
+
+    Remote-only was already the location policy, but nothing scored hybrid or
+    on-site down: the queue carried 129 hybrid postings at full score. Scores are
+    dropped so unlabeled jobs rescore against the new preferences on the next sync;
+    labeled rows keep their scores and their labels.
+
+    Skipped on an unseeded database. Migrations run before _seed_default_preferences,
+    which no-ops when user_preferences is non-empty — inserting here first would make
+    a fresh install look already-seeded and lose every other default. A fresh database
+    gets these same values from DEFAULT_NEGATIVE_SIGNALS instead.
+    """
+    from jobpilot.classifier.signals import WORKPLACE_NEGATIVE_SIGNALS
+
+    seeded = conn.execute("SELECT 1 FROM user_preferences LIMIT 1").fetchone()
+    if not seeded:
+        return
+
+    conn.executemany(
+        "INSERT OR IGNORE INTO user_preferences (category, value, extra)"
+        " VALUES ('negative_signal', ?, NULL)",
+        [(signal,) for signal in WORKPLACE_NEGATIVE_SIGNALS],
     )
     conn.execute(DROP_SCORES_SQL)
 
@@ -478,3 +540,4 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         conn, "_migration_retire_preference_blind_scoring",
         _retire_preference_blind_scoring_models,
     )
+    _run_once(conn, "_migration_hybrid_negative_signals", _add_hybrid_negative_signals)

@@ -167,6 +167,27 @@
     <small>Use this after changing what you are looking for, so the model stops learning from labels given under the old criteria.</small>
     {% endif %}
 
+    <div class="arbeitnow-row" style="margin-top: 1rem;">
+        <label class="toggle">
+            <input type="checkbox" id="training-assistant-labels"
+                   {{ 'checked' if scoring_model.assistant_training }}
+                   onchange="updateAssistantTraining()">
+            <span class="toggle-track"><span class="toggle-circle"></span></span>
+            <span class="toggle-label">Train on assistant labels</span>
+        </label>
+        <span id="training-assistant-result" class="setting-result"></span>
+    </div>
+    <small>
+        Off by default. Assistant labels are written by <code>jobpilot label-batch</code>,
+        not clicked by you — turning this on admits those machine-authored labels into the
+        scoring model's training set.
+        {% if scoring_model.assistant_labels %}
+        {{ scoring_model.assistant_labels }} currently
+        {{ 'included' if scoring_model.assistant_training else 'held out' }}.
+        {% endif %}
+        Changing it retires the active scoring model, so the next one is trained afresh.
+    </small>
+
 </section>
 
 {# ── Appearance ── #}
@@ -335,6 +356,23 @@ function browserLogin(site, btn) {
 }
 
 /* ArbeitNow */
+function updateAssistantTraining() {
+    const enabled = document.getElementById('training-assistant-labels').checked;
+    const result = document.getElementById('training-assistant-result');
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+    fetch('/api/settings/training-assistant-labels', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken},
+        body: new URLSearchParams({enabled: enabled ? 'true' : 'false'}).toString(),
+    }).then(r => {
+        result.textContent = r.ok ? 'Saved!' : 'Error';
+        result.className = 'setting-result ' + (r.ok ? 'setting-success' : 'setting-error');
+    }).catch(() => {
+        result.textContent = 'Error';
+        result.className = 'setting-result setting-error';
+    });
+}
+
 function updateArbeitnow() {
     const enabled = document.getElementById('arbeitnow-enabled').checked;
     const visaOnly = document.getElementById('arbeitnow-visa-only').checked;

@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS scraped_jobs (
     classification TEXT DEFAULT 'pending',
     user_label TEXT,
     labeled_at TEXT,
+    label_source TEXT,
+    label_reason TEXT,
     email_id TEXT REFERENCES emails(id),
     expired BOOLEAN DEFAULT FALSE,
     description TEXT,
@@ -194,7 +196,7 @@ def _seed_default_preferences(conn: sqlite3.Connection) -> None:
 
     from jobpilot.classifier.signals import (
         DEFAULT_LOCATION_PREFERENCES,
-        NEGATIVE_SIGNALS,
+        DEFAULT_NEGATIVE_SIGNALS,
         SENIORITY_PATTERNS,
         TARGET_JOB_TITLES,
         TECH_STACK_KEYWORDS,
@@ -236,7 +238,7 @@ def _seed_default_preferences(conn: sqlite3.Connection) -> None:
             rows.append(("location_secondary", location, None))
 
     # Negative signals
-    for signal in NEGATIVE_SIGNALS:
+    for signal in DEFAULT_NEGATIVE_SIGNALS:
         rows.append(("negative_signal", signal, None))
 
     # Monitored domains

@@ -113,6 +113,9 @@ class ScrapedJob:
 
     Classification values: 'pending', 'worth_checking', 'skip'.
     User label values: 'worth_checking', 'skip', 'not_a_job', or None.
+    Label source values: 'user' (clicked in the UI), 'assistant' (written by a
+    label-batch run), or None while unlabeled. Label reason carries the rationale
+    a bulk run stated; a hand click leaves it None.
     """
     id: int | None
     source: str
@@ -129,6 +132,8 @@ class ScrapedJob:
     classification: str = "pending"
     user_label: str | None = None
     labeled_at: str | None = None
+    label_source: str | None = None
+    label_reason: str | None = None
     email_id: str | None = None
     expired: bool = False
     description: str | None = None
