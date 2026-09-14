@@ -25,6 +25,25 @@ def test_inbox_invalid_sort_falls_back(authed_client: FlaskClient) -> None:
     assert authed_client.get("/?sort=bogus").status_code == 200
 
 
+def test_emails_page_renders(authed_client: FlaskClient) -> None:
+    """The classified-emails list renders on an empty database."""
+    assert authed_client.get("/emails").status_code == 200
+
+
+def test_emails_not_job_related_view_renders(authed_client: FlaskClient) -> None:
+    """Rejected mail is reachable under its own filter, labelled as such."""
+    resp = authed_client.get("/emails?view=not_job_related")
+    assert resp.status_code == 200
+    assert b"Not Job Related" in resp.data
+
+
+def test_emails_invalid_view_falls_back(authed_client: FlaskClient) -> None:
+    """A view outside the allowlist renders the default list, not an error."""
+    resp = authed_client.get("/emails?view=bogus")
+    assert resp.status_code == 200
+    assert b"Classified Emails" in resp.data
+
+
 def test_settings_page_renders(authed_client: FlaskClient) -> None:
     """The settings page renders via SettingsService."""
     assert authed_client.get("/settings").status_code == 200

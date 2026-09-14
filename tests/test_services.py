@@ -2,6 +2,7 @@
 
 import sqlite3
 
+from jobpilot.services.classification_service import ClassificationService
 from jobpilot.services.inbox_service import (
     DEFAULT_SORT,
     InboxService,
@@ -426,3 +427,46 @@ def test_noise_features_ignore_preferences(repo: Repository) -> None:
     after = MLTrainer(repo)._compute_noise_features("Flutter Engineer", "Remote", [])
 
     assert before == after == compute_features("Flutter Engineer", "Remote")
+
+
+def _unprocessed(repo: Repository, email_id: str, sender: str, subject: str, platform: str | None):
+    """Store an email awaiting classification."""
+    from datetime import datetime
+
+    from jobpilot.storage.models import Email
+
+    repo.insert_email(Email(
+        id=email_id, thread_id=f"t-{email_id}", sender=sender,
+        sender_domain=sender.split("@")[-1], subject=subject,
+        received_at=datetime(2026, 3, 1, 9, 0), platform=platform, processed=False,
+    ))
+
+
+class TestClassifyUnprocessedRejection:
+    """Rejection is the detector's call, and it is not LinkedIn-specific."""
+
+    def test_rejects_linkedin_social_noise(self, repo: Repository) -> None:
+        _unprocessed(repo, "a", "notifications-noreply@linkedin.com",
+                     "35 people viewed your profile", "linkedin")
+        ClassificationService(repo).classify_unprocessed()
+        email = repo.get_email("a")
+        assert email.is_job_related is False
+        assert email.non_job_rule == "linkedin_social"
+        assert email.processed is True
+
+    def test_rejects_a_non_linkedin_sender(self, repo: Repository) -> None:
+        _unprocessed(repo, "b", "hi@turing.com",
+                     "Upload your resume to be eligible for Turing roles", "turing")
+        ClassificationService(repo).classify_unprocessed()
+        email = repo.get_email("b")
+        assert email.is_job_related is False
+        assert email.non_job_rule == "platform_onboarding"
+
+    def test_scores_genuine_job_mail_instead(self, repo: Repository) -> None:
+        _unprocessed(repo, "c", "jobs-noreply@linkedin.com",
+                     "Senior Flutter Developer at Proxify", "linkedin")
+        ClassificationService(repo).classify_unprocessed()
+        email = repo.get_email("c")
+        assert email.is_job_related is True
+        assert email.non_job_rule is None
+        assert email.final_classification is not None

@@ -2,29 +2,11 @@
 
 import json
 import logging
-import re
 
+from jobpilot.classifier.job_detector import JobDetector
 from jobpilot.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
-
-_LINKEDIN_NON_JOB_SUBJECTS = [
-    re.compile(r"wants? to connect", re.IGNORECASE),
-    re.compile(r"accepted your invitation", re.IGNORECASE),
-    re.compile(r"congratulat", re.IGNORECASE),
-    re.compile(r"endorsed you", re.IGNORECASE),
-    re.compile(r"viewed your profile", re.IGNORECASE),
-    re.compile(r"new message from", re.IGNORECASE),
-    re.compile(r"is celebrating", re.IGNORECASE),
-]
-
-
-def _is_non_job_linkedin(row: dict) -> bool:
-    """Return True if the email is a LinkedIn non-job notification."""
-    if row.get("platform") != "linkedin":
-        return False
-    subject = row.get("subject", "")
-    return any(pat.search(subject) for pat in _LINKEDIN_NON_JOB_SUBJECTS)
 
 
 class ClassificationService:
@@ -42,10 +24,15 @@ class ClassificationService:
         threshold = float(threshold_str) if threshold_str else None
         scorer = RuleBasedScorer(config=config, score_threshold=threshold)
         rows = self.repo.get_unprocessed_emails()
+        detector = JobDetector()
+        # Fetched once: the detector only needs to know whether a digest yielded
+        # any jobs, so membership answers it without a COUNT(*) per email.
+        digested = self.repo.get_email_ids_with_extracted_jobs()
 
         for row in rows:
-            if _is_non_job_linkedin(row):
-                self.repo.update_email_not_job_related(row["id"])
+            rule = self._reject_rule(detector, row, digested)
+            if rule:
+                self.repo.update_email_not_job_related(row["id"], rule)
                 continue
 
             text = row["body_text"] or ""
@@ -74,6 +61,22 @@ class ClassificationService:
                 classification=result.classification,
                 confidence=result.confidence,
             )
+
+    def _reject_rule(
+        self, detector: JobDetector, row: dict, digested: set[str],
+    ) -> str | None:
+        """Return the non-job rule rejecting this email, or None to keep scoring it.
+
+        Detection lives in JobDetector, so the service asks rather than deciding:
+        one rule table covers every sender instead of a LinkedIn-only check here.
+        ``digested`` holds the email IDs that produced scraped jobs; extraction
+        outranks every rejection rule.
+        """
+        verdict = detector.classify(
+            row["subject"], row["sender"], row["platform"],
+            row["body_text"], 1 if row["id"] in digested else 0,
+        )
+        return None if verdict.is_job else verdict.non_job_rule
 
     def parse_existing_digests(self) -> None:
         """Parse digest emails that haven't been processed for job extraction yet.

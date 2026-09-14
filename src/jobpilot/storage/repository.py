@@ -63,6 +63,11 @@ class Repository:
             classification, limit, offset,
         )
 
+    def get_emails_not_job_related(
+        self, limit: int = 50, offset: int = 0,
+    ) -> list[Email]:
+        return self.emails.get_emails_not_job_related(limit, offset)
+
     def update_email_scores(
         self, email_id: str, raw_score: float,
         ml_score: float | None, classification: str,
@@ -86,8 +91,10 @@ class Repository:
     def get_all_processed_emails(self) -> list[dict]:
         return self.emails.get_all_processed_emails()
 
-    def update_email_not_job_related(self, email_id: str) -> None:
-        return self.emails.update_email_not_job_related(email_id)
+    def update_email_not_job_related(
+        self, email_id: str, rule: str | None = None,
+    ) -> None:
+        return self.emails.update_email_not_job_related(email_id, rule)
 
     def _row_to_email(self, row) -> Email:
         return self.emails._row_to_email(row)

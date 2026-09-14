@@ -34,6 +34,9 @@ class FetchResult:
     processed: int = 0  # Message stubs consumed: stored, already-known, or skipped as bad
     total: int = 0  # Message stubs the query matched
 
+# Google Alerts arrives from one fixed address; see MONITORED_DOMAINS below.
+GOOGLE_ALERTS_SENDER = "googlealerts-noreply@google.com"
+
 # Sender domains to monitor via Gmail search
 MONITORED_DOMAINS = [
     "linkedin.com",
@@ -44,7 +47,10 @@ MONITORED_DOMAINS = [
     "arc.dev",
     "toptal.com",
     "turing.com",
-    "google.com",
+    # Narrowed from google.com: the domain is monitored for Google Alerts job
+    # alerts, but the bare domain also pulled in Gmail storage warnings, privacy
+    # notices and Trust Services bulletins — five fetched, zero jobs extracted.
+    GOOGLE_ALERTS_SENDER,
     "indeed.com",
     "indeedmail.com",
     "hired.com",
@@ -185,12 +191,13 @@ def _process_message(
     extracted_jobs = parse_digest(email)
 
     # Detect if this is a job opportunity or platform noise
-    is_job, confidence = detector.is_job_opportunity(
+    verdict = detector.classify(
         email.subject, email.sender, email.platform,
         email.body_text, len(extracted_jobs),
     )
-    email.is_job_related = is_job
-    email.confidence = confidence
+    email.is_job_related = verdict.is_job
+    email.confidence = verdict.confidence
+    email.non_job_rule = verdict.non_job_rule
 
     _store_email(repo, email, signals, extracted_jobs, msg_id)
     log.debug("Stored email %s: %s (%d jobs)", msg_id, email.subject, len(extracted_jobs))

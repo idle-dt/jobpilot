@@ -146,3 +146,44 @@ def test_second_sync_fetches_only_the_remainder(repo: Repository) -> None:
     )
     # The already-stored prefix costs no API calls.
     assert resumed.fetched == [f"m{i}" for i in range(_FAILING_INDEX, _STUB_COUNT)]
+
+
+class _SingleMessageClient:
+    """Gmail client stand-in serving exactly one message with a given subject."""
+
+    def __init__(self, sender: str, subject: str):
+        self.sender = sender
+        self.subject = subject
+
+    def list_messages(self, query: str, max_results: int = 100) -> list[dict]:
+        return [{"id": "m0"}]
+
+    def get_message(self, message_id: str) -> dict:
+        raw = _raw_message(message_id)
+        headers = raw["payload"]["headers"]
+        headers[0]["value"] = self.sender
+        headers[1]["value"] = self.subject
+        return raw
+
+
+def test_non_job_mail_is_stored_and_rejected_not_queued(repo: Repository) -> None:
+    """A fresh account notice lands in storage flagged not-job-related, with its rule."""
+    client = _SingleMessageClient("no-reply@google.com", "⚠️ Хранилище Gmail заполнено на 88 %")
+    assert _fetch(client, repo).new_emails == 1
+
+    email = repo.get_email("m0")
+    assert email is not None  # stored, never silently dropped
+    assert email.is_job_related is False
+    assert email.non_job_rule == "account_storage"
+    assert repo.count_emails_for_review() == 0
+    assert [e.id for e in repo.get_emails_not_job_related()] == ["m0"]
+
+
+def test_job_mail_is_still_stored_as_job_related(repo: Repository) -> None:
+    """The reject path does not catch ordinary job mail arriving on the same run."""
+    client = _SingleMessageClient("jobs@linkedin.com", "Senior Flutter Developer at Proxify")
+    assert _fetch(client, repo).new_emails == 1
+
+    email = repo.get_email("m0")
+    assert email.is_job_related is True
+    assert email.non_job_rule is None

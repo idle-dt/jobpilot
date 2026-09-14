@@ -34,6 +34,13 @@ bp = Blueprint("main", __name__)
 # --- Route constants ---
 EMAILS_PER_PAGE = 50
 
+# Allowlisted values for /emails?view. "not_job_related" lists the mail the
+# pipeline rejected as account, billing or promotional — nothing is deleted, so
+# a wrong rejection stays reachable alongside the rule that caused it.
+EMAILS_VIEW_ALL = "all"
+EMAILS_VIEW_NOT_JOB = "not_job_related"
+VALID_EMAIL_VIEWS = (EMAILS_VIEW_ALL, EMAILS_VIEW_NOT_JOB)
+
 
 def _repo() -> Repository:
     """Get the repository from the current Flask app config."""
@@ -70,6 +77,9 @@ def emails_list():
     """All classified emails with filters."""
     repo = _repo()
     classification = request.args.get("classification")
+    view = request.args.get("view", EMAILS_VIEW_ALL)
+    if view not in VALID_EMAIL_VIEWS:
+        view = EMAILS_VIEW_ALL
     try:
         page = max(1, int(request.args.get("page", 1)))
     except (ValueError, TypeError):
@@ -77,14 +87,19 @@ def emails_list():
     per_page = EMAILS_PER_PAGE
     offset = (page - 1) * per_page
 
-    emails = repo.get_emails_classified(
-        classification=classification, limit=per_page, offset=offset
-    )
+    if view == EMAILS_VIEW_NOT_JOB:
+        classification = None
+        emails = repo.get_emails_not_job_related(limit=per_page, offset=offset)
+    else:
+        emails = repo.get_emails_classified(
+            classification=classification, limit=per_page, offset=offset
+        )
     for email in emails:
         email.signals = sort_signals(repo.get_signals_for_email(email.id))
 
     return render_template(
-        "emails.html", emails=emails, classification=classification, page=page
+        "emails.html", emails=emails, classification=classification,
+        view=view, page=page,
     )
 
 
