@@ -400,8 +400,15 @@ The sync button (`button.sync-btn`) is an ink-black pill with a refresh SVG icon
 - Progress bar (`.sync-progress.active`) overlays the hidden button
 - On completion: green dot, success message built via safe DOM methods (no innerHTML)
 - Three distinguishable outcomes: **done** (green dot, "Synced"), **partial**
-  (`--signal-orange` dot and label, "Sync incomplete — N of M messages"), **error**
+  (`--signal-orange` dot and label, "Sync incomplete — N/M"), **error**
   (`--danger` dot, "Sync failed").
+- The incomplete state ends with an inline `button.sync-retry` — an underlined
+  signal-orange link-style control that re-triggers the sync, so the next step is a
+  control rather than advice. The reason sits in the container's `title` tooltip, keeping
+  the toolbar's `white-space: nowrap` line short.
+- `showSyncingUI()` clears the dot's inline colour before adding `.syncing`: inline style
+  outranks the class, so a previous error or incomplete colour would otherwise persist
+  through the next run.
 - "Synced" means every matched message was handled — nothing else. If the Gmail quota cuts
   the fetch short even after waiting, the run ends as "Sync incomplete", which is terminal:
   polling has stopped and the user must run sync again. It uses `--signal-orange` rather
