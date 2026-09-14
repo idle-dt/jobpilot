@@ -111,7 +111,8 @@
         }
     }
 
-    /* A quota-truncated run is NOT "Synced" — emails remain unfetched. */
+    /* Terminal state: nothing is running. "Incomplete" (not "Partially syncing") so it
+       cannot be read as work in progress — that is the waiting_quota step. */
     function setSyncInfoPartial(data) {
         var info = document.getElementById('sync-info');
         if (!info) return;
@@ -119,14 +120,16 @@
         info.className = 'sync-info';
         var strong = document.createElement('strong');
         strong.style.color = 'var(--signal-orange)';
-        strong.textContent = 'Partially synced';
+        strong.textContent = 'Sync incomplete';
         info.appendChild(strong);
         var processed = data.processed || 0;
         var total = data.fetch_total || 0;
         if (total > 0) {
             info.appendChild(document.createTextNode(' \u2014 ' + processed + ' of ' + total + ' messages'));
         }
-        info.appendChild(document.createTextNode(' \u2014 Gmail rate limit reached, run sync again to continue'));
+        info.appendChild(document.createTextNode(' \u2014 Gmail rate limit reached, run sync again'));
+        var dot = document.getElementById('sync-dot');
+        if (dot) dot.style.background = 'var(--signal-orange)';
     }
 
     function showSyncingUI() {
@@ -170,6 +173,11 @@
                     var pct = Math.round((data.current / data.total) * 100);
                     setSyncInfo('Scraping ' + data.current + '/' + data.total + '…', 'sync-info syncing');
                     if (fill) fill.style.width = pct + '%';
+                } else if (data.step === 'waiting_quota' && data.total > 0) {
+                    /* Live counts here make the ongoing pause unmistakable from the
+                       terminal "Sync incomplete" state, which shows the same numbers. */
+                    setSyncInfo(label + ' ' + data.current + '/' + data.total + ' fetched', 'sync-info syncing');
+                    if (fill) fill.style.width = '0%';
                 } else {
                     setSyncInfo(label, 'sync-info syncing');
                     if (fill) fill.style.width = '0%';

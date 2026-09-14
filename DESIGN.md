@@ -399,10 +399,16 @@ The sync button (`button.sync-btn`) is an ink-black pill with a refresh SVG icon
 - Info text shows step name and progress count in `--signal-orange`
 - Progress bar (`.sync-progress.active`) overlays the hidden button
 - On completion: green dot, success message built via safe DOM methods (no innerHTML)
-- "Synced" means every matched message was handled. If the Gmail quota cuts the fetch short
-  even after waiting, the run ends as "Partially synced — N of M messages" in
-  `--signal-orange` (attention cue, not `--danger` — nothing failed), prompting another run.
-  While waiting out a quota window the step reads "Waiting for Gmail quota…".
+- Three distinguishable outcomes: **done** (green dot, "Synced"), **partial**
+  (`--signal-orange` dot and label, "Sync incomplete — N of M messages"), **error**
+  (`--danger` dot, "Sync failed").
+- "Synced" means every matched message was handled — nothing else. If the Gmail quota cuts
+  the fetch short even after waiting, the run ends as "Sync incomplete", which is terminal:
+  polling has stopped and the user must run sync again. It uses `--signal-orange` rather
+  than `--danger` because nothing failed — everything fetched was fully processed.
+- The wording deliberately avoids a progressive participle ("Partially syncing"), which
+  would collide with the genuinely in-progress `waiting_quota` step, "Waiting for Gmail
+  quota…", shown while the fetch pauses for the quota window to refill.
 
 After sync, htmx partial swaps refresh `#review-queue` and `#toolbar-stats` without full-page flash.
 
