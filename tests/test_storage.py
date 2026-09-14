@@ -1211,3 +1211,22 @@ def test_missing_db_error_only_fires_for_an_explicit_override(tmp_path):
     present = tmp_path / "there.db"
     present.touch()
     assert Settings(db_path=present).missing_db_error() is None
+
+
+def test_skip_classified_emails_stay_out_of_review(repo: Repository):
+    """The scorer's 'skip' hides an email, exactly as it hides a scraped job."""
+    _review_email(repo, "keep")
+    _review_email(repo, "drop", final_classification="skip")
+
+    listed = {e.id for e in repo.get_emails_for_review()}
+
+    assert listed == {"keep"}
+    assert repo.count_emails_for_review() == 1
+
+
+def test_email_review_count_matches_the_listing(repo: Repository):
+    """The toolbar number must equal the rows the page shows, whatever the mix."""
+    for n, cls in enumerate(("worth_checking", "skip", "worth_checking", "skip")):
+        _review_email(repo, f"mix{n}", final_classification=cls)
+
+    assert repo.count_emails_for_review() == len(repo.get_emails_for_review())
