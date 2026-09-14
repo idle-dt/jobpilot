@@ -193,7 +193,7 @@ def _seed_default_preferences(conn: sqlite3.Connection) -> None:
         return
 
     from jobpilot.classifier.signals import (
-        LOCATION_PATTERNS,
+        DEFAULT_LOCATION_PREFERENCES,
         NEGATIVE_SIGNALS,
         SENIORITY_PATTERNS,
         TARGET_JOB_TITLES,
@@ -227,7 +227,7 @@ def _seed_default_preferences(conn: sqlite3.Connection) -> None:
             rows.append(("seniority_unwanted", pattern, None))
 
     # Locations
-    for location, info in LOCATION_PATTERNS.items():
+    for location, info in DEFAULT_LOCATION_PREFERENCES.items():
         if info["weight"] < 0:
             rows.append(("location_negative", location, None))
         elif info.get("target"):

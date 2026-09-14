@@ -448,6 +448,21 @@ def _migrate_add_expired_status(conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA foreign_keys=ON")
 
 
+def _retire_preference_blind_scoring_models(conn: sqlite3.Connection) -> None:
+    """Deactivate scoring models fitted to the pre-preference feature basis.
+
+    Scoring features now come from the user's saved preferences, so weights learned
+    against the hardcoded signal tables no longer mean what they did. The noise model
+    still uses the hardcoded basis and is left active.
+    """
+    cursor = conn.execute(
+        "UPDATE model_versions SET is_active = FALSE"
+        " WHERE is_active = TRUE AND model_type = 'scoring'"
+    )
+    conn.commit()
+    logger.info("Retired %d preference-blind scoring model(s)", cursor.rowcount)
+
+
 def run_migrations(conn: sqlite3.Connection) -> None:
     """Apply incremental schema changes and one-time data migrations idempotently."""
     _apply_column_migrations(conn)
@@ -459,3 +474,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     _run_once(conn, "_migration_glassdoor_content_dedup", _dedup_glassdoor_jobs_by_content)
     _run_once(conn, "_migration_dedup_tracked_applications", _dedup_tracked_applications)
     _run_once(conn, "_migration_add_expired_status", _migrate_add_expired_status)
+    _run_once(
+        conn, "_migration_retire_preference_blind_scoring",
+        _retire_preference_blind_scoring_models,
+    )

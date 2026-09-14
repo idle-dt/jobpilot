@@ -294,8 +294,16 @@ class Repository:
     def get_next_version(self, model_type: str) -> int:
         return self.ml.get_next_version(model_type)
 
-    def invalidate_active_models(self) -> int:
-        return self.ml.invalidate_active_models()
+    def invalidate_active_models(
+        self, model_type: str | None = None,
+    ) -> int:
+        return self.ml.invalidate_active_models(model_type)
+
+    def get_scoring_criteria_reset_at(self) -> str | None:
+        return self.ml.get_scoring_criteria_reset_at()
+
+    def reset_scoring_criteria(self) -> dict[str, int]:
+        return self.ml.reset_scoring_criteria()
 
     def insert_predictions(
         self, predictions: list[MLPrediction],

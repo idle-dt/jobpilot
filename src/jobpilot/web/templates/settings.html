@@ -155,6 +155,18 @@
     </div>
     <small>Resets scores for all jobs without user labels. Next sync will rescore them.</small>
 
+    <div class="setting-row" style="margin-top: 1rem;">
+        <button class="btn-save" hx-post="/api/settings/reset-scoring-criteria" hx-swap="none"
+                hx-confirm="Reset scoring criteria? Labels given before now stop training the scoring model. Nothing is deleted."
+                id="reset-criteria-btn">Reset Scoring Criteria</button>
+        <span id="reset-criteria-result" class="setting-result"></span>
+    </div>
+    {% if scoring_model.dormant %}
+    <small>Scoring model dormant — {{ scoring_model.labels }} of {{ scoring_model.required }} labels under current criteria.</small>
+    {% else %}
+    <small>Use this after changing what you are looking for, so the model stops learning from labels given under the old criteria.</small>
+    {% endif %}
+
 </section>
 
 {# ── Appearance ── #}
@@ -188,6 +200,7 @@ const settingsMap = {
     '/api/settings/score_threshold': 'score-threshold-result',
     '/api/settings/salary': 'salary-result',
     '/api/settings/drop-scores': 'drop-scores-result',
+    '/api/settings/reset-scoring-criteria': 'reset-criteria-result',
 };
 document.body.addEventListener('htmx:afterRequest', (e) => {
     const resultId = settingsMap[e.detail.pathInfo.requestPath];
@@ -198,6 +211,11 @@ document.body.addEventListener('htmx:afterRequest', (e) => {
             try {
                 const data = JSON.parse(e.detail.xhr.responseText);
                 result.textContent = 'Reset ' + data.count + ' jobs';
+            } catch { result.textContent = 'Done!'; }
+        } else if (resultId === 'reset-criteria-result') {
+            try {
+                const data = JSON.parse(e.detail.xhr.responseText);
+                result.textContent = 'Retired ' + data.excluded_labels + ' labels';
             } catch { result.textContent = 'Done!'; }
         } else {
             result.textContent = 'Saved!';

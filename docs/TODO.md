@@ -5,11 +5,28 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## Bugs
 
-(none)
+### `count_labels_since` compares timestamps as raw strings
+
+`ml_repo.py:282` compares `user_feedback.feedback_at` (`YYYY-MM-DD HH:MM:SS`) and
+`scraped_jobs.labeled_at` (ISO-8601 with `T`) against a cutoff using `>` on the raw text.
+Because `' ' < 'T'`, a scraped-job label always sorts after a same-second feedback label,
+so `should_retrain` over-counts new labels and retrains slightly early. Wrap both sides in
+`datetime()` as `SPEC_scoring_criteria_reset.md` does for its own cutoff.
 
 ## In Progress
 
-(none)
+### `docs/specs/SPEC_scoring_criteria_reset.md` — Scoring Criteria Reset
+
+Adds a criteria cutoff so scoring labels given under the old "remote or relocation to
+NL/SE/NO" policy stop training the model after the switch to remote-only. Retires active
+scoring models, leaves the noise model and every label row untouched.
+
+### `docs/specs/SPEC_preference_aware_ml_features.md` — Preference-Aware Scoring Features
+
+`MLTrainer` computes features with no `SignalConfig`, so scoring models score locations
+against the hardcoded `LOCATION_PATTERNS` instead of the user's saved preferences. Passes
+the config through on the scoring paths only, retires the preference-blind models once, and
+stops `hybrid` inheriting the `remote` weight. Noise features stay generic by design.
 
 ## Tech Debt
 
@@ -42,6 +59,16 @@ developer-controlled vocabulary, and a derived single source of truth (an
 judged not worth the cost: it would require building SQL via string interpolation, against
 the no-f-string-SQL rule, while `STATUS_SORT_RANK` would still need a hand-authored map and
 guard. Revisit that fuller refactor only if the status set starts changing frequently.
+
+### `storage/ml_repo.py` is over the 300-line limit
+
+`ml_repo.py` was already 346 lines before the criteria-reset work and is now 391. The
+cohesive split is to move the Training Data section (`get_noise_training_data`,
+`get_scoring_training_data` and its two row helpers, `get_last_training_time`,
+`count_labels_since`, `get_recent_predictions_comparison`) into a `training_data_repo.py`
+composed by `MLRepository`, which would put both files well under the limit. Deferred to
+keep the criteria-reset branch focused on behaviour. `repository.py` (367 lines) is over
+for the same structural reason — it is a pure delegation facade.
 
 ### `classifier/ml_trainer.py` still over the 300-line limit
 

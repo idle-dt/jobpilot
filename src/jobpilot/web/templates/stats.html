@@ -295,7 +295,12 @@
                     <td>{{ "%.1f"|format((m.precision or 0) * 100) }}%</td>
                     <td>{{ "%.1f"|format((m.recall or 0) * 100) }}%</td>
                     <td><strong>{{ "%.1f"|format((m.f1 or 0) * 100) }}%</strong></td>
-                    <td><small>{{ m.trained_at[:16] if m.trained_at else '—' }}</small></td>
+                    <td>
+                        <small>{{ m.trained_at[:16] if m.trained_at else '—' }}</small>
+                        {% if m.retired_criteria %}
+                        <span class="badge badge-ml badge-retired">Retired criteria</span>
+                        {% endif %}
+                    </td>
                     <td>
                         {% if m.is_active %}
                         <span class="badge badge-ml-active">Active</span>

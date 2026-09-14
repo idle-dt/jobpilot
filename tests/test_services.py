@@ -268,3 +268,161 @@ def test_truncated_sync_is_partial_not_done(repo: Repository) -> None:
     state.finish(new_emails=complete.new_emails, truncated=complete.fetch_truncated,
                  processed=complete.fetch_processed, fetch_total=complete.fetch_total)
     assert state.to_dict()["step"] == STEP_DONE
+
+
+# --- Scoring criteria reset ---
+
+def _insert_labeled_job(
+    db_conn: sqlite3.Connection, slug: str, label: str, labeled_at: str,
+) -> None:
+    """Insert a scraped job already carrying a user label at an explicit time."""
+    title = "Senior iOS Engineer Remote" if label == "worth_checking" else "Sales Manager"
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, company, location, description,"
+        " url, user_label, labeled_at) VALUES (?,?,?,?,?,?,?,?)",
+        ("linkedin", f"{title} {slug}", "Acme",
+         "Remote" if label == "worth_checking" else "Lisbon",
+         "swift ios mobile developer" if label == "worth_checking"
+         else "cold calling quota crm",
+         f"https://linkedin.com/jobs/view/{slug}", label, labeled_at),
+    )
+    db_conn.commit()
+
+
+def _insert_not_a_job_feedback(db_conn: sqlite3.Connection, slug: str) -> None:
+    """Insert an email plus a 'not_a_job' feedback row (a noise-model negative)."""
+    db_conn.execute(
+        "INSERT INTO emails (id, thread_id, sender, sender_domain, subject,"
+        " body_text, received_at) VALUES (?,?,?,?,?,?,?)",
+        (slug, f"thread_{slug}", "news@example.com", "example.com",
+         "Newsletter", "weekly digest", "2026-01-01 00:00:00"),
+    )
+    db_conn.execute(
+        "INSERT INTO user_feedback (email_id, label, feedback_at) VALUES (?,?,?)",
+        (slug, "not_a_job", "2026-01-01 00:00:00"),
+    )
+    db_conn.commit()
+
+
+def test_reset_makes_scoring_dormant_and_leaves_noise_alone(
+    repo: Repository, db_conn,
+) -> None:
+    """After a reset the scoring model stops retraining while noise is unaffected."""
+    from jobpilot.classifier.ml_trainer import MLTrainer
+
+    for i in range(32):
+        _insert_labeled_job(
+            db_conn, f"old{i}", "worth_checking" if i % 2 else "skip",
+            "2026-01-01T00:00:00.000000",
+        )
+    for i in range(6):
+        _insert_not_a_job_feedback(db_conn, f"msg_noise_{i}")
+    trainer = MLTrainer(repo)
+    assert trainer.should_retrain("scoring") is True
+    assert trainer.should_retrain("noise") is True
+
+    repo.reset_scoring_criteria()
+
+    assert trainer.should_retrain("scoring") is False
+    assert trainer.train_all("scoring") == []
+    assert trainer.should_retrain("noise") is True
+
+
+def test_scoring_model_wakes_up_after_enough_post_reset_labels(
+    repo: Repository, db_conn,
+) -> None:
+    """Thirty labels under the new criteria train and activate a scoring model again."""
+    from jobpilot.classifier.ml_trainer import MLTrainer
+
+    repo.reset_scoring_criteria()
+    for i in range(30):
+        _insert_labeled_job(
+            db_conn, f"new{i}", "worth_checking" if i % 2 else "skip",
+            "2026-12-01T00:00:00.000000",
+        )
+
+    model_ids = MLTrainer(repo).train_all("scoring")
+
+    assert len(model_ids) == 4
+    assert repo.get_active_model("scoring") is not None
+
+
+def test_scoring_model_state_reports_dormancy_progress(
+    repo: Repository, db_conn,
+) -> None:
+    """The settings context reports post-cutoff label progress toward the next model."""
+    from jobpilot.config import settings
+
+    _insert_labeled_job(db_conn, "old1", "skip", "2026-01-01T00:00:00.000000")
+    repo.reset_scoring_criteria()
+    _insert_labeled_job(db_conn, "new1", "worth_checking", "2026-12-01T00:00:00.000000")
+
+    state = SettingsService(repo).scoring_model_state()
+
+    assert state["labels"] == 1
+    assert state["required"] == settings.min_training_samples
+    assert state["dormant"] is True
+    assert state["reset_at"] is not None
+
+
+# --- Preference-aware scoring features ---
+
+def _remote_only_prefs(repo: Repository) -> None:
+    """Replace the seeded NL/SE/NO defaults with a remote-only location policy."""
+    for category in ("location_primary", "location_secondary"):
+        for pref in repo.get_preferences(category):
+            repo.delete_preference(category, pref.value)
+    repo.insert_preference("location_primary", "remote")
+
+
+def test_scoring_features_follow_location_preferences(repo: Repository) -> None:
+    """A remote job outranks an Amsterdam one once features read the preferences."""
+    from jobpilot.classifier.ml_trainer import MLTrainer
+    from jobpilot.classifier.rules import FEATURE_NAMES, compute_features
+
+    _remote_only_prefs(repo)
+    config = MLTrainer(repo).signal_config
+    idx = FEATURE_NAMES.index("location_match")
+
+    remote = compute_features("Flutter Engineer", "Location: Remote", config)
+    onsite = compute_features("Flutter Engineer", "Location: Amsterdam", config)
+
+    assert remote[idx] == 1.0
+    assert onsite[idx] == 0.0
+
+
+def test_hardcoded_basis_still_ranks_amsterdam_above_remote(repo: Repository) -> None:
+    """Guards the regression: without a config, the old policy is still encoded."""
+    from jobpilot.classifier.rules import FEATURE_NAMES, compute_features
+
+    idx = FEATURE_NAMES.index("location_match")
+
+    assert compute_features("Flutter Engineer", "Location: Remote")[idx] == 0.9
+    assert compute_features("Flutter Engineer", "Location: Netherlands")[idx] == 1.0
+
+
+def test_signal_config_is_cached_per_trainer_instance(repo: Repository) -> None:
+    """One run scores every row against the same preferences; a new run sees edits."""
+    from jobpilot.classifier.ml_trainer import MLTrainer
+
+    _remote_only_prefs(repo)
+    trainer = MLTrainer(repo)
+    first = trainer.signal_config
+    assert trainer.signal_config is first
+
+    repo.insert_preference("location_primary", "berlin")
+
+    assert "berlin" not in trainer.signal_config.locations
+    assert "berlin" in MLTrainer(repo).signal_config.locations
+
+
+def test_noise_features_ignore_preferences(repo: Repository) -> None:
+    """Job-vs-not-a-job detection stays on the hardcoded signals."""
+    from jobpilot.classifier.ml_trainer import MLTrainer
+    from jobpilot.classifier.rules import compute_features
+
+    before = MLTrainer(repo)._compute_noise_features("Flutter Engineer", "Remote", [])
+    _remote_only_prefs(repo)
+    after = MLTrainer(repo)._compute_noise_features("Flutter Engineer", "Remote", [])
+
+    assert before == after == compute_features("Flutter Engineer", "Remote")

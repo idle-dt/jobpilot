@@ -59,9 +59,12 @@ ALLOWED_CURRENCIES = {"EUR", "USD", "GBP", "CHF", "SEK", "NOK", "DKK"}
 
 
 def _invalidate_if_scoring(repo, category: str) -> None:
-    """Invalidate ML models if the preference category affects scoring."""
+    """Deactivate scoring models if the preference category affects scoring.
+
+    The noise model is location-agnostic, so a preference edit leaves it active.
+    """
     if category in SCORING_CATEGORIES:
-        repo.invalidate_active_models()
+        repo.invalidate_active_models("scoring")
 
 
 @bp_settings.route("/api/preferences", methods=["POST"])
@@ -142,6 +145,13 @@ def drop_scores():
     count = repo.jobs.drop_all_scores()
     repo.invalidate_active_models()
     return jsonify({"status": "ok", "count": count})
+
+
+@bp_settings.route("/api/settings/reset-scoring-criteria", methods=["POST"])
+def reset_scoring_criteria():
+    """Retire scoring labels and models given under the previous search criteria."""
+    result = SettingsService(_repo()).reset_scoring_criteria()
+    return jsonify({"status": "ok", **result})
 
 
 @bp_settings.route("/api/settings/salary", methods=["POST"])
