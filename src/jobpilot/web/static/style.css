@@ -1648,6 +1648,12 @@ td .badge-ml-active {
     min-width: 72px;
 }
 
+.badge-retired {
+    background: transparent;
+    color: var(--slate);
+    border-color: var(--dust);
+}
+
 .badge-ml-agree {
     background: rgba(47, 125, 59, 0.08);
     color: var(--success);

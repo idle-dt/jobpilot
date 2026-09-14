@@ -863,3 +863,251 @@ def test_rebuild_sql_check_matches_statuses() -> None:
     assert _check_constraint_statuses(
         migrations._APPLICATIONS_REBUILD_SQL
     ) == set(APPLICATION_STATUSES)
+
+
+# --- Scoring criteria reset ---
+
+def _insert_feedback_label(
+    db_conn: sqlite3.Connection, email_id: str, label: str, feedback_at: str,
+) -> None:
+    """Insert an email plus a user_feedback row stamped at an explicit time."""
+    db_conn.execute(
+        "INSERT INTO emails (id, thread_id, sender, sender_domain, subject,"
+        " body_text, received_at) VALUES (?,?,?,?,?,?,?)",
+        (email_id, f"thread_{email_id}", "jobs@example.com", "example.com",
+         "iOS Engineer", "Remote iOS role", "2026-01-01 00:00:00"),
+    )
+    db_conn.execute(
+        "INSERT INTO user_feedback (email_id, label, feedback_at) VALUES (?,?,?)",
+        (email_id, label, feedback_at),
+    )
+    db_conn.commit()
+
+
+def _insert_job_label(
+    db_conn: sqlite3.Connection, title: str, label: str, labeled_at: str,
+) -> None:
+    """Insert a scraped job already carrying a user label at an explicit time."""
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url, user_label, labeled_at)"
+        " VALUES (?,?,?,?,?)",
+        ("linkedin", title, f"https://linkedin.com/jobs/view/{title}", label,
+         labeled_at),
+    )
+    db_conn.commit()
+
+
+def _insert_active_model(repo: Repository, model_type: str) -> int:
+    """Insert an active model version of the given type and return its id."""
+    from jobpilot.storage.models import ModelVersion
+
+    return repo.insert_model_version(ModelVersion(
+        id=None, version=repo.get_next_version(model_type), training_samples=30,
+        model_blob=b"blob", model_type=model_type, algorithm="LR", is_active=True,
+    ))
+
+
+def test_scoring_training_data_unfiltered_without_cutoff(repo: Repository, db_conn):
+    """With no criteria reset stored, every label still trains the scoring model."""
+    _insert_feedback_label(db_conn, "msg_a", "worth_checking", "2026-01-01 00:00:00")
+    _insert_job_label(db_conn, "old-job", "skip", "2026-01-02T00:00:00.000000")
+
+    assert repo.get_scoring_criteria_reset_at() is None
+    assert len(repo.get_scoring_training_data()) == 2
+
+
+def test_scoring_training_data_excludes_labels_before_cutoff(repo: Repository, db_conn):
+    """Only the label given after the cutoff survives; the earlier one is ignored."""
+    from jobpilot.storage.ml_repo import SCORING_CRITERIA_RESET_KEY
+
+    _insert_feedback_label(db_conn, "msg_jan", "worth_checking", "2026-01-01 00:00:00")
+    _insert_feedback_label(db_conn, "msg_dec", "skip", "2026-12-01 00:00:00")
+    repo.set_setting(SCORING_CRITERIA_RESET_KEY, "2026-06-01 00:00:00")
+
+    rows = repo.get_scoring_training_data()
+    assert [r["item_id"] for r in rows] == ["msg_dec"]
+
+
+def test_scoring_training_data_normalises_timestamp_formats(repo: Repository, db_conn):
+    """A space-separated feedback stamp and an ISO-8601 job stamp both compare correctly."""
+    from jobpilot.storage.ml_repo import SCORING_CRITERIA_RESET_KEY
+
+    _insert_feedback_label(db_conn, "msg_mixed", "worth_checking", "2026-06-01 00:00:01")
+    _insert_job_label(db_conn, "mixed-job", "skip", "2026-06-01T00:00:01.123456")
+    repo.set_setting(SCORING_CRITERIA_RESET_KEY, "2026-06-01 00:00:00")
+
+    assert len(repo.get_scoring_training_data()) == 2
+
+
+def test_scoring_training_data_includes_label_at_cutoff(repo: Repository, db_conn):
+    """A label stamped exactly at the cutoff counts — the comparison is >=."""
+    from jobpilot.storage.ml_repo import SCORING_CRITERIA_RESET_KEY
+
+    _insert_feedback_label(db_conn, "msg_edge", "skip", "2026-06-01 00:00:00")
+    repo.set_setting(SCORING_CRITERIA_RESET_KEY, "2026-06-01 00:00:00")
+
+    assert len(repo.get_scoring_training_data()) == 1
+
+
+def test_reset_scoring_criteria_retires_only_scoring_models(repo: Repository):
+    """A reset deactivates the scoring model and leaves the noise model serving."""
+    _insert_active_model(repo, "scoring")
+    noise_id = _insert_active_model(repo, "noise")
+
+    result = repo.reset_scoring_criteria()
+
+    assert repo.get_active_model("scoring") is None
+    assert repo.get_active_model("noise").id == noise_id
+    assert result["deactivated_models"] == 1
+
+
+def test_reset_scoring_criteria_excludes_labels_without_deleting(
+    repo: Repository, db_conn,
+):
+    """The reset reports what it excluded and deletes no label rows."""
+    _insert_feedback_label(db_conn, "msg_old", "worth_checking", "2026-01-01 00:00:00")
+    _insert_job_label(db_conn, "old-job", "skip", "2026-01-01T00:00:00.000000")
+    before = len(repo.get_scoring_training_data())
+
+    result = repo.reset_scoring_criteria()
+
+    assert result["excluded_labels"] == before == 2
+    assert db_conn.execute(
+        "SELECT COUNT(*) as c FROM user_feedback"
+    ).fetchone()["c"] == 1
+    assert db_conn.execute(
+        "SELECT COUNT(*) as c FROM scraped_jobs WHERE user_label IS NOT NULL"
+    ).fetchone()["c"] == 1
+    assert repo.get_scoring_training_data() == []
+
+
+def test_reset_scoring_criteria_leaves_noise_training_data(repo: Repository, db_conn):
+    """Noise training data is location-agnostic and is never scoped by the cutoff."""
+    _insert_feedback_label(db_conn, "msg_noise", "worth_checking", "2026-01-01 00:00:00")
+    _insert_job_label(db_conn, "noise-job", "skip", "2026-01-01T00:00:00.000000")
+    before = len(repo.get_noise_training_data())
+
+    repo.reset_scoring_criteria()
+
+    assert len(repo.get_noise_training_data()) == before == 2
+
+
+def test_clearing_criteria_cutoff_restores_training_set(repo: Repository, db_conn):
+    """Deleting the stored cutoff brings every pre-reset label back — a reset is reversible."""
+    from jobpilot.storage.ml_repo import SCORING_CRITERIA_RESET_KEY
+
+    _insert_feedback_label(db_conn, "msg_rev", "worth_checking", "2026-01-01 00:00:00")
+    _insert_job_label(db_conn, "rev-job", "skip", "2026-01-01T00:00:00.000000")
+    repo.reset_scoring_criteria()
+    assert repo.get_scoring_training_data() == []
+
+    db_conn.execute(
+        "DELETE FROM settings WHERE key = ?", (SCORING_CRITERIA_RESET_KEY,)
+    )
+    db_conn.commit()
+
+    assert len(repo.get_scoring_training_data()) == 2
+
+
+def test_experiment_lab_flags_pre_cutoff_scoring_models(repo: Repository, db_conn):
+    """Scoring models trained before the cutoff are flagged; noise models are not."""
+    scoring_id = _insert_active_model(repo, "scoring")
+    noise_id = _insert_active_model(repo, "noise")
+    db_conn.execute(
+        "UPDATE model_versions SET trained_at = ? WHERE id IN (?, ?)",
+        ("2026-01-01 00:00:00", scoring_id, noise_id),
+    )
+    db_conn.commit()
+    repo.reset_scoring_criteria()
+
+    models = repo.get_dashboard_stats()["all_models"]
+
+    assert models["scoring"][0]["retired_criteria"] is True
+    assert models["noise"][0]["retired_criteria"] is False
+
+
+# --- Preference-aware scoring features ---
+
+def test_migration_retires_preference_blind_scoring_models(repo: Repository, db_conn):
+    """Scoring models fitted to the hardcoded basis are retired; noise keeps serving."""
+    from jobpilot.storage.migrations import _retire_preference_blind_scoring_models
+
+    _insert_active_model(repo, "scoring")
+    noise_id = _insert_active_model(repo, "noise")
+
+    _retire_preference_blind_scoring_models(db_conn)
+
+    assert repo.get_active_model("scoring") is None
+    assert repo.get_active_model("noise").id == noise_id
+
+
+def test_retire_preference_blind_migration_runs_once(repo: Repository, db_conn):
+    """A model activated after the migration is not retired by a later run."""
+    from jobpilot.storage.migrations import run_migrations
+
+    run_migrations(db_conn)
+    model_id = _insert_active_model(repo, "scoring")
+
+    run_migrations(db_conn)
+
+    assert repo.get_active_model("scoring").id == model_id
+
+
+def test_new_database_seeds_remote_only_locations(repo: Repository):
+    """A fresh install starts on the remote-only policy, not NL/SE/NO."""
+    prefs = repo.get_all_preferences()
+
+    assert [p.value for p in prefs["location_primary"]] == ["remote"]
+    assert prefs.get("location_secondary", []) == []
+    assert "us only" in {p.value for p in prefs["location_negative"]}
+
+
+def test_noise_fallback_location_table_is_unchanged(repo: Repository):
+    """The seed split must not narrow the basis an already-trained noise model uses."""
+    from jobpilot.classifier.signals import LOCATION_PATTERNS
+
+    assert LOCATION_PATTERNS["netherlands"]["weight"] == 1.0
+    assert LOCATION_PATTERNS["sweden"]["weight"] == 0.6
+
+
+def test_job_label_is_stamped_in_utc(repo: Repository, db_conn):
+    """labeled_at shares the UTC basis of feedback_at and the criteria cutoff."""
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url) VALUES (?,?,?)",
+        ("linkedin", "Flutter Engineer", "https://linkedin.com/jobs/view/tz"),
+    )
+    db_conn.commit()
+    job_id = db_conn.execute(
+        "SELECT id FROM scraped_jobs WHERE title = 'Flutter Engineer'"
+    ).fetchone()["id"]
+
+    repo.update_scraped_job_label(job_id, "worth_checking")
+
+    drift = db_conn.execute(
+        "SELECT CAST((julianday(datetime('now'))"
+        " - julianday(datetime(labeled_at))) * 86400 AS INTEGER) AS drift"
+        " FROM scraped_jobs WHERE id = ?",
+        (job_id,),
+    ).fetchone()["drift"]
+    assert abs(drift) <= 5
+
+
+def test_reset_then_label_yields_one_training_row(repo: Repository, db_conn):
+    """End-to-end check of reset-then-label. The UTC pin is test_job_label_is_stamped_in_utc.
+
+    This exercises the production write path through the cutoff filter; it does not
+    regression-test the timezone basis, which the drift assertion above covers.
+    """
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url) VALUES (?,?,?)",
+        ("linkedin", "Remote Flutter Engineer", "https://linkedin.com/jobs/view/after"),
+    )
+    db_conn.commit()
+    job_id = db_conn.execute(
+        "SELECT id FROM scraped_jobs WHERE title = 'Remote Flutter Engineer'"
+    ).fetchone()["id"]
+    repo.reset_scoring_criteria()
+
+    repo.update_scraped_job_label(job_id, "worth_checking")
+
+    assert len(repo.get_scoring_training_data()) == 1

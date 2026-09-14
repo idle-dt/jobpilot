@@ -5,7 +5,30 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## Bugs
 
-(none)
+### `count_labels_since` compares timestamps as raw strings
+
+`ml_repo.py:282` compares `user_feedback.feedback_at` (`YYYY-MM-DD HH:MM:SS`) and
+`scraped_jobs.labeled_at` (ISO-8601 with `T`) against a cutoff using `>` on the raw text.
+Because `' ' < 'T'`, a scraped-job label always sorts after a same-second feedback label,
+so `should_retrain` over-counts new labels and retrains slightly early. Wrap both sides in
+`datetime()` as `SPEC_scoring_criteria_reset.md` does for its own cutoff.
+
+### Trend chart cutoff compares local time against UTC
+
+`stats_repo.py:241` builds `trend_cutoff` from `datetime.now()` (naive local) and compares it
+against `scraped_at`, which is `CURRENT_TIMESTAMP` (UTC), without wrapping either side in
+`datetime()`. Same bug class as the `labeled_at` stamp fixed in `job_repo.py`: the 30-day
+trend window boundary is off by the machine's UTC offset. Cosmetic — it only shifts which
+jobs fall in the first and last bucket of the chart. Fix by computing the cutoff in SQL as
+`datetime('now', '-30 days')`.
+
+### Recent-labels lists sort three timestamp formats as raw strings
+
+`predictions_repo.py:78` and `ml_repo.py:373` sort by `labeled_at` with a plain string key,
+but the values now come in three shapes: `feedback_at` (UTC, space-separated), historical
+`labeled_at` (local time, `T`-separated) and new `labeled_at` (UTC, space-separated). Since
+`' ' < 'T'`, two rows from the same day can order wrongly against each other. Display-only,
+no data risk. Sorting on `datetime(...)` in SQL, or parsing before the sort, would fix it.
 
 ## In Progress
 
@@ -42,6 +65,16 @@ developer-controlled vocabulary, and a derived single source of truth (an
 judged not worth the cost: it would require building SQL via string interpolation, against
 the no-f-string-SQL rule, while `STATUS_SORT_RANK` would still need a hand-authored map and
 guard. Revisit that fuller refactor only if the status set starts changing frequently.
+
+### `storage/ml_repo.py` is over the 300-line limit
+
+`ml_repo.py` was already 346 lines before the criteria-reset work and is now 391. The
+cohesive split is to move the Training Data section (`get_noise_training_data`,
+`get_scoring_training_data` and its two row helpers, `get_last_training_time`,
+`count_labels_since`, `get_recent_predictions_comparison`) into a `training_data_repo.py`
+composed by `MLRepository`, which would put both files well under the limit. Deferred to
+keep the criteria-reset branch focused on behaviour. `repository.py` (367 lines) is over
+for the same structural reason — it is a pure delegation facade.
 
 ### `classifier/ml_trainer.py` still over the 300-line limit
 

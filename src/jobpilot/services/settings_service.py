@@ -35,7 +35,21 @@ class SettingsService:
             == "true",
             "domain_list": self._build_domain_list(prefs, MONITORED_DOMAINS),
             "browser_sessions": self._build_browser_sessions(),
+            "scoring_model": self.scoring_model_state(),
         }
+
+    def scoring_model_state(self) -> dict:
+        """Return criteria-reset state and progress toward the next scoring model."""
+        return {
+            "reset_at": self.repo.get_scoring_criteria_reset_at(),
+            "labels": len(self.repo.get_scoring_training_data()),
+            "required": settings.min_training_samples,
+            "dormant": self.repo.get_active_model("scoring") is None,
+        }
+
+    def reset_scoring_criteria(self) -> dict[str, int]:
+        """Retire scoring labels and models predating this moment."""
+        return self.repo.reset_scoring_criteria()
 
     @staticmethod
     def _build_domain_list(prefs: dict, monitored_domains: list[str]) -> list[dict]:

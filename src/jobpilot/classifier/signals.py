@@ -122,6 +122,16 @@ LOCATION_PATTERNS = {
     "must be located in": {"weight": -0.2, "target": False},
 }
 
+# Location preferences seeded into a brand-new database. Deliberately separate from
+# LOCATION_PATTERNS above, which stays the generic fallback basis for the noise model:
+# narrowing that table would shift the features of an already-trained noise model.
+DEFAULT_LOCATION_PREFERENCES = {
+    "remote": {"weight": 1.0, "target": True},
+    "us only": {"weight": -0.5, "target": False},
+    "usa only": {"weight": -0.5, "target": False},
+    "must be located in": {"weight": -0.2, "target": False},
+}
+
 # --- Job Titles ---
 
 JOB_TITLE_SECONDARY_WEIGHT = 0.4

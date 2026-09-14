@@ -4,6 +4,10 @@ import sqlite3
 from datetime import datetime
 
 from jobpilot.storage.models import MLPrediction, ModelVersion
+from jobpilot.storage.settings_repo import SettingsRepository
+
+SCORING_CRITERIA_RESET_KEY = "scoring_criteria_reset_at"
+MODEL_INVALIDATED_KEY = "model_invalidated_at"
 
 
 class MLRepository:
@@ -11,6 +15,7 @@ class MLRepository:
 
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+        self._settings = SettingsRepository(conn)
 
     # --- Model Versions ---
 
@@ -131,20 +136,41 @@ class MLRepository:
         ).fetchone()
         return (row["mv"] or 0) + 1
 
-    def invalidate_active_models(self) -> int:
-        """Deactivate all active models. Returns count of deactivated models."""
-        cursor = self.conn.execute(
-            "UPDATE model_versions SET is_active = FALSE WHERE is_active = TRUE"
-        )
+    def invalidate_active_models(self, model_type: str | None = None) -> int:
+        """Deactivate active models, of one type if given. Returns the count."""
+        query = "UPDATE model_versions SET is_active = FALSE WHERE is_active = TRUE"
+        params: list[str] = []
+        if model_type:
+            query += " AND model_type = ?"
+            params.append(model_type)
+        cursor = self.conn.execute(query, params)
         self.conn.commit()
         count = cursor.rowcount
         if count > 0:
-            self.conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                ("model_invalidated_at", datetime.now().isoformat()),
+            self._settings.set_setting(
+                MODEL_INVALIDATED_KEY, datetime.now().isoformat()
             )
-            self.conn.commit()
         return count
+
+    # --- Scoring Criteria Reset ---
+
+    def get_scoring_criteria_reset_at(self) -> str | None:
+        """Return the scoring criteria cutoff timestamp, or None if never reset."""
+        return self._settings.get_setting(SCORING_CRITERIA_RESET_KEY)
+
+    def reset_scoring_criteria(self) -> dict[str, int]:
+        """Mark now as the scoring criteria cutoff and retire active scoring models.
+
+        Returns counts of labels excluded by the new cutoff and models deactivated.
+        No label rows are modified.
+        """
+        excluded = len(self.get_scoring_training_data())
+        now = self.conn.execute("SELECT datetime('now') AS now").fetchone()["now"]
+        self._settings.set_setting(SCORING_CRITERIA_RESET_KEY, now)
+        return {
+            "excluded_labels": excluded,
+            "deactivated_models": self.invalidate_active_models("scoring"),
+        }
 
     def _row_to_model_version(self, row: sqlite3.Row) -> ModelVersion:
         """Convert a database row to a ModelVersion model."""
@@ -242,34 +268,53 @@ class MLRepository:
 
         From user_feedback: worth_checking=1, skip=0.
         From scraped_jobs: user_label worth_checking=1, skip=0.
+        Labels given before the scoring criteria cutoff are excluded.
         """
-        data = []
+        cutoff = self.get_scoring_criteria_reset_at()
+        return (
+            self._scoring_rows_from_feedback(cutoff)
+            + self._scoring_rows_from_jobs(cutoff)
+        )
+
+    def _scoring_rows_from_feedback(self, cutoff: str | None) -> list[dict]:
+        """Scoring rows from email feedback given at or after the cutoff."""
+        clause = " AND datetime(uf.feedback_at) >= datetime(?)" if cutoff else ""
         rows = self.conn.execute(
             """SELECT e.id as item_id, e.subject, e.body_text as body,
                       CASE WHEN uf.label = 'worth_checking' THEN 1 ELSE 0 END as label
                FROM user_feedback uf
                JOIN emails e ON uf.email_id = e.id
-               WHERE uf.label IN ('worth_checking', 'skip')"""
+               WHERE uf.label IN ('worth_checking', 'skip')""" + clause,
+            [cutoff] if cutoff else [],
         ).fetchall()
-        for r in rows:
-            data.append({"item_type": "email", "item_id": r["item_id"],
-                         "subject": r["subject"], "body": r["body"] or "", "label": r["label"]})
+        return [
+            {"item_type": "email", "item_id": r["item_id"], "subject": r["subject"],
+             "body": r["body"] or "", "label": r["label"]}
+            for r in rows
+        ]
+
+    def _scoring_rows_from_jobs(self, cutoff: str | None) -> list[dict]:
+        """Scoring rows from scraped jobs labelled at or after the cutoff."""
+        clause = " AND datetime(labeled_at) >= datetime(?)" if cutoff else ""
         rows = self.conn.execute(
             """SELECT id as item_id, title, company, location, description,
                       CASE WHEN user_label = 'worth_checking' THEN 1 ELSE 0 END as label
                FROM scraped_jobs
-               WHERE user_label IN ('worth_checking', 'skip')"""
+               WHERE user_label IN ('worth_checking', 'skip')""" + clause,
+            [cutoff] if cutoff else [],
         ).fetchall()
-        for r in rows:
-            body = (
-                f"{r['title']} {r['company'] or ''}"
-                f" {r['location'] or ''} {r['description'] or ''}"
-            )
-            data.append({
+        return [
+            {
                 "item_type": "scraped_job", "item_id": str(r["item_id"]),
-                "subject": r["title"], "body": body, "label": r["label"],
-            })
-        return data
+                "subject": r["title"],
+                "body": (
+                    f"{r['title']} {r['company'] or ''}"
+                    f" {r['location'] or ''} {r['description'] or ''}"
+                ),
+                "label": r["label"],
+            }
+            for r in rows
+        ]
 
     def get_last_training_time(self, model_type: str) -> str | None:
         """Get the most recent training timestamp for a model type."""

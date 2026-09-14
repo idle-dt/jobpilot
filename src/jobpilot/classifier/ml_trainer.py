@@ -13,7 +13,12 @@ from sklearn.metrics import f1_score, make_scorer, precision_score, recall_score
 from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.svm import LinearSVC
 
-from jobpilot.classifier.rules import FEATURE_NAMES, compute_features
+from jobpilot.classifier.rules import (
+    FEATURE_NAMES,
+    SignalConfig,
+    compute_features,
+    load_signal_config,
+)
 from jobpilot.classifier.structural_features import (
     STRUCTURAL_FEATURE_NAMES_TIER1,
     STRUCTURAL_FEATURE_NAMES_TIER2,
@@ -80,6 +85,18 @@ class MLTrainer:
 
     def __init__(self, repo: Repository):
         self.repo = repo
+        self._signal_config: SignalConfig | None = None
+
+    @property
+    def signal_config(self) -> SignalConfig:
+        """User preferences as a SignalConfig, resolved once per trainer instance.
+
+        Caching keeps one training or prediction run internally consistent: every row
+        is scored against the same preferences even if they change mid-run.
+        """
+        if self._signal_config is None:
+            self._signal_config = load_signal_config(self.repo)
+        return self._signal_config
 
     def train_all(self, model_type: str) -> list[int]:
         """Train all 4 algorithms for a model type. Returns list of model_version IDs."""
@@ -112,6 +129,8 @@ class MLTrainer:
             for d in data:
                 subject = d.get("subject") or ""
                 body = d.get("body") or d.get("body_text") or ""
+                # Noise is generic job-vs-not-a-job detection — deliberately
+                # scored against the hardcoded signals, not user preferences.
                 base = compute_features(subject, body)
 
                 if extra_feature_names:
@@ -132,6 +151,7 @@ class MLTrainer:
                 compute_features(
                     d.get("subject") or "",
                     d.get("body") or d.get("body_text") or "",
+                    self.signal_config,
                 )
                 for d in data
             ])
@@ -285,7 +305,11 @@ class MLTrainer:
         self, subject: str, body: str, extra_features: list[str],
         email_id=None,
     ) -> list[float]:
-        """Compute full feature vector for noise model prediction."""
+        """Compute full feature vector for noise model prediction.
+
+        Uses the hardcoded signals: whether something is a job posting at all does
+        not depend on the user's location or seniority preferences.
+        """
         features = compute_features(subject, body)
         if extra_features:
             digest_count = 0
@@ -357,7 +381,9 @@ class MLTrainer:
         email_rows = self.repo.get_all_processed_emails()
 
         def scoring_email_fn(row: dict) -> list[float]:
-            return compute_features(row["subject"], row["body_text"] or "")
+            return compute_features(
+                row["subject"], row["body_text"] or "", self.signal_config,
+            )
 
         predictions = self._predict_items(
             clf, model_id, email_rows, scoring_email_fn,
@@ -371,7 +397,7 @@ class MLTrainer:
                 f"{row['title']} {row['company'] or ''}"
                 f" {row['location'] or ''} {row['description'] or ''}"
             )
-            return compute_features(row["title"], body)
+            return compute_features(row["title"], body, self.signal_config)
 
         predictions.extend(self._predict_items(
             clf, model_id, job_rows, scoring_job_fn,
@@ -404,8 +430,10 @@ class MLTrainer:
                 )
                 features = compute_features(subject, body)
                 features.extend(structural[name] for name in extra_features)
-            else:
+            elif model_type == "noise":
                 features = compute_features(subject, body)
+            else:
+                features = compute_features(subject, body, self.signal_config)
 
             x_item = np.array([features])
             clf = joblib.load(io.BytesIO(mv.model_blob))

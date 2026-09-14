@@ -268,8 +268,9 @@ REMOTE_SYNONYMS = [
     "location independent",
     "work remotely",
     "anywhere",
-    "hybrid",
-    "home office",
+    # "hybrid" and "home office" are deliberately absent. Neither reliably means
+    # fully remote, so they must not inherit the weight of a remote preference;
+    # a user who wants them can add either as a location preference in Settings.
 ]
 
 

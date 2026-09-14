@@ -3,6 +3,7 @@
 import sqlite3
 from datetime import datetime, timedelta
 
+from jobpilot.storage.ml_repo import MLRepository
 from jobpilot.storage.predictions_repo import PredictionsRepository
 
 HISTOGRAM_BINS = 10
@@ -264,28 +265,35 @@ class StatsRepository:
         }
 
     def _all_model_stats(self) -> dict:
-        """All model versions for experiment lab."""
+        """All model versions for experiment lab, flagged against the criteria cutoff."""
+        cutoff = MLRepository(self.conn).get_scoring_criteria_reset_at()
         all_models: dict[str, list[dict]] = {}
         for mt in ("noise", "scoring"):
+            # Only scoring is scoped by a criteria reset; noise is location-agnostic.
+            mt_cutoff = cutoff if mt == "scoring" else None
             rows = self.conn.execute(
-                "SELECT * FROM model_versions WHERE model_type = ?"
+                "SELECT *,"
+                " (? IS NOT NULL AND datetime(trained_at) < datetime(?))"
+                " AS retired_criteria"
+                " FROM model_versions WHERE model_type = ?"
                 " ORDER BY trained_at DESC",
-                (mt,),
+                (mt_cutoff, mt_cutoff, mt),
             ).fetchall()
-            all_models[mt] = [
-                {
-                    "id": r["id"], "version": r["version"],
-                    "algorithm": r["algorithm"],
-                    "accuracy": r["accuracy"],
-                    "precision": r["precision_score"],
-                    "recall": r["recall_score"],
-                    "f1": r["f1_score"],
-                    "trained_at": r["trained_at"],
-                    "training_samples": r["training_samples"],
-                    "is_active": bool(r["is_active"]),
-                    "feature_names": r["feature_names"],
-                    "train_accuracy": r["train_accuracy"],
-                }
-                for r in rows
-            ]
+            all_models[mt] = [self._model_row(r) for r in rows]
         return {"all_models": all_models}
+
+    @staticmethod
+    def _model_row(r: sqlite3.Row) -> dict:
+        """Convert a model_versions row into an experiment-lab entry."""
+        return {
+            "id": r["id"], "version": r["version"],
+            "algorithm": r["algorithm"],
+            "accuracy": r["accuracy"], "precision": r["precision_score"],
+            "recall": r["recall_score"], "f1": r["f1_score"],
+            "trained_at": r["trained_at"],
+            "training_samples": r["training_samples"],
+            "is_active": bool(r["is_active"]),
+            "feature_names": r["feature_names"],
+            "train_accuracy": r["train_accuracy"],
+            "retired_criteria": bool(r["retired_criteria"]),
+        }
