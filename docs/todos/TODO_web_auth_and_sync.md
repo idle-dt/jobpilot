@@ -30,7 +30,7 @@ Tasks to implement before the app can support multiple users or run as a hosted 
 
 ### 5. HTTPS and production deployment
 - The redirect URI is hardcoded to `http://localhost:5050` — parameterize it via `JOBPILOT_BASE_URL` setting
-- Remove `OAUTHLIB_INSECURE_TRANSPORT = "1"` for production; require HTTPS
+- `OAUTHLIB_INSECURE_TRANSPORT` is now scoped to loopback redirect URIs only (RFC 8252 §8.3); a non-loopback `JOBPILOT_BASE_URL` already requires HTTPS
 - Run behind a reverse proxy (nginx/caddy) with TLS termination
 - Set `SESSION_COOKIE_SECURE = True`, `SESSION_COOKIE_HTTPONLY = True`, `SESSION_COOKIE_SAMESITE = "Lax"` in production
 
