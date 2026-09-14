@@ -32,18 +32,7 @@ no data risk. Sorting on `datetime(...)` in SQL, or parsing before the sort, wou
 
 ## In Progress
 
-### `docs/specs/SPEC_scoring_criteria_reset.md` — Scoring Criteria Reset
-
-Adds a criteria cutoff so scoring labels given under the old "remote or relocation to
-NL/SE/NO" policy stop training the model after the switch to remote-only. Retires active
-scoring models, leaves the noise model and every label row untouched.
-
-### `docs/specs/SPEC_preference_aware_ml_features.md` — Preference-Aware Scoring Features
-
-`MLTrainer` computes features with no `SignalConfig`, so scoring models score locations
-against the hardcoded `LOCATION_PATTERNS` instead of the user's saved preferences. Passes
-the config through on the scoring paths only, retires the preference-blind models once, and
-stops `hybrid` inheriting the `remote` weight. Noise features stay generic by design.
+(none)
 
 ## Tech Debt
 
