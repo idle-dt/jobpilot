@@ -42,10 +42,12 @@ poetry.lock
 # Model artifacts
 *.pkl
 
-# Claude Code / Superpowers
-.claude/
+# Claude Code — track shared config, ignore machine-local state
+.claude/*
+!.claude/agents/
+!.claude/commands/
+!.claude/settings.json
 .superpowers/
-CLAUDE.md
 
 # Internal docs — track decisions, todos, and the specs template; ignore the rest
 docs/*
