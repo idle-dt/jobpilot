@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "agent",
+            "if": "Bash(git commit *)",
+            "prompt": "A git commit was just made in this project. Run a security and quality audit on the committed changes. Use `git diff HEAD~1` to see what changed, then review the changed files for: (1) Security issues: XSS, injection, leaked secrets, unsafe defaults (2) Data integrity: NULL handling, missing validations, race conditions (3) Code quality: dead code, missing error handling, broken abstractions (4) Test coverage: are new code paths tested? Report your findings directly in your output, categorized by severity (HIGH/MEDIUM/LOW). Do NOT write any files. If no issues are found, report that the audit passed clean.",
+            "timeout": 120,
+            "model": "claude-sonnet-4-6",
+            "statusMessage": "Running security/quality audit..."
+          }
+        ]
+      }
+    ]
+  }
+}

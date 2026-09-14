@@ -1,0 +1,1 @@
+List all `docs/specs/SPEC_*.md` files, excluding `SPEC_TEMPLATE.md`. These are the specs not yet shipped (`/ship` deletes a spec file once implemented). If there are none, say so. If there is exactly one, confirm it with the user before starting. If there are multiple, ask which one to implement. Then follow the Implementation Workflow in CLAUDE.md.
