@@ -60,8 +60,10 @@ def fetch(days: int | None, max_results: int):
     since = datetime.now() - timedelta(days=days)
     click.echo(f"Fetching emails from the last {days} days...")
 
-    count = fetch_new_emails(client, repo, since=since, max_results=max_results)
-    click.echo(f"Done. {count} new emails stored.")
+    result = fetch_new_emails(client, repo, since=since, max_results=max_results)
+    click.echo(f"Done. {result.new_emails} new emails stored.")
+    if result.truncated:
+        click.echo("Gmail rate limit reached — run sync again to fetch the rest.")
     conn.close()
 
 

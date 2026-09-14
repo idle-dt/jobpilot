@@ -215,3 +215,23 @@ def test_sort_applications_default_is_pipeline_rank() -> None:
     ]
     ordered = TrackerService(None)._sort_applications(apps, "status")
     assert [a.status for a in ordered] == ["offer", "saved", "withdrawn"]
+
+
+# --- SyncService partial success ---
+
+def test_sync_run_records_last_sync_on_truncated_fetch(repo: Repository) -> None:
+    """A quota-truncated fetch is a completed sync: state is recorded, result flags it."""
+    from unittest.mock import patch
+
+    from jobpilot.gmail.fetcher import FetchResult
+    from jobpilot.services.sync_service import SyncService
+
+    service = SyncService(repo)
+    with patch.object(
+        SyncService, "_fetch_emails", return_value=FetchResult(new_emails=3, truncated=True),
+    ), patch.object(SyncService, "_fetch_arbeitnow", return_value=0):
+        result = service.run()
+
+    assert result.fetch_truncated is True
+    assert result.new_emails == 3
+    assert repo.get_setting("last_sync_time") is not None

@@ -95,7 +95,7 @@
         info.className = className || 'sync-info';
     }
 
-    function setSyncInfoSuccess(newEmails) {
+    function setSyncInfoSuccess(newEmails, truncated) {
         var info = document.getElementById('sync-info');
         if (!info) return;
         /* Build DOM nodes instead of innerHTML to avoid XSS */
@@ -107,6 +107,9 @@
         info.appendChild(strong);
         if (newEmails > 0) {
             info.appendChild(document.createTextNode(' \u2014 ' + newEmails + ' new email' + (newEmails !== 1 ? 's' : '')));
+        }
+        if (truncated) {
+            info.appendChild(document.createTextNode(' \u2014 Gmail rate limit reached, run sync again to continue'));
         }
     }
 
@@ -163,7 +166,7 @@
                 lastHandledFinish = data.finished_at;
                 stopPolling();
                 resetSyncingUI();
-                setSyncInfoSuccess(data.new_emails || 0);
+                setSyncInfoSuccess(data.new_emails || 0, data.truncated);
                 /* Refresh review queue and toolbar stats once (inbox only) */
                 if (document.getElementById('review-queue')) {
                     htmx.ajax('GET', window.location.href, {target: '#review-queue', select: '#review-queue', swap: 'outerHTML'});
@@ -234,7 +237,7 @@
                 startPolling();
             } else if (data.step === 'done' && data.finished_at) {
                 lastHandledFinish = data.finished_at;
-                setSyncInfoSuccess(data.new_emails || 0);
+                setSyncInfoSuccess(data.new_emails || 0, data.truncated);
             }
         }).catch(function() {});
     })();

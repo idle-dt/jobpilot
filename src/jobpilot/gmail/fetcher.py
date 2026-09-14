@@ -1,16 +1,27 @@
 """Email fetching and sync logic."""
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from googleapiclient.errors import HttpError
+
 from jobpilot.classifier.job_detector import JobDetector
-from jobpilot.gmail.client import GmailClient
+from jobpilot.gmail.client import GmailClient, GmailQuotaExhaustedError
 from jobpilot.gmail.digest import extract_single_job_url, parse_digest
 from jobpilot.gmail.parser import parse_message
 from jobpilot.storage.models import Email, ExtractedSignal, ScrapedJob
 from jobpilot.storage.repository import Repository
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class FetchResult:
+    """Outcome of a Gmail fetch pass."""
+
+    new_emails: int
+    truncated: bool  # True when a quota limit cut the batch short
 
 # Sender domains to monitor via Gmail search
 MONITORED_DOMAINS = [
@@ -55,8 +66,12 @@ def fetch_new_emails(
     repo: Repository,
     since: datetime | None = None,
     max_results: int = 200,
-) -> int:
-    """Fetch new emails from Gmail, parse and store them. Returns count of new emails."""
+) -> FetchResult:
+    """Fetch new emails from Gmail, parse and store them.
+
+    A quota limit truncates the batch rather than aborting: whatever was stored before the
+    cut-off persists, and the next sync resumes from there.
+    """
     if since is None:
         since = datetime.now() - timedelta(days=7)
 
@@ -64,16 +79,38 @@ def fetch_new_emails(
     query = build_gmail_query(since, domains=active_domains)
     log.info("Fetching emails with query: %s", query)
 
-    message_stubs = client.list_messages(query, max_results=max_results)
+    try:
+        message_stubs = client.list_messages(query, max_results=max_results)
+    except GmailQuotaExhaustedError:
+        log.warning("Gmail quota exhausted while listing messages; deferring to next sync")
+        return FetchResult(new_emails=0, truncated=True)
     log.info("Found %d messages matching query", len(message_stubs))
 
+    return _process_batch(message_stubs, client, repo)
+
+
+def _process_batch(
+    message_stubs: list[dict], client: GmailClient, repo: Repository,
+) -> FetchResult:
+    """Process message stubs one by one, tolerating per-message and quota failures."""
     detector = JobDetector()
-    new_count = sum(
-        _process_message(stub["id"], client, repo, detector)
-        for stub in message_stubs
-    )
+    new_count = 0
+    truncated = False
+    for stub in message_stubs:
+        try:
+            new_count += _process_message(stub["id"], client, repo, detector)
+        except GmailQuotaExhaustedError:
+            log.warning(
+                "Gmail quota exhausted after %d/%d messages; "
+                "remaining messages deferred to the next sync",
+                new_count, len(message_stubs),
+            )
+            truncated = True
+            break
+        except (HttpError, ValueError, KeyError) as error:
+            log.warning("Skipping message %s: %s", stub["id"], error)
     log.info("Fetched %d new emails (%d dupes skipped)", new_count, len(message_stubs) - new_count)
-    return new_count
+    return FetchResult(new_emails=new_count, truncated=truncated)
 
 
 def _process_message(

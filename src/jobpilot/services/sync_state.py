@@ -19,6 +19,7 @@ class SyncState:
     finished_at: str | None = None
     new_emails: int = 0
     arbeitnow_jobs: int = 0
+    truncated: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def start(self) -> bool:
@@ -36,6 +37,7 @@ class SyncState:
             self.finished_at = None
             self.new_emails = 0
             self.arbeitnow_jobs = 0
+            self.truncated = False
             return True
 
     def update(self, step: str, detail: str = "", current: int = 0, total: int = 0) -> None:
@@ -46,8 +48,10 @@ class SyncState:
             self.current = current
             self.total = total
 
-    def finish(self, new_emails: int = 0, arbeitnow_jobs: int = 0) -> None:
-        """Mark sync as complete."""
+    def finish(
+        self, new_emails: int = 0, arbeitnow_jobs: int = 0, truncated: bool = False,
+    ) -> None:
+        """Mark sync as complete. `truncated` flags a partial, quota-limited fetch."""
         with self._lock:
             self.running = False
             self.step = "done"
@@ -57,6 +61,7 @@ class SyncState:
             self.finished_at = datetime.now().isoformat()
             self.new_emails = new_emails
             self.arbeitnow_jobs = arbeitnow_jobs
+            self.truncated = truncated
 
     def fail(self, error: str) -> None:
         """Mark sync as failed."""
@@ -83,6 +88,7 @@ class SyncState:
                 "finished_at": self.finished_at,
                 "new_emails": self.new_emails,
                 "arbeitnow_jobs": self.arbeitnow_jobs,
+                "truncated": self.truncated,
             }
 
 
