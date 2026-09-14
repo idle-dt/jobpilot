@@ -31,3 +31,4 @@ The decision records live in [`records/`](records/). The template for new ADRs i
 | 013 | [Per-platform email parsing and scraping strategy](records/013-per-platform-parsing-scraping.md) | accepted | scraping, email, parsing, integration |
 | 014 | [Plain-HTTP OAuth permitted on loopback only](records/014-loopback-oauth-transport.md) | accepted | security, integration, config |
 | 015 | [Wait out the Gmail quota; "Synced" means every message handled](records/015-gmail-quota-waiting.md) | accepted | integration, email, reliability |
+| 016 | [Scoring features read user preferences; noise features stay hardcoded](records/016-split-feature-basis.md) | accepted | ml, classification, storage |
