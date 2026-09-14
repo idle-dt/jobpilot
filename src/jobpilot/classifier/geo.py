@@ -262,15 +262,20 @@ REMOTE_SYNONYMS = [
     "remote-first",
     "remote first",
     "work from anywhere",
-    "work from home",
-    "wfh",
     "distributed team",
     "location independent",
     "work remotely",
     "anywhere",
-    # "hybrid" and "home office" are deliberately absent. Neither reliably means
-    # fully remote, so they must not inherit the weight of a remote preference;
-    # a user who wants them can add either as a location preference in Settings.
+    # "hybrid", "home office", "work from home" and "wfh" are deliberately absent.
+    # None reliably means fully remote, so they must not inherit the weight of a
+    # remote preference; a user who wants them can add one as a location
+    # preference in Settings.
+    #
+    # "work from home" is the perk phrasing an office role uses — "the
+    # possibility to work from home", "flexible hours and some work from home".
+    # Across 1668 scraped jobs it was the only remote evidence in 32 listings,
+    # and every one of those had remote = 0. A policy statement says "fully
+    # remote", "remote-first" or "work from anywhere", all of which remain here.
 ]
 
 

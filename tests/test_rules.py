@@ -11,7 +11,13 @@ from jobpilot.classifier.features import (
     score_seniority,
     score_tech_stack,
 )
-from jobpilot.classifier.rules import RuleBasedScorer
+from jobpilot.classifier.geo import expand_locations
+from jobpilot.classifier.rules import (
+    FEATURE_NAMES,
+    RuleBasedScorer,
+    SignalConfig,
+    compute_features,
+)
 from jobpilot.classifier.signals import SALARY_PATTERNS
 
 # --- Feature Scoring ---
@@ -277,3 +283,40 @@ def test_nordic_hybrid_compounds_score_as_negatives():
         "Hybride (maandag en donderdag op kantoor)",
     ):
         assert score_negatives(text, DEFAULT_NEGATIVE_SIGNALS) < 1.0, text
+
+
+# --- Work-from-home perk regression (scraped_jobs id 4856) ---
+
+# A remote-only location policy, the shape score_pending_jobs builds its text in,
+# and the real Zühlke listing that scored 0.892 on a Porto office role because its
+# perks paragraph mentions working from home.
+_REMOTE_ONLY = SignalConfig(
+    tech_keywords={"flutter": {"weight": 1.0, "category": "primary"}},
+    locations=expand_locations({"remote": {"weight": 1.0, "target": True}}),
+    seniority_patterns={"lead": {"weight": 1.0, "level": "lead"}},
+)
+_PORTO_PERK_BODY = (
+    "Lead Mobile Architect Zühlke Group Porto "
+    "We build Flutter apps for our clients. "
+    "Benefits: we offer a safe & healthy workplace, with flexible working hours "
+    "and the possibility to work from home."
+)
+
+
+def test_work_from_home_perk_earns_no_location_credit():
+    """The perk phrase must not read as a remote-work policy."""
+    features = compute_features("Lead Mobile Architect", _PORTO_PERK_BODY, _REMOTE_ONLY)
+    breakdown = dict(zip(FEATURE_NAMES, features))
+
+    assert breakdown["location_match"] == 0.0
+
+
+def test_a_genuinely_remote_listing_still_earns_location_credit():
+    """The same config still rewards a listing that states a remote policy."""
+    body = _PORTO_PERK_BODY.replace(
+        "the possibility to work from home", "this is a fully remote role"
+    )
+    features = compute_features("Lead Mobile Architect", body, _REMOTE_ONLY)
+    breakdown = dict(zip(FEATURE_NAMES, features))
+
+    assert breakdown["location_match"] == 1.0

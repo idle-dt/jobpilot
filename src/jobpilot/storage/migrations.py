@@ -419,6 +419,17 @@ def _add_hybrid_negative_signals(conn: sqlite3.Connection) -> None:
     conn.execute(DROP_SCORES_SQL)
 
 
+def _rescore_after_work_from_home_drop(conn: sqlite3.Connection) -> None:
+    """Drop scores so unlabeled jobs rescore without the work-from-home perk credit.
+
+    "work from home" no longer expands from a remote location preference (see
+    REMOTE_SYNONYMS in classifier/geo.py), so any job scored while it did carries
+    a location match it should never have had. Labeled jobs keep their scores and
+    their labels — the user already acted on them.
+    """
+    conn.execute(DROP_SCORES_SQL)
+
+
 def _retry_glassdoor_browser(conn: sqlite3.Connection) -> None:
     """Re-arm failed Glassdoor scrapes after switching to the browser strategy."""
     conn.execute(
@@ -549,3 +560,6 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     _run_once(conn, "_migration_hybrid_negative_signals", _add_hybrid_negative_signals)
     _run_once(conn, "_migration_narrow_google_alerts_domain", narrow_google_alerts_domain)
     _run_once(conn, "_migration_reevaluate_non_job_emails", reevaluate_non_job_emails)
+    _run_once(
+        conn, "_migration_rescore_after_wfh_drop", _rescore_after_work_from_home_drop,
+    )
