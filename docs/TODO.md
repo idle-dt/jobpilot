@@ -5,6 +5,17 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## Bugs
 
+### `scraped_jobs.remote` is only ever set by the arbeitnow scraper
+
+`arbeitnow.py:96` is the only line that sets `remote=True`. The LinkedIn, Glassdoor and
+Wellfound digest paths never touch it, so it defaults `False`: 4 of 4 arbeitnow rows are
+flagged against 0 of 2,357 from every other source, while **396 rows have "remote" in their
+location text with `remote=0`**. Scoring is unaffected — it matches location *text* via
+`geo.REMOTE_SYNONYMS` and `signals.LOCATION_PATTERNS`, not this boolean. The damage is at
+`tracker_service.py:199`, which copies the flag onto tracked applications, so remote roles
+show as on-site in the tracker. Fix means deciding whether `remote` is derived from location
+text at insert or dropped in favour of the text.
+
 ### `count_labels_since` compares timestamps as raw strings
 
 `ml_repo.py:282` compares `user_feedback.feedback_at` (`YYYY-MM-DD HH:MM:SS`) and
@@ -22,9 +33,22 @@ trend window boundary is off by the machine's UTC offset. Cosmetic — it only s
 jobs fall in the first and last bucket of the chart. Fix by computing the cutoff in SQL as
 `datetime('now', '-30 days')`.
 
+### Bulk labeling leaves most of the queue undecided by design
+
+The corrected `docs/labeling-criteria.md` treats a posting that never states its work mode
+as unlabeled rather than `skip`. On the first 50 jobs that left 20 undecided — mostly
+Swedish and Dutch Android roles whose descriptions simply never mention remote. They are
+correct outcomes, not gaps, but it means a bulk run clears far less of the queue than its
+size suggests. Revisit only if a later sample shows the postings do state work mode
+somewhere the two-pass read is missing.
+
 ### Recent-labels lists sort three timestamp formats as raw strings
 
-`predictions_repo.py:78` and `ml_repo.py:373` sort by `labeled_at` with a plain string key,
+**Fixed** by `predictions_repo.label_sort_key`, which normalises the separator before
+sorting. The note below is kept because the same latent issue remains in
+`count_labels_since`.
+
+`predictions_repo.py:78` and `ml_repo.py:373` sorted by `labeled_at` with a plain string key,
 but the values now come in three shapes: `feedback_at` (UTC, space-separated), historical
 `labeled_at` (local time, `T`-separated) and new `labeled_at` (UTC, space-separated). Since
 `' ' < 'T'`, two rows from the same day can order wrongly against each other. Display-only,

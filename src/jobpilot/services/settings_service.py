@@ -4,6 +4,7 @@ import logging
 
 from jobpilot.config import settings
 from jobpilot.scraper.browser import ALLOWED_SITES
+from jobpilot.storage.label_repo import ASSISTANT_SOURCE
 from jobpilot.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
@@ -39,12 +40,19 @@ class SettingsService:
         }
 
     def scoring_model_state(self) -> dict:
-        """Return criteria-reset state and progress toward the next scoring model."""
+        """Return criteria-reset state and progress toward the next scoring model.
+
+        ``labels`` counts only what actually trains the model, so it reflects the
+        assistant opt-in: with the setting off, bulk-written labels are excluded
+        from it however many of them exist.
+        """
         return {
             "reset_at": self.repo.get_scoring_criteria_reset_at(),
             "labels": len(self.repo.get_scoring_training_data()),
             "required": settings.min_training_samples,
             "dormant": self.repo.get_active_model("scoring") is None,
+            "assistant_labels": self.repo.labels.count_by_source(ASSISTANT_SOURCE),
+            "assistant_training": self.repo.ml.assistant_labels_allowed(),
         }
 
     def reset_scoring_criteria(self) -> dict[str, int]:

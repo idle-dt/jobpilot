@@ -5,6 +5,7 @@ import sqlite3
 from jobpilot.storage.app_repo import ApplicationRepository
 from jobpilot.storage.email_repo import EmailRepository
 from jobpilot.storage.job_repo import JobRepository
+from jobpilot.storage.label_repo import USER_SOURCE, LabelRepository
 from jobpilot.storage.ml_repo import MLRepository
 from jobpilot.storage.models import (
     Application,
@@ -27,6 +28,7 @@ class Repository:
         self.conn = conn
         self.emails = EmailRepository(conn)
         self.jobs = JobRepository(conn)
+        self.labels = LabelRepository(conn)
         self.apps = ApplicationRepository(conn)
         self.ml = MLRepository(conn)
         self.preferences = PreferenceRepository(conn)
@@ -133,9 +135,9 @@ class Repository:
         return self.jobs.count_scraped_jobs_for_review(classification)
 
     def update_scraped_job_label(
-        self, job_id: int, label: str | None,
+        self, job_id: int, label: str | None, source: str = USER_SOURCE,
     ) -> None:
-        return self.jobs.update_scraped_job_label(job_id, label)
+        return self.jobs.update_scraped_job_label(job_id, label, source)
 
     def update_scraped_job_scores(
         self, job_id: int, score: float,

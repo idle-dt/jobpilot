@@ -3,11 +3,18 @@
 import sqlite3
 from datetime import datetime
 
+from jobpilot.storage.label_repo import ASSISTANT_SOURCE, USER_SOURCE
 from jobpilot.storage.models import MLPrediction, ModelVersion
+from jobpilot.storage.predictions_repo import label_sort_key
 from jobpilot.storage.settings_repo import SettingsRepository
 
 SCORING_CRITERIA_RESET_KEY = "scoring_criteria_reset_at"
 MODEL_INVALIDATED_KEY = "model_invalidated_at"
+
+# Whether assistant-authored labels are admitted into scoring training data.
+# Off by default: a bulk run's labels are visible in the queue and the UI either
+# way, but they do not teach the model until the user has audited them.
+TRAINING_INCLUDES_ASSISTANT_KEY = "training_includes_assistant_labels"
 
 
 class MLRepository:
@@ -293,15 +300,35 @@ class MLRepository:
             for r in rows
         ]
 
+    def assistant_labels_allowed(self) -> bool:
+        """True when assistant-authored labels may train the scoring model."""
+        return (
+            self._settings.get_setting(TRAINING_INCLUDES_ASSISTANT_KEY, "false") == "true"
+        )
+
+    def _assistant_author_filter(self) -> tuple[str, list[str]]:
+        """SQL clause and params holding assistant labels out, unless opted in.
+
+        ``IS NOT`` rather than ``!=`` so rows predating the label_source column,
+        which carry a NULL source, keep training the model.
+        """
+        if self.assistant_labels_allowed():
+            return "", []
+        return " AND label_source IS NOT ?", [ASSISTANT_SOURCE]
+
     def _scoring_rows_from_jobs(self, cutoff: str | None) -> list[dict]:
         """Scoring rows from scraped jobs labelled at or after the cutoff."""
         clause = " AND datetime(labeled_at) >= datetime(?)" if cutoff else ""
+        params = [cutoff] if cutoff else []
+        author_clause, author_params = self._assistant_author_filter()
+        clause += author_clause
+        params += author_params
         rows = self.conn.execute(
             """SELECT id as item_id, title, company, location, description,
                       CASE WHEN user_label = 'worth_checking' THEN 1 ELSE 0 END as label
                FROM scraped_jobs
                WHERE user_label IN ('worth_checking', 'skip')""" + clause,
-            [cutoff] if cutoff else [],
+            params,
         ).fetchall()
         return [
             {
@@ -347,22 +374,24 @@ class MLRepository:
     def get_recent_predictions_comparison(self, limit: int = 20) -> list[dict]:
         """Get last N labeled items with all model predictions for comparison."""
         items = []
+        # Email feedback is always hand-authored: there is no bulk path to it.
         fb_rows = self.conn.execute(
             """SELECT uf.email_id as item_id, 'email' as item_type,
                       e.subject as title, uf.label as user_label,
                       uf.feedback_at as labeled_at, e.raw_score,
-                      e.origin_url as url
+                      e.origin_url as url, ? as label_source, NULL as label_reason
                FROM user_feedback uf
                JOIN emails e ON uf.email_id = e.id
                WHERE uf.label IN ('worth_checking', 'skip')
                ORDER BY uf.feedback_at DESC LIMIT ?""",
-            (limit,),
+            (USER_SOURCE, limit),
         ).fetchall()
         for r in fb_rows:
             items.append(dict(r))
         sj_rows = self.conn.execute(
             """SELECT CAST(id AS TEXT) as item_id, 'scraped_job' as item_type,
-                      title, user_label, labeled_at, score as raw_score, url
+                      title, user_label, labeled_at, score as raw_score, url,
+                      label_source, label_reason
                FROM scraped_jobs
                WHERE user_label IN ('worth_checking', 'skip')
                ORDER BY labeled_at DESC LIMIT ?""",
@@ -370,7 +399,7 @@ class MLRepository:
         ).fetchall()
         for r in sj_rows:
             items.append(dict(r))
-        items.sort(key=lambda x: x.get("labeled_at") or "", reverse=True)
+        items.sort(key=lambda x: label_sort_key(x.get("labeled_at")), reverse=True)
         items = items[:limit]
 
         for item in items:

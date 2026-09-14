@@ -1111,3 +1111,122 @@ def test_reset_then_label_yields_one_training_row(repo: Repository, db_conn):
     repo.update_scraped_job_label(job_id, "worth_checking")
 
     assert len(repo.get_scoring_training_data()) == 1
+
+
+def test_new_database_seeds_hybrid_negative_signals(repo: Repository):
+    """A fresh install scores hybrid wording down without any migration."""
+    values = {p.value for p in repo.get_all_preferences()["negative_signal"]}
+
+    assert "hybrid work" in values
+    assert "hybride" in values
+    assert "on-site only" in values
+    # Bare English "hybrid" would match "hybrid app" and "hybrid ranking".
+    assert "hybrid" not in values
+
+
+def test_hybrid_migration_is_idempotent_and_preserves_labels(repo: Repository, db_conn):
+    """Re-running adds no duplicates, and labeled jobs keep their scores."""
+    from jobpilot.storage.migrations import _add_hybrid_negative_signals
+
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url, score, user_label, label_source)"
+        " VALUES ('linkedin', 'Flutter Engineer', 'https://x.test/1', 0.9, 'skip', 'user')",
+    )
+    db_conn.execute(
+        "INSERT INTO scraped_jobs (source, title, url, score)"
+        " VALUES ('linkedin', 'Backend Engineer', 'https://x.test/2', 0.8)",
+    )
+    db_conn.commit()
+
+    _add_hybrid_negative_signals(db_conn)
+    _add_hybrid_negative_signals(db_conn)
+    db_conn.commit()
+
+    values = [p.value for p in repo.get_all_preferences()["negative_signal"]]
+    assert values.count("hybrid work") == 1
+    labeled, unlabeled = db_conn.execute(
+        "SELECT score FROM scraped_jobs ORDER BY id"
+    ).fetchall()
+    assert labeled["score"] == 0.9
+    assert unlabeled["score"] is None
+
+
+def test_hybrid_migration_does_not_pre_empt_the_seeder(repo: Repository):
+    """Migrations run before seeding: a fresh install must still get every default.
+
+    Guards a real regression — inserting preferences from a migration makes
+    _seed_default_preferences see a non-empty table and skip tech keywords, job
+    titles, locations, monitored domains and the default settings rows.
+    """
+    prefs = repo.get_all_preferences()
+
+    assert prefs["tech_keyword_primary"], "tech keywords lost"
+    assert prefs["job_title_primary"], "job titles lost"
+    assert prefs["location_primary"], "locations lost"
+    assert prefs["monitored_domain"], "monitored domains lost"
+    assert repo.get_setting("salary_currency") == "EUR", "default settings lost"
+
+
+def test_label_sort_key_orders_the_three_timestamp_formats():
+    """A 12:31 bulk label must outrank a 10:28 hand label from the same day."""
+    from jobpilot.storage.predictions_repo import label_sort_key
+
+    bulk = "2026-09-14 12:31:43"              # UTC, space separated
+    hand = "2026-09-14T10:28:25.134797"       # historical ISO with T
+    feedback = "2026-09-14 07:27:59"          # user_feedback.feedback_at
+
+    assert label_sort_key(bulk) > label_sort_key(hand) > label_sort_key(feedback)
+    assert sorted([hand, feedback, bulk], key=label_sort_key, reverse=True)[0] == bulk
+    assert label_sort_key(None) == ""
+
+
+def test_recent_labels_put_the_newest_first_across_formats(repo: Repository, db_conn):
+    """The stats list orders by actual time, not by string bytes."""
+    from jobpilot.storage.predictions_repo import PredictionsRepository
+
+    db_conn.executescript(
+        """INSERT INTO scraped_jobs (source,title,url,user_label,labeled_at,label_source)
+           VALUES ('linkedin','Older hand label','https://x.test/a','skip',
+                   '2026-09-14T10:28:25.134797','user'),
+                  ('linkedin','Newer bulk label','https://x.test/b','skip',
+                   '2026-09-14 12:31:43','assistant');"""
+    )
+    db_conn.commit()
+
+    titles = [i["title"] for i in PredictionsRepository(db_conn).recent_scoring()]
+    assert titles[0] == "Newer bulk label"
+
+
+def test_missing_db_error_only_fires_for_an_explicit_override(tmp_path):
+    """A default-path first run may create a database; an overridden path may not."""
+    from jobpilot.config import Settings
+
+    assert Settings().missing_db_error() is None            # default path, untouched
+
+    missing = Settings(db_path=tmp_path / "absent.db")
+    error = missing.missing_db_error()
+    assert error is not None and "absent.db" in error
+    assert "JOBPILOT_DB_PATH" in error
+
+    present = tmp_path / "there.db"
+    present.touch()
+    assert Settings(db_path=present).missing_db_error() is None
+
+
+def test_skip_classified_emails_stay_out_of_review(repo: Repository):
+    """The scorer's 'skip' hides an email, exactly as it hides a scraped job."""
+    _review_email(repo, "keep")
+    _review_email(repo, "drop", final_classification="skip")
+
+    listed = {e.id for e in repo.get_emails_for_review()}
+
+    assert listed == {"keep"}
+    assert repo.count_emails_for_review() == 1
+
+
+def test_email_review_count_matches_the_listing(repo: Repository):
+    """The toolbar number must equal the rows the page shows, whatever the mix."""
+    for n, cls in enumerate(("worth_checking", "skip", "worth_checking", "skip")):
+        _review_email(repo, f"mix{n}", final_classification=cls)
+
+    assert repo.count_emails_for_review() == len(repo.get_emails_for_review())

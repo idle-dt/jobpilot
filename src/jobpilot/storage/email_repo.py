@@ -45,11 +45,14 @@ class EmailRepository:
     def get_emails_for_review(self, limit: int = 20) -> list[Email]:
         """Get processed job emails that haven't received feedback yet.
 
-        Excludes digested emails (those with extracted scraped jobs).
+        Excludes digested emails (those with extracted scraped jobs), and emails the
+        scorer already classified 'skip' — mirroring get_scraped_jobs_for_review.
+        Showing an item the app has already rejected contradicts its own decision.
         """
         rows = self.conn.execute(
             """SELECT * FROM emails
             WHERE processed = TRUE AND final_classification IS NOT NULL
+            AND final_classification != 'skip'
             AND is_job_related = TRUE
             AND id NOT IN (SELECT email_id FROM user_feedback)
             AND id NOT IN (
@@ -70,10 +73,12 @@ class EmailRepository:
     ) -> int:
         """Count emails needing review, optionally filtered by classification.
 
-        Excludes digested emails (those with extracted scraped jobs).
+        Excludes digested emails and 'skip'-classified ones, so the count matches
+        what get_emails_for_review actually lists.
         """
         base = """SELECT COUNT(*) as cnt FROM emails
             WHERE processed = TRUE AND final_classification IS NOT NULL
+            AND final_classification != 'skip'
             AND is_job_related = TRUE
             AND id NOT IN (SELECT email_id FROM user_feedback)
             AND id NOT IN (

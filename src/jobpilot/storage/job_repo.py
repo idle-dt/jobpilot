@@ -2,6 +2,7 @@
 
 import sqlite3
 
+from jobpilot.storage.label_repo import USER_SOURCE
 from jobpilot.storage.models import ScrapedJob
 
 DROP_SCORES_SQL = (
@@ -116,20 +117,29 @@ class JobRepository:
             row = self.conn.execute(base).fetchone()
         return row["cnt"]
 
-    def update_scraped_job_label(self, job_id: int, label: str | None) -> None:
-        """Set or clear the user label on a scraped job."""
+    def update_scraped_job_label(
+        self, job_id: int, label: str | None, source: str = USER_SOURCE,
+    ) -> None:
+        """Set or clear the user label on a scraped job, recording who authored it.
+
+        ``source`` defaults to 'user' so every UI call site stays correct; bulk
+        runs pass 'assistant'. Clearing a label clears the source with it.
+        """
         if label:
             # datetime('now') is UTC, matching user_feedback.feedback_at and the
             # scoring criteria cutoff. A local-time stamp here would be compared
             # against those as if it were UTC.
             self.conn.execute(
-                "UPDATE scraped_jobs SET user_label = ?,"
-                " labeled_at = datetime('now') WHERE id = ?",
-                (label, job_id),
+                # A click states no reason, so any rationale from a previous
+                # bulk label is cleared rather than left attached to a new one.
+                "UPDATE scraped_jobs SET user_label = ?, label_source = ?,"
+                " label_reason = NULL, labeled_at = datetime('now') WHERE id = ?",
+                (label, source, job_id),
             )
         else:
             self.conn.execute(
-                "UPDATE scraped_jobs SET user_label = NULL, labeled_at = NULL WHERE id = ?",
+                "UPDATE scraped_jobs SET user_label = NULL, labeled_at = NULL,"
+                " label_source = NULL, label_reason = NULL WHERE id = ?",
                 (job_id,),
             )
         self.conn.commit()
@@ -324,7 +334,8 @@ class JobRepository:
             remote=bool(row["remote"]), scraped_at=row["scraped_at"],
             score=row["score"], ml_score=row["ml_score"],
             classification=row["classification"], user_label=row["user_label"],
-            labeled_at=row["labeled_at"], email_id=row["email_id"],
+            labeled_at=row["labeled_at"], label_source=row["label_source"],
+            label_reason=row["label_reason"], email_id=row["email_id"],
             expired=bool(row["expired"]),
             description=row["description"],
             scrape_attempted=bool(row["scrape_attempted"]),

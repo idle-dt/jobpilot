@@ -200,6 +200,34 @@ NEGATIVE_SIGNALS = [
     "volunteer",
 ]
 
+# Workplace-arrangement negatives, seeded on top of NEGATIVE_SIGNALS for new databases.
+# Kept separate for the same reason DEFAULT_LOCATION_PREFERENCES is kept out of
+# LOCATION_PATTERNS: that list is the basis a trained noise model scores against, and
+# "hybrid work" is evidence a posting IS a job ad. This list is a search preference.
+# The English phrases are multi-word on purpose — a bare "hybrid" also matches
+# "hybrid app", "hybrid mobile", "hybrid ranking" and "hybrid-casual".
+WORKPLACE_NEGATIVE_SIGNALS = [
+    "hybrid work",
+    "hybrid working",
+    "hybrid model",
+    "hybrid role",
+    "hybrid position",
+    "hybrid setup",
+    "hybrid flexibility",
+    "hybrid way of working",
+    # Safe bare, unlike English: NL/SE postings write the cross-platform sense in
+    # English, so only the workplace sense appears (31 corpus hits, 0 "hybride app").
+    "hybride",
+    "hybridarbete",
+    "hybridmodell",
+    "in-office",
+    "days in the office",
+    "days per week in the office",
+]
+
+# What a brand-new database seeds into user_preferences.negative_signal.
+DEFAULT_NEGATIVE_SIGNALS = NEGATIVE_SIGNALS + WORKPLACE_NEGATIVE_SIGNALS
+
 
 # --- Detection and Extraction Functions ---
 

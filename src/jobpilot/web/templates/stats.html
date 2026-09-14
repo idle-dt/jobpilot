@@ -370,7 +370,8 @@
                 {% for item in data.recent_predictions %}
                 <tr>
                     {% set link = item.url if item.url and item.url.startswith(('http://', 'https://')) else ('https://mail.google.com/mail/u/0/#inbox/' + item.safe_email_id if item.item_type == 'email' and item.get('safe_email_id') else '') %}
-                    <td class="exp-item-title">{% if link %}<a href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</a>{% else %}{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}{% endif %}</td>
+                    <td class="exp-item-title">{% if link %}<a href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}</a>{% else %}{{ item.title[:40] }}{% if item.title|length > 40 %}…{% endif %}{% endif %}
+                        {% if item.label_reason %}<span class="exp-item-reason">{{ item.label_reason }}</span>{% endif %}</td>
                     <td>
                         {% set rule_pct = ((item.raw_score or 0) * 100) | round(0) | int %}
                         {% set rule_agrees = (item.user_label == 'worth_checking' and (item.raw_score or 0) >= 0.6) or (item.user_label == 'skip' and (item.raw_score or 0) < 0.6) %}
@@ -396,6 +397,10 @@
                                 hx-post="{{ undo_url }}" hx-swap="none"
                                 hx-on::after-request="this.closest('tr').style.opacity='0.4'"
                                 title="Click to undo label">{{ item.user_label | replace('_', ' ') }} <span class="undo-x">&times;</span></button>
+                        {% if item.label_source == 'assistant' %}
+                        <span class="badge badge-assistant"
+                              title="{% if item.label_reason %}{{ item.label_reason }}{% else %}No reason recorded.{% endif %} — written by a label-batch run, not clicked. Not an ML prediction.">assistant</span>
+                        {% endif %}
                     </td>
                     <td><strong>{{ ns.agree_count }}/5</strong></td>
                 </tr>

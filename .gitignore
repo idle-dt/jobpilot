@@ -56,3 +56,6 @@ docs/*
 !docs/specs/
 docs/specs/*
 !docs/specs/SPEC_TEMPLATE.md
+# The labeling criteria decide what every bulk label means, so they are versioned
+# alongside the code that reads them — a local-only copy has no history.
+!docs/labeling-criteria.md

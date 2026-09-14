@@ -5,6 +5,7 @@ import logging
 from flask import Blueprint, current_app, jsonify, render_template
 
 from jobpilot.services.settings_service import SettingsService
+from jobpilot.storage.ml_repo import TRAINING_INCLUDES_ASSISTANT_KEY
 from jobpilot.storage.repository import Repository
 from jobpilot.web.request_utils import get_param as _get_param
 
@@ -152,6 +153,22 @@ def reset_scoring_criteria():
     """Retire scoring labels and models given under the previous search criteria."""
     result = SettingsService(_repo()).reset_scoring_criteria()
     return jsonify({"status": "ok", **result})
+
+
+@bp_settings.route("/api/settings/training-assistant-labels", methods=["POST"])
+def update_training_assistant_labels():
+    """Toggle whether assistant-authored labels train the scoring model.
+
+    Flipping it changes the training set, so any active scoring model is retired:
+    the next one is trained on whatever the new setting admits.
+    """
+    repo = _repo()
+    enabled = _get_param("enabled", "false")
+    if enabled not in ("true", "false"):
+        return jsonify({"status": "error", "message": "Invalid boolean value"}), 400
+    repo.set_setting(TRAINING_INCLUDES_ASSISTANT_KEY, enabled)
+    repo.invalidate_active_models("scoring")
+    return jsonify({"status": "ok", "enabled": enabled})
 
 
 @bp_settings.route("/api/settings/salary", methods=["POST"])

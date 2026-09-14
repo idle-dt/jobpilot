@@ -3,8 +3,24 @@
 import re
 import sqlite3
 
+from jobpilot.storage.label_repo import USER_SOURCE
+
 EMAIL_ID_PATTERN = re.compile(r"^[a-f0-9]{10,20}$")
 RECENT_PREDICTIONS_LIMIT = 20
+
+
+def label_sort_key(timestamp: str | None) -> str:
+    """Return a label timestamp normalised so the three stored formats compare.
+
+    Label times arrive in three shapes: user_feedback.feedback_at (UTC, space
+    separated), historical scraped_jobs.labeled_at (ISO-8601 with a 'T') and
+    current labeled_at (UTC, space separated). Sorting the raw strings puts every
+    'T' form above every space form for the same day, because ' ' < 'T' — so a
+    10:28 hand label outranked a 12:31 bulk label. Swapping the separator makes
+    all three lexicographically ordered, which for a fixed-width date-time prefix
+    is the same as chronological.
+    """
+    return (timestamp or "").replace("T", " ")
 
 
 class PredictionsRepository:
@@ -48,16 +64,19 @@ class PredictionsRepository:
         Callers must pass hardcoded strings — never user input.
         """
         items = []
+        # Email feedback is always hand-authored — there is no bulk path to it —
+        # so the user source is bound in rather than stored per row.
         fb_rows = self.conn.execute(
             f"""SELECT uf.email_id as item_id, 'email' as item_type,
                       e.subject as title, uf.label as user_label,
-                      uf.feedback_at as labeled_at, e.origin_url as url
+                      uf.feedback_at as labeled_at, e.origin_url as url,
+                      ? as label_source, NULL as label_reason
                       {extra_email_cols}
                FROM user_feedback uf
                JOIN emails e ON uf.email_id = e.id
                WHERE {email_label_filter}
                ORDER BY uf.feedback_at DESC LIMIT ?""",
-            (RECENT_PREDICTIONS_LIMIT,),
+            (USER_SOURCE, RECENT_PREDICTIONS_LIMIT),
         ).fetchall()
         for r in fb_rows:
             item = dict(r)
@@ -67,7 +86,7 @@ class PredictionsRepository:
             items.append(item)
         sj_rows = self.conn.execute(
             f"""SELECT CAST(id AS TEXT) as item_id, 'scraped_job' as item_type,
-                      title, user_label, labeled_at, url
+                      title, user_label, labeled_at, url, label_source, label_reason
                FROM scraped_jobs
                WHERE {scraped_label_filter}
                ORDER BY labeled_at DESC LIMIT ?""",
@@ -75,7 +94,7 @@ class PredictionsRepository:
         ).fetchall()
         for r in sj_rows:
             items.append(dict(r))
-        items.sort(key=lambda x: x.get("labeled_at") or "", reverse=True)
+        items.sort(key=lambda x: label_sort_key(x.get("labeled_at")), reverse=True)
         return items[:RECENT_PREDICTIONS_LIMIT]
 
     def _attach_predictions(

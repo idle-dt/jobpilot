@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _SECRET_KEY_PATH = Path.home() / ".jobpilot" / ".secret_key"
+DEFAULT_DB_PATH = Path.home() / ".jobpilot" / "jobpilot.db"
 
 
 def _get_or_create_secret_key() -> str:
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
     db_busy_timeout_ms: int = 30000
 
     # Paths
-    db_path: Path = Path.home() / ".jobpilot" / "jobpilot.db"
+    db_path: Path = DEFAULT_DB_PATH
     gmail_credentials_path: Path = Path.home() / ".jobpilot" / "credentials.json"
     gmail_token_path: Path = Path.home() / ".jobpilot" / "token.json"
 
@@ -65,6 +66,26 @@ class Settings(BaseSettings):
     def ensure_dirs(self) -> None:
         """Create necessary directories if they don't exist."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def missing_db_error(self) -> str | None:
+        """Return an error if an explicitly configured database does not exist.
+
+        Creating a database is correct on first run at the default location. At a
+        path the user set themselves — JOBPILOT_DB_PATH or .env — a missing file
+        almost always means a typo or a stale export, and creating an empty one
+        there yields a working app with no data instead of an error. That failure
+        is near-invisible: every page renders, just empty.
+        """
+        if "db_path" not in self.model_fields_set or self.db_path.exists():
+            return None
+        return (
+            f"Database not found: {self.db_path}\n"
+            "That path came from JOBPILOT_DB_PATH or .env, so it was not created "
+            "for you.\n"
+            f"Unset JOBPILOT_DB_PATH to use the default ({DEFAULT_DB_PATH}), "
+            "or fix the path.\n"
+            "To create a database there on purpose: jobpilot init-db"
+        )
 
 
 settings = Settings()

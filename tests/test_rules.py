@@ -221,3 +221,59 @@ def test_scorer_medium_score():
     # Should have some score but not necessarily high
     assert 0.0 < result.score < 1.0
     assert result.breakdown is not None
+
+
+def test_hybrid_phrases_score_as_negatives():
+    """Workplace-hybrid wording scores down; a bare 'hybrid' is not the trigger."""
+    from jobpilot.classifier.features import score_negatives
+    from jobpilot.classifier.signals import DEFAULT_NEGATIVE_SIGNALS
+
+    hybrid = "Flutter Engineer. We offer hybrid work from our Amsterdam office."
+    assert score_negatives(hybrid, DEFAULT_NEGATIVE_SIGNALS) < 1.0
+
+
+def test_cross_platform_wording_is_not_a_negative():
+    """'hybrid app' is a cross-platform term, not a workplace arrangement."""
+    from jobpilot.classifier.features import score_negatives
+    from jobpilot.classifier.signals import DEFAULT_NEGATIVE_SIGNALS
+
+    for text in (
+        "Senior Engineer building hybrid apps in Flutter. Fully remote.",
+        "You will work on hybrid mobile development. Remote-first team.",
+        "Experience with hybrid ranking systems and recommendation models.",
+        "Our games team builds hybrid-casual titles. Remote.",
+        "Delivery in an agile or hybrid delivery model. Remote.",
+    ):
+        assert score_negatives(text, DEFAULT_NEGATIVE_SIGNALS) == 1.0, text
+
+
+def test_dutch_hybrid_wording_scores_as_a_negative():
+    """LinkedIn NL postings say 'hybride werken'; both Dutch forms must match."""
+    from jobpilot.classifier.features import score_negatives
+    from jobpilot.classifier.signals import DEFAULT_NEGATIVE_SIGNALS
+
+    assert score_negatives("flexibele werktijden en hybride werken", DEFAULT_NEGATIVE_SIGNALS) < 1.0
+    assert score_negatives(
+        "onze 'hybride manier van werken' is daar onderdeel van", DEFAULT_NEGATIVE_SIGNALS
+    ) < 1.0
+
+
+def test_noise_fallback_negatives_exclude_workplace_terms():
+    """The noise model's basis is untouched: 'hybrid work' is evidence of a job ad."""
+    from jobpilot.classifier.signals import NEGATIVE_SIGNALS, WORKPLACE_NEGATIVE_SIGNALS
+
+    assert not set(NEGATIVE_SIGNALS) & set(WORKPLACE_NEGATIVE_SIGNALS)
+    assert "on-site only" in NEGATIVE_SIGNALS
+
+
+def test_nordic_hybrid_compounds_score_as_negatives():
+    """Swedish compounds the word; Dutch uses it bare. Both mean workplace-hybrid."""
+    from jobpilot.classifier.features import score_negatives
+    from jobpilot.classifier.signals import DEFAULT_NEGATIVE_SIGNALS
+
+    for text in (
+        "Hybridarbete med kontor i centrala Stockholm",
+        "Flexibelt upplagg med hybridmodell",
+        "Hybride (maandag en donderdag op kantoor)",
+    ):
+        assert score_negatives(text, DEFAULT_NEGATIVE_SIGNALS) < 1.0, text
