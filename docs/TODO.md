@@ -13,6 +13,23 @@ Because `' ' < 'T'`, a scraped-job label always sorts after a same-second feedba
 so `should_retrain` over-counts new labels and retrains slightly early. Wrap both sides in
 `datetime()` as `SPEC_scoring_criteria_reset.md` does for its own cutoff.
 
+### Trend chart cutoff compares local time against UTC
+
+`stats_repo.py:241` builds `trend_cutoff` from `datetime.now()` (naive local) and compares it
+against `scraped_at`, which is `CURRENT_TIMESTAMP` (UTC), without wrapping either side in
+`datetime()`. Same bug class as the `labeled_at` stamp fixed in `job_repo.py`: the 30-day
+trend window boundary is off by the machine's UTC offset. Cosmetic — it only shifts which
+jobs fall in the first and last bucket of the chart. Fix by computing the cutoff in SQL as
+`datetime('now', '-30 days')`.
+
+### Recent-labels lists sort three timestamp formats as raw strings
+
+`predictions_repo.py:78` and `ml_repo.py:373` sort by `labeled_at` with a plain string key,
+but the values now come in three shapes: `feedback_at` (UTC, space-separated), historical
+`labeled_at` (local time, `T`-separated) and new `labeled_at` (UTC, space-separated). Since
+`' ' < 'T'`, two rows from the same day can order wrongly against each other. Display-only,
+no data risk. Sorting on `datetime(...)` in SQL, or parsing before the sort, would fix it.
+
 ## In Progress
 
 ### `docs/specs/SPEC_scoring_criteria_reset.md` — Scoring Criteria Reset

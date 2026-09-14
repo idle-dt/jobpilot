@@ -1092,8 +1092,12 @@ def test_job_label_is_stamped_in_utc(repo: Repository, db_conn):
     assert abs(drift) <= 5
 
 
-def test_label_given_after_a_reset_counts_under_the_new_criteria(repo: Repository, db_conn):
-    """A label given moments after a reset must not fall on the wrong side of the cutoff."""
+def test_reset_then_label_yields_one_training_row(repo: Repository, db_conn):
+    """End-to-end check of reset-then-label. The UTC pin is test_job_label_is_stamped_in_utc.
+
+    This exercises the production write path through the cutoff filter; it does not
+    regression-test the timezone basis, which the drift assertion above covers.
+    """
     db_conn.execute(
         "INSERT INTO scraped_jobs (source, title, url) VALUES (?,?,?)",
         ("linkedin", "Remote Flutter Engineer", "https://linkedin.com/jobs/view/after"),
