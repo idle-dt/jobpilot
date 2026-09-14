@@ -217,7 +217,7 @@ def test_sort_applications_default_is_pipeline_rank() -> None:
     assert [a.status for a in ordered] == ["offer", "saved", "withdrawn"]
 
 
-# --- SyncService partial success ---
+# --- SyncService quota handling ---
 
 def _run_sync_with(repo: Repository, fetch_result):
     """Run the pipeline with the Gmail and ArbeitNow stages stubbed out."""

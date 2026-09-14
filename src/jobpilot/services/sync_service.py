@@ -57,7 +57,7 @@ class SyncService:
     def run(self) -> SyncResult:
         """Execute full sync: fetch, classify, parse, score, scrape.
 
-        A quota-truncated fetch is a partial success: the pipeline still completes.
+        A quota-truncated fetch still completes the pipeline, but reports as incomplete.
         """
         fetch = self._fetch_emails()
 

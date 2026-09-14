@@ -51,7 +51,8 @@ appearing hung.
 **Bound the wait, and never overstate the outcome.** Pausing is capped at
 `_MAX_QUOTA_WAITS`, so one sync cannot run indefinitely on a large backlog. If the quota is
 *still* exhausted after the cap, the run ends in a distinct terminal state — `partial`, not
-`done` — reporting "Partially synced — N of M messages". **`done` means every matched
+`done` — reporting "Sync incomplete — N/M", with an inline "Run sync again" control.
+**`done` means every matched
 message was handled, and nothing else.** A status word that sometimes means "all 200
 handled" and sometimes "150 of 200, keep going" is not a status word.
 
