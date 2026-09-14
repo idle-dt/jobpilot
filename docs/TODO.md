@@ -13,6 +13,20 @@ This is the single source of truth for what needs to be done — check and updat
 
 ## Tech Debt
 
+### 20 functions exceed the CLAUDE.md 30-line limit
+
+`scripts/check_function_length.py` enforces the rule on changed files via the pre-commit
+hook (as a warning). Enabling ruff's `PLR0915` repo-wide would flag 20 pre-existing
+functions at `max-statements=20`, and 4 even at 30 — worst offenders are
+`ml_trainer.py:84` (48 statements), `arbeitnow.py:42` (41) and `features.py:224` (36).
+Clean these up before making the check a blocker.
+
+### The pre-commit hook is not shared
+
+`.git/hooks/pre-commit` is untracked, so lint/length/test checks only run for clones that
+set it up by hand. Moving it to a tracked directory with `git config core.hooksPath` would
+give every clone the same gate.
+
 ### Application status vocabulary is duplicated across 4 places — guarded
 
 The valid-status set is still declared in four places (`APPLICATION_STATUSES`,

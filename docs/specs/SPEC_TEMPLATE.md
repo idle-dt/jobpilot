@@ -11,6 +11,19 @@ What's broken or missing? Why does it matter? Keep it to 2-3 sentences.
 | 1 | ... | ... |
 | 2 | ... | ... |
 
+## User-Facing Vocabulary
+
+Every status word, state name, button label and message this change introduces or alters —
+decided here, before implementation, not after. Say what each word means and what it must
+NOT be read as. If an existing word gains a second meaning, that is a design smell: split
+it into two states instead.
+
+| Term | Means exactly | Must not imply |
+|------|---------------|----------------|
+| ... | ... | ... |
+
+Omit this section only when the change has no user-visible surface.
+
 ## Implementation Steps
 
 ### 1. [First change] in `path/to/file.py`
