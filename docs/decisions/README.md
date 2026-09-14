@@ -29,3 +29,4 @@ The decision records live in [`records/`](records/). The template for new ADRs i
 | 011 | [Digest parsing for multi-job emails](records/011-digest-parsing.md) | accepted | email, parsing |
 | 012 | [Pydantic Settings for configuration](records/012-pydantic-settings.md) | accepted | infrastructure, config |
 | 013 | [Per-platform email parsing and scraping strategy](records/013-per-platform-parsing-scraping.md) | accepted | scraping, email, parsing, integration |
+| 014 | [Plain-HTTP OAuth permitted on loopback only](records/014-loopback-oauth-transport.md) | accepted | security, integration, config |
