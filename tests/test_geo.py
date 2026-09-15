@@ -32,7 +32,36 @@ def test_hybrid_does_not_inherit_the_remote_weight():
 
     assert "hybrid" not in locations
     assert "home office" not in locations
-    assert "work from home" in locations
+
+
+def test_work_from_home_does_not_inherit_the_remote_weight():
+    """'Work from home' is a perk an office role can offer, not a remote policy."""
+    assert "work from home" not in REMOTE_SYNONYMS
+    assert "wfh" not in REMOTE_SYNONYMS
+
+    locations = expand_locations({"remote": {"weight": 1.0, "target": True}})
+
+    assert "work from home" not in locations
+    assert "wfh" not in locations
+
+
+def test_work_from_home_perk_scores_zero_under_a_remote_only_policy():
+    """A real on-site listing whose perks mention working from home (job 4856)."""
+    locations = expand_locations({"remote": {"weight": 1.0, "target": True}})
+    perks = (
+        "we offer a safe & healthy workplace, with flexible working hours "
+        "and the possibility to work from home"
+    )
+
+    assert score_location(perks, locations) == 0.0
+
+
+def test_a_genuine_remote_statement_still_scores_full_weight():
+    """Dropping the perk phrasing must not cost an actually-remote listing."""
+    locations = expand_locations({"remote": {"weight": 1.0, "target": True}})
+
+    assert score_location("This is a fully remote position", locations) == 1.0
+    assert score_location("Work from anywhere in the EU", locations) == 1.0
 
 
 def test_hybrid_listing_scores_zero_under_a_remote_only_policy():

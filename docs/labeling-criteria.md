@@ -73,7 +73,10 @@ Any one of these makes the answer `skip` on its own, without reading further:
 
 - **Not fully remote** — on-site, hybrid, "2 days a week in the office", "based in
   our \<city\> office". Remote is a requirement, not a preference: hybrid is a
-  `skip` however good the rest of the posting is.
+  `skip` however good the rest of the posting is. Note that "work from home" sits on
+  *both* sides of this line — a stated split ("2 days Work from Home, 3 days Work
+  from Office") disqualifies, while a bare "possibility to work from home" decides
+  nothing. See the ambiguous cases below before acting on either.
 - **Seniority below mid** — junior, intern, entry-level, graduate, working student
 - **No sponsorship where sponsorship is needed** — "no visa sponsorship",
   "must already have work authorization", "must be located in \<country\>" for a
@@ -91,7 +94,10 @@ queue in the first place.
 the sole positive location signal in your preferences, and
 `WORKPLACE_NEGATIVE_SIGNALS` now scores hybrid wording down — "hybrid work",
 "in-office", "hybride", "hybridarbete" and the rest. That catches roughly 117 of the
-299 unlabeled jobs that mention hybrid or on-site.
+299 unlabeled jobs that mention hybrid or on-site. "Work from home" no longer counts
+as a remote *positive* either: it was removed from `REMOTE_SYNONYMS` in
+`classifier/geo.py`, because in 32 postings where it was the only remote evidence,
+every single one was in fact not remote.
 
 The remainder still arrive at full score, because the phrases are deliberately
 specific: a bare "hybrid" would also match "hybrid app", "hybrid mobile" and
@@ -149,6 +155,21 @@ is `worth_checking` even if it misses one.
   doesn't pause when you walk into the office" are not office requirements. The
   last one is arguably the opposite. Look for a statement about where *this role*
   is performed.
+- **"The possibility to work from home" is not a remote policy — and not a
+  disqualifier either. Leave these unlabeled.** The phrase presupposes a default
+  workplace that is not your home, so it leans *against* fully remote; a
+  remote-first company writes "remote-first" or "work from anywhere". But it never
+  says how much time the office actually claims, and that is the fact the decision
+  turns on. Across 1,668 scraped postings this phrasing — "possibility to", "option
+  to", "ability to", "some" work from home — appeared 10 times and **not one of
+  those roles was remote**. So it is a real signal, just not one that clears the
+  confidence floor by itself.
+
+  Do not confuse it with a **stated split**, which contains the same words and *is*
+  a hard disqualifier: "Hybrid: 2 days Work from Home, 3 days Work from Office".
+  37 postings state a split like that, and none of them is remote either. The
+  question to ask is whether the posting commits to office time. If it names days,
+  decide it `skip`; if it only dangles the possibility, leave it in the queue.
 - **Never import facts about a company from outside the posting.** "It's a
   consultancy, so it'll be on-site at a client" is a guess. Judge the text.
 - **iOS-only is a negative flag.** Native Android is in; iOS or Swift with no
