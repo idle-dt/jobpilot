@@ -12,6 +12,11 @@ from collections.abc import Callable
 
 from jobpilot.storage.job_repo import DROP_SCORES_SQL
 from jobpilot.storage.label_repo import USER_SOURCE
+from jobpilot.storage.non_job_migration import (
+    add_non_job_rule_column,
+    narrow_google_alerts_domain,
+    reevaluate_non_job_emails,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +341,7 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
 
     _add_label_source(conn)
     _add_label_reason(conn)
+    add_non_job_rule_column(conn)
 
 
 def _add_label_source(conn: sqlite3.Connection) -> None:
@@ -541,3 +547,5 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         _retire_preference_blind_scoring_models,
     )
     _run_once(conn, "_migration_hybrid_negative_signals", _add_hybrid_negative_signals)
+    _run_once(conn, "_migration_narrow_google_alerts_domain", narrow_google_alerts_domain)
+    _run_once(conn, "_migration_reevaluate_non_job_emails", reevaluate_non_job_emails)

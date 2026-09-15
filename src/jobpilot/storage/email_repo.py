@@ -20,15 +20,15 @@ class EmailRepository:
             """INSERT OR IGNORE INTO emails
             (id, thread_id, sender, sender_domain, subject, body_text, body_html,
              received_at, platform, is_job_related, raw_score, ml_score,
-             final_classification, confidence, processed, origin_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             final_classification, confidence, processed, origin_url, non_job_rule)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 email.id, email.thread_id, email.sender, email.sender_domain,
                 email.subject, email.body_text, email.body_html,
                 email.received_at.isoformat() if email.received_at else None,
                 email.platform, email.is_job_related, email.raw_score,
                 email.ml_score, email.final_classification, email.confidence,
-                email.processed, email.origin_url,
+                email.processed, email.origin_url, email.non_job_rule,
             ),
         )
         self.conn.commit()
@@ -137,18 +137,33 @@ class EmailRepository:
         )
         self.conn.commit()
 
-    def update_email_not_job_related(self, email_id: str) -> None:
-        """Mark an email as not job-related and processed."""
+    def update_email_not_job_related(self, email_id: str, rule: str | None = None) -> None:
+        """Mark an email as not job-related and processed, recording the rule that fired.
+
+        ``rule`` is stored so a wrong rejection can be traced back to its pattern;
+        without it the only evidence would be a boolean.
+        """
         self.conn.execute(
-            "UPDATE emails SET is_job_related = FALSE, processed = TRUE WHERE id = ?",
-            (email_id,),
+            "UPDATE emails SET is_job_related = FALSE, processed = TRUE,"
+            " non_job_rule = ? WHERE id = ?",
+            (rule, email_id),
         )
         self.conn.commit()
 
-    def get_unprocessed_emails(self) -> list[dict]:
-        """Get unprocessed emails (id, subject, body_text, platform)."""
+    def get_emails_not_job_related(self, limit: int = 50, offset: int = 0) -> list[Email]:
+        """Get emails the pipeline rejected as non-job mail, newest first."""
         rows = self.conn.execute(
-            "SELECT id, subject, body_text, platform FROM emails WHERE processed = FALSE"
+            """SELECT * FROM emails WHERE is_job_related = FALSE
+            ORDER BY received_at DESC LIMIT ? OFFSET ?""",
+            (limit, offset),
+        ).fetchall()
+        return [self._row_to_email(r) for r in rows]
+
+    def get_unprocessed_emails(self) -> list[dict]:
+        """Get unprocessed emails (id, subject, sender, body_text, platform)."""
+        rows = self.conn.execute(
+            "SELECT id, subject, sender, body_text, platform"
+            " FROM emails WHERE processed = FALSE"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -186,6 +201,7 @@ class EmailRepository:
             confidence=row["confidence"],
             processed=bool(row["processed"]),
             origin_url=row["origin_url"],
+            non_job_rule=row["non_job_rule"],
         )
 
     # --- Signals ---

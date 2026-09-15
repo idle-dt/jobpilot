@@ -10,6 +10,11 @@ class Email:
 
     Classification values: 'worth_checking', 'skip', or None (unclassified).
     Platform values: 'linkedin', 'wellfound', 'glassdoor', etc.
+
+    ``is_job_related`` False means the pipeline judged this account, billing or
+    promotional mail — not that the user rejected it, and not that the job is
+    poor. ``non_job_rule`` names the rule that decided, or is None when the mail
+    was never rejected.
     """
     id: str
     thread_id: str
@@ -28,6 +33,7 @@ class Email:
     confidence: float | None = None
     processed: bool = False
     origin_url: str | None = None
+    non_job_rule: str | None = None
 
 
 @dataclass

@@ -1,15 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Emails — JobPilot{% endblock %}
 
+{% set not_job_view = view == 'not_job_related' %}
+
 {% block content %}
 <hgroup>
-    <h2>Classified Emails</h2>
+    <h2>{% if not_job_view %}Not Job Related{% else %}Classified Emails{% endif %}</h2>
     <p>
         Filter:
         <a href="/emails">All</a> |
         <a href="/emails?classification=worth_checking">Worth Checking</a> |
-        <a href="/emails?classification=skip">Skip</a>
+        <a href="/emails?classification=skip">Skip</a> |
+        <a href="/emails?view=not_job_related">Not Job Related</a>
     </p>
+    {% if not_job_view %}
+    <p><small>Account, billing and promotional mail the pipeline kept out of the
+    review queue. Nothing is deleted — the rule column says which pattern
+    decided.</small></p>
+    {% endif %}
 </hgroup>
 
 {% if not emails %}
@@ -21,8 +29,12 @@
             <th>Date</th>
             <th>Platform</th>
             <th>Subject</th>
+            {% if not_job_view %}
+            <th>Rule</th>
+            {% else %}
             <th>Score</th>
             <th>Class</th>
+            {% endif %}
         </tr>
     </thead>
     <tbody>
@@ -31,21 +43,26 @@
             <td><small>{{ email.received_at.strftime('%b %d') if email.received_at else '' }}</small></td>
             <td>{% if email.platform %}<span class="badge platform-{{ email.platform }}">{{ email.platform }}</span>{% endif %}</td>
             <td>{{ email.subject[:80] }}</td>
+            {% if not_job_view %}
+            <td><span class="badge">{{ email.non_job_rule or 'unrecorded' }}</span></td>
+            {% else %}
             <td>{{ "%.0f"|format((email.raw_score or 0) * 100) }}%</td>
             <td>
                 <span class="badge">
                     {{ email.final_classification or 'pending' }}
                 </span>
             </td>
+            {% endif %}
         </tr>
         {% endfor %}
     </tbody>
 </table>
 
+{% set query_suffix %}{% if not_job_view %}&view=not_job_related{% elif classification %}&classification={{ classification }}{% endif %}{% endset %}
 <nav>
-    {% if page > 1 %}<a href="/emails?page={{ page - 1 }}{% if classification %}&classification={{ classification }}{% endif %}">&laquo; Previous</a>{% endif %}
+    {% if page > 1 %}<a href="/emails?page={{ page - 1 }}{{ query_suffix }}">&laquo; Previous</a>{% endif %}
     <span>Page {{ page }}</span>
-    {% if emails|length == 50 %}<a href="/emails?page={{ page + 1 }}{% if classification %}&classification={{ classification }}{% endif %}">Next &raquo;</a>{% endif %}
+    {% if emails|length == 50 %}<a href="/emails?page={{ page + 1 }}{{ query_suffix }}">Next &raquo;</a>{% endif %}
 </nav>
 {% endif %}
 {% endblock %}

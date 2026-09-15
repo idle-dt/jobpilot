@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS emails (
     final_classification TEXT,
     confidence REAL,
     processed BOOLEAN DEFAULT FALSE,
-    origin_url TEXT
+    origin_url TEXT,
+    non_job_rule TEXT
 );
 
 CREATE TABLE IF NOT EXISTS extracted_signals (
