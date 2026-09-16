@@ -136,6 +136,21 @@ CREATE TABLE IF NOT EXISTS application_status_history (
     notes TEXT
 );
 
+-- A label the user cancelled. Not a label itself and never a judgment about the job:
+-- it records that one verdict was wrong, so a bulk run can be barred from reaching the
+-- same conclusion again. Append-only, so repeat disagreements keep their timestamps.
+CREATE TABLE IF NOT EXISTS label_rejections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scraped_job_id INTEGER NOT NULL REFERENCES scraped_jobs(id),
+    rejected_label TEXT NOT NULL,
+    rejected_at TEXT DEFAULT (datetime('now')),
+    label_source TEXT,
+    label_reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_label_rejections_job
+    ON label_rejections(scraped_job_id);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

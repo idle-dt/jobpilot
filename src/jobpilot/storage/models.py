@@ -1,5 +1,6 @@
 """Data models for JobPilot storage layer."""
 
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -122,6 +123,10 @@ class ScrapedJob:
     Label source values: 'user' (clicked in the UI), 'assistant' (written by a
     label-batch run), or None while unlabeled. Label reason carries the rationale
     a bulk run stated; a hand click leaves it None.
+
+    The ai_passed fields say a run read this job, fell below the confidence floor, and
+    handed it to the user. They are not a label and change nothing the user sees: the
+    job stays in the review queue, and the flag only keeps future runs from re-reading it.
     """
     id: int | None
     source: str
@@ -140,11 +145,39 @@ class ScrapedJob:
     labeled_at: str | None = None
     label_source: str | None = None
     label_reason: str | None = None
+    ai_passed_at: str | None = None
+    ai_passed_reason: str | None = None
     email_id: str | None = None
     expired: bool = False
     description: str | None = None
     scrape_attempted: bool = False
     matched_signals: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> "ScrapedJob":
+        """Build a ScrapedJob from a ``SELECT *`` row.
+
+        Lives on the model rather than in a repository so every repository touching
+        scraped_jobs maps rows the same way. JobRepository imports from LabelRepository,
+        so a shared mapper in either one would be a cycle.
+        """
+        return cls(
+            id=row["id"], source=row["source"], title=row["title"],
+            company=row["company"], location=row["location"], url=row["url"],
+            salary=row["salary"], posted_date=row["posted_date"],
+            remote=bool(row["remote"]), scraped_at=row["scraped_at"],
+            score=row["score"], ml_score=row["ml_score"],
+            classification=row["classification"], user_label=row["user_label"],
+            labeled_at=row["labeled_at"], label_source=row["label_source"],
+            label_reason=row["label_reason"],
+            ai_passed_at=row["ai_passed_at"],
+            ai_passed_reason=row["ai_passed_reason"],
+            email_id=row["email_id"],
+            expired=bool(row["expired"]),
+            description=row["description"],
+            scrape_attempted=bool(row["scrape_attempted"]),
+            matched_signals=row["matched_signals"],
+        )
 
 
 @dataclass

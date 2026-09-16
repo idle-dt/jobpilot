@@ -5,9 +5,9 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from jobpilot.services.label_parsing import REASON_MALFORMED
 from jobpilot.services.label_service import (
     REASON_BELOW_THRESHOLD,
-    REASON_MALFORMED,
     LabelBatchService,
 )
 from jobpilot.storage.label_repo import (

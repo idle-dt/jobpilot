@@ -144,7 +144,23 @@ class Repository:
     def update_scraped_job_label(
         self, job_id: int, label: str | None, source: str = USER_SOURCE,
     ) -> None:
+        """Set or clear a label by hand, honouring a change of mind.
+
+        Applying a label the user once cancelled clears that rejection: the guard exists
+        to stop a bulk run repeating a mistake, never to stop the user deciding.
+        """
+        if label:
+            self.labels.rejections.clear(job_id, label)
         return self.jobs.update_scraped_job_label(job_id, label, source)
+
+    def export_rows(self) -> list[dict]:
+        return self.labels.export_rows()
+
+    def review_queue_ids(self) -> list[int]:
+        return self.labels.review_queue_ids()
+
+    def passed_job_ids(self) -> list[int]:
+        return self.labels.passed_job_ids()
 
     def update_scraped_job_scores(
         self, job_id: int, score: float,

@@ -90,7 +90,7 @@ class JobRepository:
         ).fetchone()
         if not row:
             return None
-        return self._row_to_scraped_job(row)
+        return ScrapedJob.from_row(row)
 
     def get_scraped_jobs_for_review(self, limit: int = 20) -> list[ScrapedJob]:
         """Get scraped jobs that need user review."""
@@ -100,7 +100,7 @@ class JobRepository:
             ORDER BY scraped_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
-        return [self._row_to_scraped_job(r) for r in rows]
+        return [ScrapedJob.from_row(r) for r in rows]
 
     def count_scraped_jobs_for_review(
         self, classification: str | None = None,
@@ -132,8 +132,11 @@ class JobRepository:
             self.conn.execute(
                 # A click states no reason, so any rationale from a previous
                 # bulk label is cleared rather than left attached to a new one.
+                # Deciding the job clears any hand-back with it: "a run passed on
+                # this" stops being true the moment someone labels it.
                 "UPDATE scraped_jobs SET user_label = ?, label_source = ?,"
-                " label_reason = NULL, labeled_at = datetime('now') WHERE id = ?",
+                " label_reason = NULL, labeled_at = datetime('now'),"
+                " ai_passed_at = NULL, ai_passed_reason = NULL WHERE id = ?",
                 (label, source, job_id),
             )
         else:
@@ -210,7 +213,7 @@ class JobRepository:
             )
             ORDER BY id ASC""",
         ).fetchall()
-        return [self._row_to_scraped_job(r) for r in rows]
+        return [ScrapedJob.from_row(r) for r in rows]
 
     def get_email_ids_with_extracted_jobs(self) -> set[str]:
         """Return email IDs that have extracted jobs in scraped_jobs."""
@@ -324,20 +327,3 @@ class JobRepository:
             "SELECT id, title, company, location, description FROM scraped_jobs"
         ).fetchall()
         return [dict(r) for r in rows]
-
-    def _row_to_scraped_job(self, row: sqlite3.Row) -> ScrapedJob:
-        """Convert a database row to a ScrapedJob model."""
-        return ScrapedJob(
-            id=row["id"], source=row["source"], title=row["title"],
-            company=row["company"], location=row["location"], url=row["url"],
-            salary=row["salary"], posted_date=row["posted_date"],
-            remote=bool(row["remote"]), scraped_at=row["scraped_at"],
-            score=row["score"], ml_score=row["ml_score"],
-            classification=row["classification"], user_label=row["user_label"],
-            labeled_at=row["labeled_at"], label_source=row["label_source"],
-            label_reason=row["label_reason"], email_id=row["email_id"],
-            expired=bool(row["expired"]),
-            description=row["description"],
-            scrape_attempted=bool(row["scrape_attempted"]),
-            matched_signals=row["matched_signals"],
-        )

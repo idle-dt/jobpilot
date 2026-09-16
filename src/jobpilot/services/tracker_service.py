@@ -181,14 +181,19 @@ class TrackerService:
         """Delete an application and its history."""
         self.repo.delete_application(app_id)
 
-    def auto_track_scraped_job(self, job_id: int) -> None:
-        """Auto-create a tracker entry from a scraped job if not already tracked."""
+    def auto_track_scraped_job(self, job_id: int) -> bool:
+        """Auto-create a tracker entry from a scraped job. Returns True if one was made.
+
+        Idempotent: an already-tracked job, a missing job, or an expired one returns
+        False without writing. Callers use the return value to report how many entries a
+        bulk run actually added.
+        """
         existing = self.repo.get_application_by_scraped_job_id(job_id)
         if existing:
-            return
+            return False
         job = self.repo.get_scraped_job(job_id)
         if not job or job.expired:
-            return
+            return False
         app = Application(
             id=None,
             company=job.company or "Unknown",
@@ -203,3 +208,4 @@ class TrackerService:
         )
         self.repo.insert_application(app)
         logger.info("Auto-tracked scraped job %d as application", job_id)
+        return True

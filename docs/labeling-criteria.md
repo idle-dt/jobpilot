@@ -17,6 +17,9 @@ covers what the keywords miss.
 
 ## The three labels
 
+There is also a fourth outcome, `passed`, which is **not** a label: it says the run was
+under 0.95 confident and is handing the job to you. See *Passing a job back* below.
+
 ### `worth_checking`
 
 A role you would genuinely open and read. Concretely: the job is **fully remote**,
@@ -30,10 +33,12 @@ in the hard-disqualifier list below applies.
 - A full-stack role where **mobile is the primary tech**, with the backend or web
   work in support of it
 
-Also `worth_checking` when the posting is plausibly a fit but thin — a title that
-matches with no description to contradict it. A missing description is not
-evidence against a job. When genuinely torn, prefer `worth_checking`: the cost of
-reading one extra posting is far lower than the cost of never seeing a good one.
+A missing description is not evidence *against* a job — but it is not evidence for
+one either, and this paragraph used to be read both ways. When genuinely torn between
+the two labels, with evidence on both sides, prefer `worth_checking`: the cost of
+reading one extra posting is far lower than the cost of never seeing a good one. But
+absence of evidence is not that kind of tie — a thin posting you cannot settle at 0.95
+confidence is `passed`, not a guess in either direction.
 
 This is how the remote requirement interacts with a thin posting: **silence is not
 a disqualifier, and it is not a decision either.** Hybrid and on-site are `skip`
@@ -43,10 +48,13 @@ location field is **not** such a statement: most postings name a city regardless
 work mode.
 
 So a posting whose title matches and which never says where the work happens is
-**left unlabeled**. Not `skip`, not `worth_checking` — it stays in the queue for
-you to decide. Leaving it is the correct outcome: guessing from a city name once
-put 10 Android roles into `skip` on no evidence at all, which is the failure this
-rule exists to prevent.
+**`passed`** — handed to the user, who decides it in the Inbox. Not `skip`, not
+`worth_checking`: guessing from a city name once put 10 Android roles into `skip` on no
+evidence at all, which is the failure this rule exists to prevent.
+
+Record it as an explicit `passed` entry carrying a reason, never by omitting the job
+from the file. An omission is indistinguishable from a job the run never opened, and
+that ambiguity is what let 128 jobs pile up in the queue.
 
 ### `skip`
 
@@ -59,13 +67,31 @@ A real job posting that you would not pursue. The most common cases:
 - A stack with no mobile component at all (pure backend, data, DevOps, QA)
 
 `skip` is a judgment about fit. It is never a fallback for "I could not tell" —
-that is what leaving a job unlabeled is for.
+that is what `passed` is for.
 
 ### `not_a_job`
 
 Not a job posting at all: newsletters, platform announcements, event invitations,
 course and certification ads, recruiter-services pitches, digest wrappers that
 carry no individual role. The content, not the sender, decides this.
+
+## Passing a job back
+
+Not a label, and not a judgment about the job. `passed` says the run could not reach
+0.95 confidence — most often because the posting never states a work mode, or has no
+description and a title that is not itself disqualifying.
+
+A passed job **stays in the review queue**, exactly where it was. Nothing hides, nothing
+moves; you label it by hand in the Inbox like any other. The only thing the mark changes
+is that future runs skip it, so the same undecidable rows are not re-read every time.
+
+It carries a mandatory reason saying what could not be settled. It never enters
+`user_label`, is never counted as a label, and never reaches training data. It clears
+only when you label the job, or when someone runs `jobpilot passed-reset` after the
+criteria change.
+
+Use it for postings these criteria do not settle — never as somewhere to put a judgment
+you could have made by reading further.
 
 ## Hard disqualifiers
 
@@ -145,10 +171,10 @@ is `worth_checking` even if it misses one.
 - **Agency and staffing-firm postings for a named client role.** Judge the role,
   not the poster.
 - **No description at all.** A title that is a clear `skip` on seniority or stack
-  needs no remote evidence — label it. Otherwise leave it unlabeled: a bare city in
-  the `location` field says nothing about work mode.
-- **A description that never mentions work mode.** Leave it unlabeled, however long
-  the description is. Absence of the word "remote" in 3,000 words of text is not
+  needs no remote evidence — label it. Otherwise `passed`: a bare city in the
+  `location` field says nothing about work mode.
+- **A description that never mentions work mode.** `passed`, however long the
+  description is. Absence of the word "remote" in 3,000 words of text is not
   evidence of an office requirement — plenty of remote postings never use it.
 - **Perks and platitudes are not work-mode statements.** "A modern office in
   Amsterdam" in a benefits list, "we have 9 offices across Sweden", and "life
@@ -156,7 +182,7 @@ is `worth_checking` even if it misses one.
   last one is arguably the opposite. Look for a statement about where *this role*
   is performed.
 - **"The possibility to work from home" is not a remote policy — and not a
-  disqualifier either. Leave these unlabeled.** The phrase presupposes a default
+  disqualifier either. These are `passed`.** The phrase presupposes a default
   workplace that is not your home, so it leans *against* fully remote; a
   remote-first company writes "remote-first" or "work from anywhere". But it never
   says how much time the office actually claims, and that is the fact the decision
@@ -169,7 +195,7 @@ is `worth_checking` even if it misses one.
   a hard disqualifier: "Hybrid: 2 days Work from Home, 3 days Work from Office".
   37 postings state a split like that, and none of them is remote either. The
   question to ask is whether the posting commits to office time. If it names days,
-  decide it `skip`; if it only dangles the possibility, leave it in the queue.
+  decide it `skip`; if it only dangles the possibility, `passed`.
 - **Never import facts about a company from outside the posting.** "It's a
   consultancy, so it'll be on-site at a client" is a guess. Judge the text.
 - **iOS-only is a negative flag.** Native Android is in; iOS or Swift with no
@@ -185,14 +211,26 @@ turning into training data.
 
 Reserve confidence at or above 0.95 for judgments a hard disqualifier or an
 unambiguous title decides. Anything that hinges on reading intent out of a vague
-description belongs below the floor — it will be rejected, the job will stay in
-the queue, and you can decide it by hand.
+description belongs below the floor — say `passed` and hand it over, rather than
+stating a confidence you do not have.
+
+The floor does not apply to `passed` itself, which is the uncertainty being declared
+rather than a judgment being offered. State a reason instead; a hand-back without one
+is refused.
 
 ## When the criteria change
 
-Editing this file does not touch any label already written. To re-label under new
-criteria: `jobpilot label-revert --source assistant`, then run the batch again.
-Hand-clicked labels are never affected by a revert.
+Editing this file does not touch any label already written, and it does not clear a
+hand-back either. To re-label under new criteria:
+`jobpilot label-revert --source assistant`, then run the batch again. To give the jobs a
+previous run passed over a fresh look: `jobpilot passed-reset`. Neither command touches
+the other's rows, and hand-clicked labels are never affected by either.
+
+Neither clears your **cancelled labels**. When you cancel a label, that verdict is
+recorded permanently and no run may reach it again on that job — a run that does is told
+to stop and report the conflict, because it means these criteria still encode the
+mistake. Only applying that label by hand clears the record, since that is you changing
+your mind.
 
 The one exception is `--force`, which overwrites an existing label *and* takes
 ownership of it: a hand-clicked label overwritten by a forced run becomes an

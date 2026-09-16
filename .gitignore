@@ -57,5 +57,8 @@ docs/*
 docs/specs/*
 !docs/specs/SPEC_TEMPLATE.md
 # The labeling criteria decide what every bulk label means, so they are versioned
-# alongside the code that reads them — a local-only copy has no history.
+# alongside the code that reads them — a local-only copy has no history. The same goes
+# for the run procedure: .claude/commands/label-queue.md is tracked and points at it, so
+# an untracked copy would leave a fresh clone following a link to nothing.
 !docs/labeling-criteria.md
+!docs/labeling-prompt.md

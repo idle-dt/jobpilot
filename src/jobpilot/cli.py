@@ -172,13 +172,34 @@ def _open_repo():
     return conn, Repository(conn)
 
 
+def _echo_ids(label: str, ids: list[int]) -> None:
+    """Print a labelled id list, truncated so a large run stays readable."""
+    from jobpilot.services.label_service import MAX_LISTED_IDS
+
+    shown = ids[:MAX_LISTED_IDS]
+    hidden = len(ids) - len(shown)
+    more = f", … (+{hidden} more)" if hidden else ""
+    click.echo(f"{label}: {len(ids)} — {', '.join(str(i) for i in shown)}{more}")
+
+
 def _echo_run(run, verb: str) -> None:
-    """Print a one-line summary of a bulk run plus its audit log path."""
+    """Print a one-line summary of a bulk run, its coverage, and its audit log path."""
     prefix = "Dry run — nothing written. " if run.dry_run else ""
+    passed = f", {run.passed} passed to you" if run.passed else ""
+    tracked = f", {run.tracked} tracked" if run.tracked else ""
     click.echo(
-        f"{prefix}{verb}: {run.applied} applied, {run.rejected} rejected"
-        f" ({run.below_threshold} below threshold)"
+        f"{prefix}{verb}: {run.applied} applied{passed}{tracked},"
+        f" {run.rejected} rejected ({run.below_threshold} below threshold)"
     )
+    if run.queue_size:
+        if run.unaccounted:
+            _echo_ids(f"Coverage: {run.queue_size} in queue — unaccounted", run.unaccounted)
+        else:
+            click.echo(f"Coverage: {run.queue_size} in queue — all accounted for")
+    if run.conflicts:
+        _echo_ids(
+            "Rules need updating — produced labels you already cancelled", run.conflicts,
+        )
     click.echo(f"Audit log: {run.log_path}")
 
 
@@ -237,4 +258,42 @@ def label_revert(source: str, dry_run: bool) -> None:
     conn, repo = _open_repo()
     run = LabelBatchService(repo, settings.db_path.parent).revert(source, dry_run)
     _echo_run(run, f"Cleared '{source}' labels")
+    conn.close()
+
+
+@cli.command("label-export")
+@click.option(
+    "--output", "output_path", required=True, type=click.Path(),
+    help="Where to write the queue JSON a labeling run reads.",
+)
+def label_export(output_path: str) -> None:
+    """Write every job awaiting a verdict as JSON, with the labels you have cancelled.
+
+    This is the tool-neutral entry point: an agent needs no SQL and no knowledge of
+    which columns define the queue. See docs/labeling-prompt.md.
+    """
+    import json
+    from pathlib import Path
+
+    conn, repo = _open_repo()
+    rows = repo.export_rows()
+    target = Path(output_path)
+    target.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+    click.echo(f"Exported {len(rows)} job(s) to {target}")
+    conn.close()
+
+
+@cli.command("passed-reset")
+@click.option("--dry-run", is_flag=True, help="Report what would be cleared, write nothing.")
+def passed_reset(dry_run: bool) -> None:
+    """Clear every hand-back so the next run reconsiders those jobs.
+
+    Run this after rewriting docs/labeling-criteria.md: jobs passed over under the old
+    rules deserve a fresh look under the new ones. Labels are never touched.
+    """
+    from jobpilot.services.label_service import LabelBatchService
+
+    conn, repo = _open_repo()
+    run = LabelBatchService(repo, settings.db_path.parent).reset_passed(dry_run)
+    _echo_run(run, "Cleared hand-backs")
     conn.close()
