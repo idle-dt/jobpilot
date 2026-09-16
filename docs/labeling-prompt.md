@@ -62,6 +62,10 @@ Every job in the export must end as one of four outcomes:
 | `not_a_job` | Not a job posting at all |
 | `passed` | **You are under 0.95 confident.** Hand it back |
 
+A posting that states no work mode is **not** automatically `passed` — see *When the
+posting says nothing about work mode* in the criteria. A generic title is `skip`; only a
+Flutter/Dart or mobile-lead title is handed back.
+
 `passed` is not a label and is not a judgment about the job — it says your confidence was
 too low, and the user will decide it themselves in the Inbox. Use it rather than guessing,
 and rather than leaving the job out of the file.
