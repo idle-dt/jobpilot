@@ -399,6 +399,60 @@ table {
     border-color: var(--ink);
 }
 
+/* ── History ───────────────────────────────────────────────── */
+.history-lede {
+    color: var(--slate);
+    font-size: 0.85rem;
+    max-width: 62ch;
+    margin-bottom: 1rem;
+}
+
+.history-table td {
+    vertical-align: top;
+}
+
+.history-company,
+.history-date {
+    color: var(--slate);
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.history-reason {
+    color: var(--slate);
+    font-size: 0.8rem;
+    max-width: 34ch;
+}
+
+/* Outcome of a cancel, swapped in place of the label button. */
+.cancel-done {
+    color: var(--slate);
+    font-size: 0.78rem;
+    font-style: italic;
+}
+
+/* A cancel that was refused to protect data the user entered. The job keeps its
+   label, so this reads as an explanation rather than an error. */
+.cancel-refused {
+    color: var(--slate);
+    font-size: 0.78rem;
+    line-height: 1.3;
+    display: inline-block;
+    max-width: 30ch;
+}
+
+.history-pager {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.history-pager-pos {
+    color: var(--slate);
+    font-size: 0.78rem;
+}
+
 /* ── Buttons — primary (ink pill) / secondary (outlined pill) ─ */
 .btn-link {
     display: inline-block;

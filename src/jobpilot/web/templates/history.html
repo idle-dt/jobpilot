@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}History — JobPilot{% endblock %}
+
+{% block content %}
+<div class="heading-row">
+    <h2>History</h2>
+    <div class="sort-controls">
+        {% for value, caption in chips %}
+        <a href="/history?view={{ value }}"
+           class="sort-btn {% if page.view == value %}sort-active{% endif %}">{{ caption }}</a>
+        {% endfor %}
+    </div>
+</div>
+
+<p class="history-lede">
+    {% if page.view == not_job_view %}
+    Mail the ingest rules rejected before it ever became a job, with the rule that fired.
+    Restoring one sends it back through classification on the next sync.
+    {% else %}
+    Every label in effect, newest first. Cancelling one clears the label, removes its
+    Tracker entry, and stops future labeling runs reaching the same verdict again.
+    {% endif %}
+    <strong>{{ page.total }}</strong> total.
+</p>
+
+{% if not page.rows %}
+<div class="empty-state">
+    <p>Nothing here yet.</p>
+</div>
+{% else %}
+<div class="exp-table-wrap">
+    <table class="exp-table history-table">
+        <thead>
+            <tr>
+                <th>{% if page.view == not_job_view %}Subject{% else %}Job{% endif %}</th>
+                <th>{% if page.view == not_job_view %}Platform{% else %}Company{% endif %}</th>
+                <th>{% if page.view == not_job_view %}Rule{% else %}Label{% endif %}</th>
+                <th>Why</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in page.rows %}
+        <tr id="history-{{ row.id }}">
+            <td class="exp-item-title">
+                {%- if row.url and row.url.startswith(('http://', 'https://')) -%}
+                <a href="{{ row.url }}" target="_blank" rel="noopener noreferrer">{{ row.title }}</a>
+                {%- else -%}{{ row.title }}{%- endif -%}
+            </td>
+            <td class="history-company">{{ row.company or '—' }}</td>
+            <td hx-target="#history-{{ row.id }} .history-action" hx-swap="innerHTML">
+                <span class="history-action">
+                {% if page.view == not_job_view %}
+                    <button class="badge badge-label-undo badge-ml-neg"
+                            hx-post="/api/history/restore-email/{{ row.id }}"
+                            title="Restore — the next sync reclassifies this mail">{{ row.non_job_rule or 'rejected' }} <span class="undo-x">&times;</span></button>
+                {% else %}
+                    <button class="badge badge-label-undo {% if row.user_label == 'worth_checking' %}badge-ml-pos{% else %}badge-ml-neg{% endif %}"
+                            hx-post="/api/history/cancel/{{ row.id }}"
+                            title="Cancel this label">{{ row.user_label | replace('_', ' ') }} <span class="undo-x">&times;</span></button>
+                    {% if row.label_source == 'assistant' %}
+                    <span class="badge badge-assistant" title="Written by a labeling run, not clicked. Not an ML prediction.">assistant</span>
+                    {% endif %}
+                {% endif %}
+                </span>
+            </td>
+            <td class="history-reason">{{ row.label_reason or '—' }}</td>
+            <td class="history-date">{{ row.labeled_at[:10] if row.labeled_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if page.pages > 1 %}
+<div class="history-pager">
+    {% if page.page > 1 %}
+    <a href="/history?view={{ page.view }}&amp;page={{ page.page - 1 }}" class="sort-btn">&larr; Previous</a>
+    {% endif %}
+    <span class="history-pager-pos">Page {{ page.page }} of {{ page.pages }}</span>
+    {% if page.page < page.pages %}
+    <a href="/history?view={{ page.view }}&amp;page={{ page.page + 1 }}" class="sort-btn">Next &rarr;</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

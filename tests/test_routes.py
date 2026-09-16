@@ -25,23 +25,28 @@ def test_inbox_invalid_sort_falls_back(authed_client: FlaskClient) -> None:
     assert authed_client.get("/?sort=bogus").status_code == 200
 
 
-def test_emails_page_renders(authed_client: FlaskClient) -> None:
-    """The classified-emails list renders on an empty database."""
-    assert authed_client.get("/emails").status_code == 200
+def test_history_page_renders(authed_client: FlaskClient) -> None:
+    """The history list renders on an empty database."""
+    assert authed_client.get("/history").status_code == 200
 
 
-def test_emails_not_job_related_view_renders(authed_client: FlaskClient) -> None:
+def test_history_not_job_related_view_renders(authed_client: FlaskClient) -> None:
     """Rejected mail is reachable under its own filter, labelled as such."""
-    resp = authed_client.get("/emails?view=not_job_related")
+    resp = authed_client.get("/history?view=not_job_related")
     assert resp.status_code == 200
     assert b"Not Job Related" in resp.data
 
 
-def test_emails_invalid_view_falls_back(authed_client: FlaskClient) -> None:
+def test_history_invalid_view_falls_back(authed_client: FlaskClient) -> None:
     """A view outside the allowlist renders the default list, not an error."""
-    resp = authed_client.get("/emails?view=bogus")
+    resp = authed_client.get("/history?view=bogus")
     assert resp.status_code == 200
-    assert b"Classified Emails" in resp.data
+    assert b"History" in resp.data
+
+
+def test_emails_page_is_gone(authed_client: FlaskClient) -> None:
+    """The Emails tab was replaced by History; its route no longer exists."""
+    assert authed_client.get("/emails").status_code == 404
 
 
 def test_settings_page_renders(authed_client: FlaskClient) -> None:

@@ -98,24 +98,6 @@ class EmailRepository:
             row = self.conn.execute(base).fetchone()
         return row["cnt"]
 
-    def get_emails_classified(
-        self, classification: str | None = None, limit: int = 50, offset: int = 0
-    ) -> list[Email]:
-        """Get classified emails, optionally filtered by classification."""
-        if classification:
-            rows = self.conn.execute(
-                """SELECT * FROM emails WHERE final_classification = ?
-                ORDER BY received_at DESC LIMIT ? OFFSET ?""",
-                (classification, limit, offset),
-            ).fetchall()
-        else:
-            rows = self.conn.execute(
-                """SELECT * FROM emails WHERE processed = TRUE
-                ORDER BY received_at DESC LIMIT ? OFFSET ?""",
-                (limit, offset),
-            ).fetchall()
-        return [self._row_to_email(r) for r in rows]
-
     def update_email_scores(
         self, email_id: str, raw_score: float, ml_score: float | None,
         classification: str, confidence: float | None
@@ -147,6 +129,25 @@ class EmailRepository:
             "UPDATE emails SET is_job_related = FALSE, processed = TRUE,"
             " non_job_rule = ? WHERE id = ?",
             (rule, email_id),
+        )
+        self.conn.commit()
+
+    def count_emails_not_job_related(self) -> int:
+        """Count the emails the pipeline rejected as non-job mail."""
+        return self.conn.execute(
+            "SELECT COUNT(*) AS cnt FROM emails WHERE is_job_related = FALSE",
+        ).fetchone()["cnt"]
+
+    def restore_email(self, email_id: str) -> None:
+        """Undo a non-job rejection so the next sync reclassifies the mail.
+
+        Clearing ``processed`` is what puts it back in the pipeline; clearing the rule
+        stops the UI still naming a verdict that no longer applies.
+        """
+        self.conn.execute(
+            "UPDATE emails SET is_job_related = TRUE, processed = FALSE,"
+            " non_job_rule = NULL WHERE id = ?",
+            (email_id,),
         )
         self.conn.commit()
 

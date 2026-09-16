@@ -4,6 +4,7 @@ import sqlite3
 
 from jobpilot.storage.app_repo import ApplicationRepository
 from jobpilot.storage.email_repo import EmailRepository
+from jobpilot.storage.history_repo import HistoryRepository
 from jobpilot.storage.job_repo import JobRepository
 from jobpilot.storage.label_repo import USER_SOURCE, LabelRepository
 from jobpilot.storage.ml_repo import MLRepository
@@ -29,6 +30,7 @@ class Repository:
         self.emails = EmailRepository(conn)
         self.jobs = JobRepository(conn)
         self.labels = LabelRepository(conn)
+        self.history = HistoryRepository(conn)
         self.apps = ApplicationRepository(conn)
         self.ml = MLRepository(conn)
         self.preferences = PreferenceRepository(conn)
@@ -54,14 +56,6 @@ class Repository:
         self, classification: str | None = None,
     ) -> int:
         return self.emails.count_emails_for_review(classification)
-
-    def get_emails_classified(
-        self, classification: str | None = None,
-        limit: int = 50, offset: int = 0,
-    ) -> list[Email]:
-        return self.emails.get_emails_classified(
-            classification, limit, offset,
-        )
 
     def get_emails_not_job_related(
         self, limit: int = 50, offset: int = 0,
@@ -161,6 +155,12 @@ class Repository:
 
     def passed_job_ids(self) -> list[int]:
         return self.labels.passed_job_ids()
+
+    def count_emails_not_job_related(self) -> int:
+        return self.emails.count_emails_not_job_related()
+
+    def restore_email(self, email_id: str) -> None:
+        return self.emails.restore_email(email_id)
 
     def update_scraped_job_scores(
         self, job_id: int, score: float,
