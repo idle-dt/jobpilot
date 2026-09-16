@@ -35,12 +35,28 @@ jobs fall in the first and last bucket of the chart. Fix by computing the cutoff
 
 ### Bulk labeling leaves most of the queue undecided by design
 
-The corrected `docs/labeling-criteria.md` treats a posting that never states its work mode
-as unlabeled rather than `skip`. On the first 50 jobs that left 20 undecided — mostly
-Swedish and Dutch Android roles whose descriptions simply never mention remote. They are
-correct outcomes, not gaps, but it means a bulk run clears far less of the queue than its
-size suggests. Revisit only if a later sample shows the postings do state work mode
-somewhere the two-pass read is missing.
+**Resolved** by [ADR-018](decisions/records/018-hand-back-and-rejection-record.md) and
+[ADR-019](decisions/records/019-deciding-postings-that-state-no-work-mode.md). A run now
+accounts for every job it is given and reports what it dropped, and a posting with no
+work-mode evidence is decided by title strength rather than always handed back: generic
+title `skip` (matching 207 of 209 of the user's own labels), Flutter/Dart or mobile-lead
+title `passed`.
+
+The rule is written but has not yet been applied to the standing backlog — a run under it
+should clear roughly 93 of the 114 outstanding hand-backs.
+
+### The review queue re-decides duplicate postings from scratch
+
+Rows in the queue share descriptions: the same posting listed once per city, or once with
+a description and once without. `5124` and `5312` are the same job ("Flutter App
+Developer", Corporate Tools, Post Falls ID) — one has no description, the other has 3,981
+characters — so they were handed back for *different* reasons on identical work. 22 of the
+114 outstanding hand-backs collapse to 7 distinct postings.
+
+Every labeling run reads all of them independently and can reach different answers for the
+same text, so this costs accuracy as well as time. Grouping by title+company (or a
+description hash) and deciding once per group would fix both. Glassdoor content-dedup does
+not catch these because the rows come from different sources with different URLs.
 
 ### Recent-labels lists sort three timestamp formats as raw strings
 
@@ -59,13 +75,6 @@ no data risk. Sorting on `datetime(...)` in SQL, or parsing before the sort, wou
 - **[SPEC_scorer_precision.md](specs/SPEC_scorer_precision.md)** — research + fix for the
   rule scorer's 7.7% precision: 0.65 of the weight sits on non-discriminating features,
   and a no-evidence posting starts at 0.275 against a 0.6 threshold.
-- **[SPEC_labeling_contract.md](specs/SPEC_labeling_contract.md)** — a run must account for
-  every job it is given, hand back what it cannot decide at 0.95 confidence, and be barred
-  from re-applying a label the user cancelled. Also moves bulk `worth_checking` into the
-  Tracker and decouples the flow from Claude.
-- **[SPEC_history_page.md](specs/SPEC_history_page.md)** — a History page where every label
-  can be seen and cancelled, replacing the Emails tab. A cancel untracks the job, records
-  the rejection, and is refused outright if the Tracker entry carries your own data.
 
 ## Tech Debt
 
