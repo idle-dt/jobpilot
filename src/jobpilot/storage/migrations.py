@@ -341,6 +341,7 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
 
     _add_label_source(conn)
     _add_label_reason(conn)
+    _add_ai_passed_columns(conn)
     add_non_job_rule_column(conn)
 
 
@@ -358,6 +359,26 @@ def _add_label_source(conn: sqlite3.Connection) -> None:
         "UPDATE scraped_jobs SET label_source = ? WHERE user_label IS NOT NULL",
         (USER_SOURCE,),
     )
+    conn.commit()
+
+
+# Columns recording that a run read a job and was under the confidence floor, handing it
+# to the user. Not a label and not a state the user sees: the job stays in the Inbox
+# exactly as before, and the flag only excludes it from future exports.
+_AI_PASSED_COLUMNS = ("ai_passed_at", "ai_passed_reason")
+
+
+def _add_ai_passed_columns(conn: sqlite3.Connection) -> None:
+    """Add the pass columns to scraped_jobs, leaving every existing row unpassed.
+
+    Nothing is backfilled. The old workflow expressed the same idea by omitting a job
+    from its input file, which left no trace on the row to migrate.
+    """
+    job_cols = {row[1] for row in conn.execute("PRAGMA table_info(scraped_jobs)").fetchall()}
+    # Only the literal names above are interpolated; ALTER TABLE cannot bind an identifier.
+    for name in _AI_PASSED_COLUMNS:
+        if name not in job_cols:
+            conn.execute(f"ALTER TABLE scraped_jobs ADD COLUMN {name} TEXT")
     conn.commit()
 
 

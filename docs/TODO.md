@@ -56,7 +56,13 @@ no data risk. Sorting on `datetime(...)` in SQL, or parsing before the sort, wou
 
 ## In Progress
 
-(none)
+- **[SPEC_scorer_precision.md](specs/SPEC_scorer_precision.md)** — research + fix for the
+  rule scorer's 7.7% precision: 0.65 of the weight sits on non-discriminating features,
+  and a no-evidence posting starts at 0.275 against a 0.6 threshold.
+- **[SPEC_labeling_contract.md](specs/SPEC_labeling_contract.md)** — a run must account for
+  every job it is given, hand back what it cannot decide at 0.95 confidence, and be barred
+  from re-applying a label the user cancelled. Also moves bulk `worth_checking` into the
+  Tracker and decouples the flow from Claude.
 
 ## Tech Debt
 
