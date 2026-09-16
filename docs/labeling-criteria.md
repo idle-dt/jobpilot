@@ -47,14 +47,14 @@ office days, an explicit "onsite" on the location line. A city sitting in the
 location field is **not** such a statement: most postings name a city regardless of
 work mode.
 
-So a posting whose title matches and which never says where the work happens is
-**`passed`** — handed to the user, who decides it in the Inbox. Not `skip`, not
-`worth_checking`: guessing from a city name once put 10 Android roles into `skip` on no
-evidence at all, which is the failure this rule exists to prevent.
+A posting that never says where the work happens is decided by **title strength** —
+see *When the posting says nothing about work mode* below. A generic title is `skip`; a
+Flutter/Dart or mobile-lead title is `passed`, because that is where the user's own
+labels genuinely split.
 
-Record it as an explicit `passed` entry carrying a reason, never by omitting the job
-from the file. An omission is indistinguishable from a job the run never opened, and
-that ambiguity is what let 128 jobs pile up in the queue.
+Whichever way it falls, record it as an explicit entry carrying a reason, never by
+omitting the job from the file. An omission is indistinguishable from a job the run
+never opened, and that ambiguity is what let 128 jobs pile up in the queue.
 
 ### `skip`
 
