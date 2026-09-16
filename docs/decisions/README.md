@@ -34,3 +34,4 @@ The decision records live in [`records/`](records/). The template for new ADRs i
 | 016 | [Scoring features read user preferences; noise features stay hardcoded](records/016-split-feature-basis.md) | accepted | ml, classification, storage |
 | 017 | [Machine-authored labels share the label column, tagged by provenance](records/017-label-provenance-and-training-gate.md) | accepted | ml, classification, storage, process |
 | 018 | [Hand-backs and the rejection record](records/018-hand-back-and-rejection-record.md) | accepted | ml, database, labeling |
+| 019 | [Deciding postings that state no work mode](records/019-deciding-postings-that-state-no-work-mode.md) | accepted | classification, labeling, process |

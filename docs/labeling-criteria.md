@@ -104,10 +104,9 @@ Any one of these makes the answer `skip` on its own, without reading further:
   from Office") disqualifies, while a bare "possibility to work from home" decides
   nothing. See the ambiguous cases below before acting on either.
 - **Seniority below mid** — junior, intern, entry-level, graduate, working student
-- **No sponsorship where sponsorship is needed** — "no visa sponsorship",
-  "must already have work authorization", "must be located in \<country\>" for a
-  country you are not in
-- **Geographically restricted beyond your eligibility** — "US only" / "USA only"
+- **Requires physical presence outside Ukraine** — see *Where the work happens*
+  below. This replaces the older "no sponsorship" and "US only" clauses, which asked
+  about eligibility the file never recorded and so could never be applied.
 - **Security clearance required**
 - **Unpaid, equity-only, or volunteer**
 
@@ -132,6 +131,80 @@ specific: a bare "hybrid" would also match "hybrid app", "hybrid mobile" and
 does not solve it.** For anything phrased unusually — "3 days from the Berlin hub",
 "office-first culture" — this document is still the only thing rejecting it, and
 reading the posting is still the job.
+
+## Where the work happens
+
+**You are located in Ukraine, and you can work for a company anywhere.** The company's
+own country is therefore *never* a disqualifier on its own. A US, Portuguese or
+Australian company hiring fully remote with no location requirement is exactly as
+eligible as a Ukrainian one, and a US address in the `location` field says nothing by
+itself.
+
+What you cannot do is **be physically somewhere that is not Ukraine**. So a posting is
+`skip` when it requires presence elsewhere, however it phrases it:
+
+- On-site or hybrid at an office in any country but Ukraine — "hybrid opportunity for
+  candidates from our Seattle, San Francisco, or Detroit offices"
+- A stated residency requirement — "You are based in the United States", "must be
+  located in \<country\>", "US only" / "USA only"
+- Remote, but fenced to one country — "100% Remote - Portugal", "Remote Eligible in
+  Bulgaria". Remote that names a country you are not in is still a presence requirement
+
+And it is **not** `skip` merely because:
+
+- The company, its HQ or its other offices are abroad — "Based in Portugal, Wire IT is
+  your specialized IT consulting partner" describes the *company*, not the candidate
+- Pay is quoted in a foreign currency, or varies by the employee's location
+- The `location` field names a foreign city while the body states remote with no
+  residency requirement
+
+When a posting states remote and names no country the candidate must live in, treat the
+work mode as settled and judge it on stack and seniority like any other. When it states
+remote *and* fences it to a country, that is a decision, not an ambiguity — `skip`.
+
+## When the posting says nothing about work mode
+
+The rule below replaces an earlier one. This file used to say that a posting which never
+states a work mode is always handed back, on the reasoning that guessing from a city name
+once put 10 Android roles into `skip` on no evidence at all. That caution was measured
+against the user's own 599 hand-clicked labels and found to be costing far more than it
+saved — **but only for part of the queue**, which is why the rule splits.
+
+Of the postings with **no work-mode evidence** — either no description at all, or a
+description that never says remote, hybrid, on-site or a number of office days:
+
+| Title | The user chose `skip` | chose `worth_checking` | |
+|---|---|---|---|
+| **Generic** | 207 | 2 | **99.0% skip** |
+| **Strong** | 18 | 11 | 62% — a real coin-flip |
+
+So:
+
+- **Generic title, no work-mode evidence → `skip`.** At 207 of 209 this clears the 0.95
+  floor comfortably. "Senior Software Engineer", "Full Stack Software Engineer", "Staff
+  Engineer", "Software Engineer II" with nothing else to go on are not roles the user
+  pursues, and 128 of them accumulating in the queue helped nobody.
+- **Strong title, no work-mode evidence → `passed`.** A title naming **Flutter or Dart**,
+  or an **engineering-manager / head-of-mobile / mobile-lead** role, is where the user
+  genuinely splits. Guessing here is exactly the failure the old rule existed to prevent,
+  so these still go to them.
+
+Two things make the `skip` half safe now that were not true when the old rule was
+written. A wrong `skip` is **recoverable**: it appears in History with a cancel button,
+and cancelling returns the job to the Inbox *and* bars a run from repeating it. And the
+rule **refuses to guess where guessing is actually hard**, rather than applying one
+policy to both halves.
+
+The honest caveat: those 207 skips are the user's own clicks on the same evidence, so
+this is revealed preference, not ground truth. If they were skimming and skipping by
+default, the rule inherits that habit. The strong-title half is where it would matter,
+and that half still comes to them.
+
+**This rule needs work-mode evidence to be genuinely absent.** A posting that *does* state
+its work mode is decided by *Where the work happens* above, whatever its title. And
+"Remote Config", "remote access", "hybrid applications" and "a hybrid role combining
+hands-on development and product work" are **not** work-mode statements — see the
+ambiguous cases below.
 
 ## Soft preferences
 
@@ -171,11 +244,13 @@ is `worth_checking` even if it misses one.
 - **Agency and staffing-firm postings for a named client role.** Judge the role,
   not the poster.
 - **No description at all.** A title that is a clear `skip` on seniority or stack
-  needs no remote evidence — label it. Otherwise `passed`: a bare city in the
-  `location` field says nothing about work mode.
-- **A description that never mentions work mode.** `passed`, however long the
-  description is. Absence of the word "remote" in 3,000 words of text is not
-  evidence of an office requirement — plenty of remote postings never use it.
+  needs no remote evidence — label it. Otherwise decide it by title under *When the
+  posting says nothing about work mode*: a bare city in the `location` field says
+  nothing about work mode either way.
+- **A description that never mentions work mode.** Absence of the word "remote" in
+  3,000 words of text is not evidence of an office requirement — plenty of remote
+  postings never use it. Decide it by title under *When the posting says nothing about
+  work mode*: generic title `skip`, strong title `passed`.
 - **Perks and platitudes are not work-mode statements.** "A modern office in
   Amsterdam" in a benefits list, "we have 9 offices across Sweden", and "life
   doesn't pause when you walk into the office" are not office requirements. The
