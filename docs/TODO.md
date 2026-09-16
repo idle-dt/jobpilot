@@ -63,6 +63,9 @@ no data risk. Sorting on `datetime(...)` in SQL, or parsing before the sort, wou
   every job it is given, hand back what it cannot decide at 0.95 confidence, and be barred
   from re-applying a label the user cancelled. Also moves bulk `worth_checking` into the
   Tracker and decouples the flow from Claude.
+- **[SPEC_history_page.md](specs/SPEC_history_page.md)** — a History page where every label
+  can be seen and cancelled, replacing the Emails tab. A cancel untracks the job, records
+  the rejection, and is refused outright if the Tracker entry carries your own data.
 
 ## Tech Debt
 

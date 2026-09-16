@@ -15,11 +15,22 @@ from flask import (
 )
 
 from jobpilot.config import settings
+from jobpilot.services.cancel_service import CancelService
+from jobpilot.services.history_service import (
+    DEFAULT_VIEW as DEFAULT_HISTORY_VIEW,
+)
+from jobpilot.services.history_service import (
+    VALID_VIEWS as VALID_HISTORY_VIEWS,
+)
+from jobpilot.services.history_service import (
+    VIEW_CHIPS,
+    VIEW_NOT_JOB_RELATED,
+    HistoryService,
+)
 from jobpilot.services.inbox_service import (
     DEFAULT_SORT,
     VALID_SORTS,
     InboxService,
-    sort_signals,
 )
 from jobpilot.services.ml_export_service import VALID_MODEL_TYPES, MLExportService
 from jobpilot.storage.models import UserFeedback
@@ -32,14 +43,8 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("main", __name__)
 
 # --- Route constants ---
-EMAILS_PER_PAGE = 50
-
-# Allowlisted values for /emails?view. "not_job_related" lists the mail the
-# pipeline rejected as account, billing or promotional — nothing is deleted, so
-# a wrong rejection stays reachable alongside the rule that caused it.
-EMAILS_VIEW_ALL = "all"
-EMAILS_VIEW_NOT_JOB = "not_job_related"
-VALID_EMAIL_VIEWS = (EMAILS_VIEW_ALL, EMAILS_VIEW_NOT_JOB)
+# History's views and paging live in history_service, so the allowlist the route
+# validates against and the predicates the repository runs cannot drift apart.
 
 
 def _repo() -> Repository:
@@ -72,34 +77,20 @@ def inbox():
     )
 
 
-@bp.route("/emails")
-def emails_list():
-    """All classified emails with filters."""
-    repo = _repo()
-    classification = request.args.get("classification")
-    view = request.args.get("view", EMAILS_VIEW_ALL)
-    if view not in VALID_EMAIL_VIEWS:
-        view = EMAILS_VIEW_ALL
+@bp.route("/history")
+def history():
+    """Every label in effect, newest first, with the mail the ingest rules rejected."""
     try:
         page = max(1, int(request.args.get("page", 1)))
     except (ValueError, TypeError):
         page = 1
-    per_page = EMAILS_PER_PAGE
-    offset = (page - 1) * per_page
-
-    if view == EMAILS_VIEW_NOT_JOB:
-        classification = None
-        emails = repo.get_emails_not_job_related(limit=per_page, offset=offset)
-    else:
-        emails = repo.get_emails_classified(
-            classification=classification, limit=per_page, offset=offset
-        )
-    for email in emails:
-        email.signals = sort_signals(repo.get_signals_for_email(email.id))
-
+    view = request.args.get("view", DEFAULT_HISTORY_VIEW)
+    if view not in VALID_HISTORY_VIEWS:
+        view = DEFAULT_HISTORY_VIEW
+    result = HistoryService(_repo()).build_page(view, page)
     return render_template(
-        "emails.html", emails=emails, classification=classification,
-        view=view, page=page,
+        "history.html", page=result, chips=VIEW_CHIPS,
+        not_job_view=VIEW_NOT_JOB_RELATED,
     )
 
 
@@ -165,12 +156,38 @@ def submit_scraped_feedback(job_id: int):
 
 @bp.route("/api/feedback/scraped/<int:job_id>/undo", methods=["POST"])
 def undo_scraped_feedback(job_id: int):
-    """Revert user feedback on a scraped job."""
-    repo = _repo()
-    repo.update_scraped_job_label(job_id, None)
+    """Undo a just-made label on a scraped job.
+
+    An undo is a misclick affordance, so it records no rejection and leaves a future run
+    free to decide the job on its merits. It does remove the Tracker entry the label
+    created, which a bare label-clear used to leave stranded.
+    """
+    result = CancelService(_repo()).cancel(job_id, record_rejection=False)
+    if result.refusal:
+        return render_template("partials/cancel_refused.html", refusal=result.refusal)
     response = make_response(render_template("partials/feedback_undone.html"))
     response.headers["HX-Trigger"] = "reviewCountChanged"
     return response
+
+
+@bp.route("/api/history/cancel/<int:job_id>", methods=["POST"])
+def cancel_label(job_id: int):
+    """Cancel a label from History: untrack it and bar runs from reaching it again."""
+    result = CancelService(_repo()).cancel(job_id, record_rejection=True)
+    if result.refusal:
+        return render_template("partials/cancel_refused.html", refusal=result.refusal)
+    response = make_response(render_template("partials/cancel_done.html"))
+    response.headers["HX-Trigger"] = "reviewCountChanged"
+    return response
+
+
+@bp.route("/api/history/restore-email/<email_id>", methods=["POST"])
+def restore_email(email_id: str):
+    """Undo a non-job rejection so the next sync reclassifies the mail."""
+    if not _validate_email_id(email_id):
+        return "Invalid email ID", 400
+    _repo().restore_email(email_id)
+    return render_template("partials/cancel_done.html")
 
 
 @bp.route("/api/scraped/<int:job_id>/expired", methods=["POST"])
