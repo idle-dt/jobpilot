@@ -75,9 +75,6 @@ no data risk. Sorting on `datetime(...)` in SQL, or parsing before the sort, wou
 - **[SPEC_scorer_precision.md](specs/SPEC_scorer_precision.md)** — research + fix for the
   rule scorer's 7.7% precision: 0.65 of the weight sits on non-discriminating features,
   and a no-evidence posting starts at 0.275 against a 0.6 threshold.
-- **[SPEC_queue_dedup.md](specs/SPEC_queue_dedup.md)** — decide identical postings once.
-  70 groups covering 168 rows share byte-identical descriptions and are re-decided on
-  every run, already producing contradictory verdicts on the same text.
 
 ## Tech Debt
 
