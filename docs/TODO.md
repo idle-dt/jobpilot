@@ -45,18 +45,18 @@ title `passed`.
 The rule is written but has not yet been applied to the standing backlog — a run under it
 should clear roughly 93 of the 114 outstanding hand-backs.
 
-### The review queue re-decides duplicate postings from scratch
+### A posting stored once with a description and once without is still re-decided
 
-Rows in the queue share descriptions: the same posting listed once per city, or once with
-a description and once without. `5124` and `5312` are the same job ("Flutter App
-Developer", Corporate Tools, Post Falls ID) — one has no description, the other has 3,981
-characters — so they were handed back for *different* reasons on identical work. 22 of the
-114 outstanding hand-backs collapse to 7 distinct postings.
+Byte-identical descriptions are now decided once and the verdict carried to every copy
+(`storage/duplicate_repo.py`), but a copy with *no* description is not grouped: `5124` and
+`5312` are the same job ("Flutter App Developer", Corporate Tools, Post Falls ID) — one has
+no description, the other has 3,981 characters — so they can still be handed back for
+different reasons on identical work. Three rows are in this shape. It needs a different
+rule from identical text, and identical title+company is not safe to use as one: 86 of 116
+such groups span more than one city, where the copies may be genuinely separate openings.
 
-Every labeling run reads all of them independently and can reach different answers for the
-same text, so this costs accuracy as well as time. Grouping by title+company (or a
-description hash) and deciding once per group would fix both. Glassdoor content-dedup does
-not catch these because the rows come from different sources with different URLs.
+Near-identical text (whitespace or boilerplate differences) is unmeasured and also still
+re-decided.
 
 ### Recent-labels lists sort three timestamp formats as raw strings
 
@@ -75,6 +75,9 @@ no data risk. Sorting on `datetime(...)` in SQL, or parsing before the sort, wou
 - **[SPEC_scorer_precision.md](specs/SPEC_scorer_precision.md)** — research + fix for the
   rule scorer's 7.7% precision: 0.65 of the weight sits on non-discriminating features,
   and a no-evidence posting starts at 0.275 against a 0.6 threshold.
+- **[SPEC_queue_dedup.md](specs/SPEC_queue_dedup.md)** — decide identical postings once.
+  70 groups covering 168 rows share byte-identical descriptions and are re-decided on
+  every run, already producing contradictory verdicts on the same text.
 
 ## Tech Debt
 
