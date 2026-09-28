@@ -107,6 +107,10 @@ Any one of these makes the answer `skip` on its own, without reading further:
 - **Requires physical presence outside Ukraine** — see *Where the work happens*
   below. This replaces the older "no sponsorship" and "US only" clauses, which asked
   about eligibility the file never recorded and so could never be applied.
+- **Requires work authorization in a country other than Ukraine** — "must be able to
+  work for any U.S. employer without sponsorship", "valid U.S. work authorization",
+  "autorização legal para trabalhar em Portugal". Treated like a residency requirement:
+  the posting states it, so it no longer needs recording anywhere to be applied.
 - **Security clearance required**
 - **Unpaid, equity-only, or volunteer**
 
@@ -149,6 +153,9 @@ What you cannot do is **be physically somewhere that is not Ukraine**. So a post
   located in \<country\>", "US only" / "USA only"
 - Remote, but fenced to one country — "100% Remote - Portugal", "Remote Eligible in
   Bulgaria". Remote that names a country you are not in is still a presence requirement
+- A stated work-authorization requirement for another country — "Applicants must have
+  valid U.S. work authorization", "will not sponsor a new applicant for employment
+  authorization". A fully remote role that demands it is `skip`, not a hand-back
 
 And it is **not** `skip` merely because:
 
@@ -185,8 +192,10 @@ So:
   Engineer", "Software Engineer II" with nothing else to go on are not roles the user
   pursues, and 128 of them accumulating in the queue helped nobody.
 - **Strong title, no work-mode evidence → `passed`.** A title naming **Flutter or Dart**,
-  or an **engineering-manager / head-of-mobile / mobile-lead** role, is where the user
-  genuinely splits. Guessing here is exactly the failure the old rule existed to prevent,
+  a **mobile or Android** role ("Senior Mobile Engineer", "Android Engineer", "Mobile
+  Developer"), or an **engineering-manager / head-of-mobile / mobile-lead** role, is
+  where the user genuinely splits. An iOS-only or React Native title is not strong — it
+  is already a `skip` on stack. Guessing here is exactly the failure the old rule existed to prevent,
   so these still go to them.
 
 Two things make the `skip` half safe now that were not true when the old rule was
@@ -273,6 +282,10 @@ is `worth_checking` even if it misses one.
   decide it `skip`; if it only dangles the possibility, `passed`.
 - **Never import facts about a company from outside the posting.** "It's a
   consultancy, so it'll be on-site at a client" is a guess. Judge the text.
+- **Unity/C# mobile games are `skip`.** A game studio's mobile titles are built in a
+  game engine, not an app stack; mobile as a *platform* does not make it mobile *core*.
+- **.NET MAUI (and other stacks not named here) are `passed`.** The criteria take no
+  position on them, so the user decides.
 - **iOS-only is a negative flag.** Native Android is in; iOS or Swift with no
   Android and no cross-platform is a `skip`. The asymmetry is deliberate — Android
   counts as mobile core, iOS alone does not.
