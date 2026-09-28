@@ -85,7 +85,7 @@ def _tally(outcomes: list[EntryOutcome], copies: list[EntryOutcome]) -> dict[str
         "rejected": _count(outcomes, OUTCOME_REJECTED),
         "passed": _count(outcomes, OUTCOME_PASSED),
         "below_threshold": sum(1 for o in outcomes if o.reason == REASON_BELOW_THRESHOLD),
-        "covered": _count(copies, OUTCOME_APPLIED),
+        "covered": _count(copies, OUTCOME_APPLIED) + _count(copies, OUTCOME_PASSED),
         "members_refused": _count(copies, OUTCOME_REJECTED),
     }
 
@@ -148,16 +148,14 @@ class LabelBatchService:
         calls because they write different columns and refuse on different grounds: a
         hand-back has no ``force`` and must never override a judgment. Copies ride along
         with the entries they came from, so a group is written in one transaction and
-        each copy is still checked on its own.
+        each copy is still checked on its own. Both kinds fan out together, so a group
+        is never split between a label and a hand-back.
         """
         usable = [p.entry for p in parsed if p.entry and not p.reason]
-        passes = [e for e in usable if e.label == PASSED]
-        batch = fan_out(
-            [e for e in usable if e.label != PASSED],
-            siblings_by_id(self.repo.duplicate_groups()),
-        )
+        batch = fan_out(usable, siblings_by_id(self.repo.duplicate_groups()))
+        passes = [e for e in batch.entries if e.label == PASSED]
         label_result = self.repo.labels.apply_labels(
-            batch.entries, force=force, dry_run=dry_run,
+            [e for e in batch.entries if e.label != PASSED], force=force, dry_run=dry_run,
         )
         pass_result = self.repo.labels.mark_passed(passes, dry_run=dry_run)
         refused = label_result.rejected + pass_result.rejected

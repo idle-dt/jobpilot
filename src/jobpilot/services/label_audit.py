@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from jobpilot.storage.label_repo import LabelEntry
+from jobpilot.storage.label_repo import PASSED, LabelEntry
 
 OUTCOME_APPLIED = "applied"
 OUTCOME_REJECTED = "rejected"
@@ -39,8 +39,9 @@ def copy_outcome(
 ) -> EntryOutcome:
     """Describe one copy written on another row's behalf."""
     reason = reasons.get(entry.job_id)
+    written = OUTCOME_PASSED if entry.label == PASSED else OUTCOME_APPLIED
     return EntryOutcome(
-        outcome=OUTCOME_REJECTED if reason else OUTCOME_APPLIED,
+        outcome=OUTCOME_REJECTED if reason else written,
         reason=reason,
         job_id=entry.job_id,
         label=entry.label,

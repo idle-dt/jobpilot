@@ -248,6 +248,33 @@ def test_a_handed_back_copy_is_written_and_its_hand_back_cleared(
     assert run.covered == 2
 
 
+def test_a_hand_back_reaches_every_copy(repo: Repository, service, tmp_path, trio):
+    """Handing the text back hands every copy back, so none is left unaccounted."""
+    entry = {"id": trio[0], "label": PASSED, "reason": "no work mode"}
+
+    run = _run(service, tmp_path, [entry])
+
+    for job_id in trio:
+        row = _row(repo, job_id)
+        assert row["user_label"] is None and row["ai_passed_at"] is not None
+    assert (run.passed, run.covered, run.unaccounted) == (1, 2, [])
+    logged = [json.loads(line) for line in run.log_path.read_text().splitlines()]
+    assert [e["outcome"] for e in logged] == ["passed"] * 3
+
+
+def test_a_label_and_a_hand_back_cannot_split_one_group(
+    repo: Repository, service, tmp_path, trio,
+):
+    """Whichever entry reaches the group first decides all of it."""
+    passed = {"id": trio[1], "label": PASSED, "reason": "no work mode"}
+
+    run = _run(service, tmp_path, [_entry(trio[0]), passed])
+
+    assert [_row(repo, job_id)["user_label"] for job_id in trio] == [SKIP] * 3
+    assert _row(repo, trio[1])["ai_passed_at"] is None
+    assert (run.applied, run.rejected, run.passed) == (1, 1, 0)
+
+
 def test_a_dry_run_counts_the_copies_and_writes_nothing(
     repo: Repository, service, tmp_path, trio,
 ):

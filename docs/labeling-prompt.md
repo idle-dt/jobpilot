@@ -123,8 +123,9 @@ Rules need updating — produced labels you already cancelled: 3 — 5643, 5670,
 Audit log: …
 ```
 
-- **`covered via duplicates`** — further rows your entries decided, each a copy of a
-  posting you were shown once. They are counted separately from `applied` because they
+- **`covered via duplicates`** — further rows your entries reached, each a copy of a
+  posting you were shown once. A hand-back reaches copies too: passing a posting passes
+  every copy of it. They are counted separately from `applied` because they
   are rows, not entries: 92 entries can cover 115 rows. A copy that already carries a
   label, or whose own label the user cancelled, is left alone and is not counted here.
 - **`tracked`** — how many `worth_checking` jobs became Tracker entries.
