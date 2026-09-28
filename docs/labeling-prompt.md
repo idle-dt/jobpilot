@@ -35,6 +35,10 @@ A JSON array. Each object carries `id`, `title`, `company`, `location`, `url`,
   them anyway, that is a finding: say so in your report to the user, because it means
   `docs/labeling-criteria.md` still encodes the mistake. The tool will refuse the entry
   regardless.
+- **`duplicate_of`** (when present) — other rows holding a byte-identical description.
+  They are not in the file, and **there is nothing for you to do about them**: decide the
+  row you were given, and the verdict is written to every copy. The expansion is
+  recomputed from the database at apply time, so echoing these ids back changes nothing.
 
 Already-labeled jobs, jobs a previous run handed back, and jobs the rule scorer
 auto-skipped are all absent. The file is exactly the work awaiting a verdict.
@@ -91,7 +95,9 @@ One object per line, in `/tmp/labels.jsonl`:
   a hundred rows to read. Put per-job specifics in a reason only when the deciding fact
   genuinely differs — a quoted office requirement, say.
 
-Every `id` in the export must appear exactly once.
+Every `id` in the export must appear exactly once. Do not add entries for ids the export
+did not give you — a copy named in `duplicate_of` is decided for you, and naming it
+yourself only earns a refusal.
 
 ## 5. Preview
 
@@ -111,15 +117,20 @@ PYTHONPATH=src python -m jobpilot label-batch --input /tmp/labels.jsonl
 Read all four output lines:
 
 ```
-Labels: 92 applied, 41 passed to you, 12 tracked, 0 rejected (0 below threshold)
-Coverage: 148 in queue — all accounted for
+Labels: 92 applied, 23 covered via duplicates, 41 passed to you, 12 tracked, 0 rejected (0 below threshold)
+Coverage: 171 in queue — all accounted for
 Rules need updating — produced labels you already cancelled: 3 — 5643, 5670, 6384
 Audit log: …
 ```
 
+- **`covered via duplicates`** — further rows your entries decided, each a copy of a
+  posting you were shown once. They are counted separately from `applied` because they
+  are rows, not entries: 92 entries can cover 115 rows. A copy that already carries a
+  label, or whose own label the user cancelled, is left alone and is not counted here.
 - **`tracked`** — how many `worth_checking` jobs became Tracker entries.
 - **Coverage** must read `all accounted for`. Any listed id is a job you neither labeled
-  nor handed back; go back and account for it, then re-run with just those entries.
+  nor handed back; go back and account for it, then re-run with just those entries. Copies
+  count towards it, which is why the queue size can exceed the number of rows you saw.
 - **Rules need updating** — each id is a job where the criteria produced a verdict the
   user had already cancelled. Nothing was written for it. Report these to the user with
   your reasoning and propose the change to `docs/labeling-criteria.md` that would prevent

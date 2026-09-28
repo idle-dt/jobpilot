@@ -10,6 +10,7 @@ unrelated to ``ml_predictions`` — an assistant label is not a model prediction
 import sqlite3
 from dataclasses import dataclass, field
 
+from jobpilot.storage.duplicate_repo import DuplicateRepository
 from jobpilot.storage.rejection_repo import RejectionRepository
 
 LABEL_VOCABULARY = ("worth_checking", "skip", "not_a_job")
@@ -113,6 +114,7 @@ class LabelRepository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
         self.rejections = RejectionRepository(conn)
+        self.duplicates = DuplicateRepository(conn)
 
     def apply_labels(
         self,
@@ -183,7 +185,8 @@ class LabelRepository:
         """Return a run's input: every job awaiting a verdict, with its cancelled labels.
 
         Shaped for an agent rather than for the UI, so a caller needs no SQL and no
-        knowledge of which columns define the queue.
+        knowledge of which columns define the queue. Copies of one posting are exported
+        once, the kept row naming the rest — see ``DuplicateRepository.collapse``.
         """
         rows = self.conn.execute(
             "SELECT id, title, company, location, url, description"
@@ -191,10 +194,10 @@ class LabelRepository:
         ).fetchall()
         ids = [row["id"] for row in rows]
         rejected = self.job_states(ids)
-        return [
+        return self.duplicates.collapse([
             dict(row, rejected_labels=sorted(rejected[row["id"]].rejected))
             for row in rows
-        ]
+        ])
 
     def review_queue_ids(self) -> list[int]:
         """Return the ids a run must account for, in id order.
