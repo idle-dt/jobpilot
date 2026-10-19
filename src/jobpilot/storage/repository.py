@@ -153,6 +153,9 @@ class Repository:
     def review_queue_ids(self) -> list[int]:
         return self.labels.review_queue_ids()
 
+    def duplicate_groups(self) -> dict[int, list[int]]:
+        return self.labels.duplicates.groups()
+
     def passed_job_ids(self) -> list[int]:
         return self.labels.passed_job_ids()
 

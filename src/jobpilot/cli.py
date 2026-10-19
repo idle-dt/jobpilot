@@ -185,10 +185,11 @@ def _echo_ids(label: str, ids: list[int]) -> None:
 def _echo_run(run, verb: str) -> None:
     """Print a one-line summary of a bulk run, its coverage, and its audit log path."""
     prefix = "Dry run — nothing written. " if run.dry_run else ""
+    covered = f", {run.covered} covered via duplicates" if run.covered else ""
     passed = f", {run.passed} passed to you" if run.passed else ""
     tracked = f", {run.tracked} tracked" if run.tracked else ""
     click.echo(
-        f"{prefix}{verb}: {run.applied} applied{passed}{tracked},"
+        f"{prefix}{verb}: {run.applied} applied{covered}{passed}{tracked},"
         f" {run.rejected} rejected ({run.below_threshold} below threshold)"
     )
     if run.queue_size:
