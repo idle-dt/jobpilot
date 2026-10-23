@@ -19,6 +19,17 @@ exported queue (JSON) and where to write the draft (JSONL).
    wording, an unusual work-mode phrase, or a full-stack split. You are the cheap filter.
    Wrongly passing a job only costs a second look. Wrongly labeling one becomes bad
    training data.
+
+   But a fact the posting states outright is not vague, whatever language it is in or
+   however it is phrased. Decide these yourself:
+   - **A stated office split** names days: "hybrid model with 4 days of remote work",
+     "2 dagen thuiswerk", "1 day per week in the Porto office". That is `skip`.
+   - **Remote fenced to a region or country** that is not Ukraine: "Remote b2b
+     (Georgia-Moldova)", "- LATAM" in the title, "100% Remote - Portugal". That is `skip`.
+
+   Pass only what the criteria themselves call undecided. A bare "possibility to work
+   from home" or "Remote-Optionen" perk is one example; a role offered as office-or-remote
+   with the location listed as foreign cities is another.
 4. Never emit a label listed in a job's `rejected_labels`. If the criteria lead you there,
    pass the job with the reason `criteria point to a cancelled label: <label>`.
 5. **Do not run `label-batch`**, not even with `--dry-run`. The caller applies the draft.

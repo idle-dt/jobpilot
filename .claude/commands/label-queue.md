@@ -32,7 +32,9 @@ the same. After the export (step 1), count the jobs:
   2. **Re-decide every job it passed.** Read each one and either label it at ≥ 0.95 or
      keep it `passed` with your own reason. Your `passed` is the one that goes to the
      user.
-  3. **Spot-check 5 random jobs it labeled.** If you would have decided any of them
+  3. **Spot-check 5 random jobs it labeled**, at least 3 of them decided on a
+     description. Title-only labels are the easy ones and prove little. If fewer than 3
+     such labels exist, take them all. If you would have decided any of the 5
      differently, do not trust the draft. Review every label in it before applying.
   4. Write the merged JSONL, then continue from step 5 (preview). In the report to the
      user, say how many jobs the subagent decided, how many you re-decided, and what the
