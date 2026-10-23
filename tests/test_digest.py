@@ -91,6 +91,23 @@ def test_parse_linkedin_digest_locations():
     assert "Stockholm" in locations
 
 
+def test_parse_linkedin_digest_keeps_dotted_company_suffix():
+    # "B.V." used to count as a sentence end, dropping the company and
+    # shifting the city into the company slot
+    body = (
+        "Mobile App Developer (Kotlin) Trust Smarthome\n"
+        "Trust International B.V.\n"
+        "Dordrecht\n"
+        "View job: https://www.linkedin.com/comm/jobs/view/4422433224/\n"
+        "\n---------------------------------------------------------\n"
+    )
+    [job] = _parse_linkedin_digest(body)
+    assert job["company"] == "Trust International B.V."
+    assert job["location"] == "Dordrecht"
+    assert not _is_boilerplate_line("Stellantis N.V.")
+    assert _is_boilerplate_line("We are hiring.")
+
+
 def test_parse_linkedin_digest_urls_cleaned():
     email = _make_email(LINKEDIN_DIGEST)
     jobs = parse_digest(email)

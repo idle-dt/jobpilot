@@ -63,7 +63,10 @@ _CTA_PHRASES = frozenset({
 _SENTENCE_WORDS = re.compile(r"\b(you|your|when|that|will|we'll|you'll)\b", re.IGNORECASE)
 
 # Abbreviations that legitimately end job titles with a period (e.g. "Sr.", "Jr.")
-_TITLE_ABBREV_RE = re.compile(r"\b(Sr|Jr|Inc|Ltd|Corp|Co|Dr|Mr|Mrs|Ms)\.$", re.IGNORECASE)
+# ...or a dotted company suffix: "B.V.", "N.V.", "S.A.", "S.p.A."
+_TITLE_ABBREV_RE = re.compile(
+    r"\b(Sr|Jr|Inc|Ltd|Corp|Co|Dr|Mr|Mrs|Ms)\.$|(?:\b[a-z]{1,2}\.){2,}$", re.IGNORECASE
+)
 
 # Known lowercase-start tech prefixes that are valid title starts, not sentences
 _LOWERCASE_TITLE_PREFIXES = ("iOS", "iPad", "iPhone", "eBay", "eCommerce", "eLearning")
