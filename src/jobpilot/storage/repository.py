@@ -154,6 +154,7 @@ class Repository:
         return self.labels.review_queue_ids()
 
     def duplicate_groups(self) -> dict[int, list[int]]:
+        """Return {representative id: the other ids} for every duplicate group."""
         return self.labels.duplicates.groups()
 
     def passed_job_ids(self) -> list[int]:

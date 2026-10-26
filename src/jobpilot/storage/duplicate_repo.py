@@ -16,6 +16,7 @@ Kept out of ``label_repo.py`` so that file stays under the 300-line limit.
 """
 
 import sqlite3
+from typing import Any
 
 # Rows are grouped only on byte-identical description text above this length. Shorter
 # text (a stub, a cookie banner, a consent notice) repeats across unrelated postings.
@@ -36,7 +37,7 @@ DUPLICATE_OF_KEY = "duplicate_of"
 class DuplicateRepository:
     """Finds the rows whose description text is byte-identical."""
 
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
     def groups(self) -> dict[int, list[int]]:
@@ -53,7 +54,7 @@ class DuplicateRepository:
             groups[ids[0]] = ids[1:]
         return groups
 
-    def collapse(self, rows: list[dict]) -> list[dict]:
+    def collapse(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Return ``rows`` with every duplicate group represented exactly once.
 
         The kept row is the lowest id *present* and gains ``duplicate_of`` listing the
