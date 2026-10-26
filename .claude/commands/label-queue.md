@@ -40,6 +40,10 @@ the same. After the export (step 1), count the jobs:
      user, say how many jobs the subagent decided, how many you re-decided, and what the
      spot-check found.
 
-Finish at the spot-check gate: point the user at `docs/label-queue-result.md`, tell them
+Write the run record (procedure step 8) before reporting. In a two-tier run, fill its
+*First-pass review* section from steps 2–3 above.
+
+Finish at the spot-check gate: point the user at `docs/label-queue-result.md` and the new
+`docs/label-runs/` record, tell them
 the counts and how many jobs were handed back to them, and do not turn on **Train on
 assistant labels** for them.

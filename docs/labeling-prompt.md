@@ -153,6 +153,55 @@ inference rather than on something the posting states.
 Assistant labels do not train the scoring model until the user turns on **Train on
 assistant labels** in Settings → Scoring. Do not flip that setting for them.
 
+## 8. Record the run
+
+Every applied run leaves one record in `docs/label-runs/`, for the next agent or session
+to read. It is the same content as your report to the user, written for a reader with
+none of this run's context: ids, exact reason strings, and no prose that depends on the
+conversation. Write it after step 6, even for a run that applied nothing, and skip it
+only for a run that stopped at the dry run.
+
+First prune records older than 14 days, then write the new one:
+
+```bash
+mkdir -p docs/label-runs && find docs/label-runs -name '*.md' -mtime +14 -delete
+```
+
+The filename is the UTC start time, `YYYY-MM-DDTHHMMZ.md`, so a plain `ls` lists runs in
+order. There is no index file: line 1 of each record is its summary, so
+`head -n 1 docs/label-runs/*.md` is the index.
+
+```markdown
+# Label run 2026-10-26T1258Z — 23 applied, 8 passed, 1 tracked, 0 rejected, coverage OK
+
+- agent: <tool and model>; first pass: <subagent and model, or "none">
+- criteria: docs/labeling-criteria.md @ <`git log -1 --format=%h -- docs/labeling-criteria.md`>
+- export: 31 jobs; queue incl. copies: 32
+- batch output (verbatim): <the Labels / Coverage / Rules lines from step 6>
+- audit log: <path from step 6>
+
+## Labels
+| id | label | conf | reason |
+(one row per entry in the JSONL, passed included — same strings as written)
+
+## Passed to user
+<id — title — what could not be settled, one per line>
+
+## Rules conflicts
+<id, the label the criteria produced, why, the criteria change proposed — or "none">
+
+## First-pass review (two-tier runs only)
+- re-decided: <ids passed by the first pass that this run labeled, with the new label>
+- spot-check: <ids checked; agreed / disagreed and what happened next>
+
+## Notes for the next run
+<anything a later run should know: a rule that looked shaky, a misleading phrasing the
+first pass missed, a reason group worth auditing. "none" is a valid answer.>
+```
+
+A later run should read the newest few records before deciding, but only as context. The
+criteria file still decides every label; a past record never does.
+
 ## Undoing a run
 
 ```bash
